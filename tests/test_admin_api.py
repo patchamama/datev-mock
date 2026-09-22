@@ -92,6 +92,25 @@ def test_admin_page_returns_200_html(client):
     assert response.headers["content-type"].startswith("text/html")
 
 
+def test_admin_page_references_bootstrap_cdn(client):
+    # Smoke test for the U1 Bootstrap redesign (see
+    # odd/tasks/datev-mock-admin-ui-polish.md) — not asserting exact markup,
+    # just that the page actually pulls in Bootstrap from the CDN.
+    body = client.get(ADMIN_PAGE).text
+    assert "cdn.jsdelivr.net/npm/bootstrap@" in body
+
+
+def test_admin_page_contains_full_endpoint_catalog_sample(client):
+    # Smoke test for the U1 "full endpoint catalog" (23 mocked GET
+    # endpoints, see odd/tasks/datev-mock-admin-ui-polish.md) — proportional
+    # per the task doc's testing rationale: proves the catalog was actually
+    # built and references real paths, without asserting exact HTML
+    # structure (which would be brittle).
+    body = client.get(ADMIN_PAGE).text
+    for representative_path_fragment in ("addressees", "fiscal-years", "domains"):
+        assert representative_path_fragment in body
+
+
 # --- settings ---
 
 

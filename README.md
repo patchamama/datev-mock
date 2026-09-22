@@ -1,5 +1,11 @@
 # DATEV Desktop API Mock
 
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Pytest](https://img.shields.io/badge/tests-167%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
+[![Bootstrap](https://img.shields.io/badge/Bootstrap-5-7952B3?logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
+[![Status](https://img.shields.io/badge/status-active-success)](#tasks--roadmap)
+
 A local FastAPI mock of DATEV's local Desktop API (the REST interface a DATEV
 workstation normally exposes on `https://<local-ip>:58452/datev/api/...`),
 built for developing and testing against DATEV integrations without a real
@@ -10,19 +16,35 @@ capture, and additionally supports the response format documented on DATEV's
 official developer portal where the two disagree (see
 [Key decisions](#key-decisions) below).
 
+## Contents
+
+- [Status](#status)
+- [Quick start](#quick-start)
+- [Endpoints mocked](#endpoints-mocked)
+- [Key decisions](#key-decisions)
+- [Project structure](#project-structure)
+- [Setup](#setup)
+- [Running the tests](#running-the-tests)
+- [Running the server](#running-the-server)
+- [Technology](#technology)
+- [Tasks / Roadmap](#tasks--roadmap)
+
 ## Status
 
-**GREEN — implemented and passing.** All 165 tests pass
+**GREEN — implemented and passing.** All 167 tests pass
 (`.venv\Scripts\python -m pytest tests/ -v`), and the server has been
-verified live over real HTTPS on port 58452 (all 24 mocked endpoints, the
-admin UI, and Swagger UI). Three epics complete:
+verified live over real HTTPS on port 58452 (all 23 mocked endpoints, the
+Bootstrap admin UI with its full endpoint catalog, and Swagger UI). Four
+epics complete:
 [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (base API),
 [`odd/tasks/datev-mock-settings.md`](odd/tasks/datev-mock-settings.md)
-(settings/admin UI), and
+(settings/admin UI),
 [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mock-extended-endpoints.md)
-(21 additional endpoints: Master Data addressees/banks, 15 Accounting
-sub-resources, DMS). See each task doc for full breakdowns, decisions, and
-progress logs.
+(20 additional endpoints: Master Data addressees/banks, 15 Accounting
+sub-resources, DMS), and
+[`odd/tasks/datev-mock-admin-ui-polish.md`](odd/tasks/datev-mock-admin-ui-polish.md)
+(Bootstrap admin UI + full endpoint catalog). See each task doc for full
+breakdowns, decisions, and progress logs.
 
 ## Quick start
 
@@ -102,7 +124,7 @@ Full write-up: [`odd/tasks/datev-mock.md` → "Decisions"](odd/tasks/datev-mock.
 
 ### Extended endpoint sourcing
 
-The 21 extended endpoints (everything beyond the original 3) were scoped
+The 20 extended endpoints (everything beyond the original 3) were scoped
 from a gap analysis against a separate, existing internal DATEV mock tool.
 Two different evidence qualities apply:
 
@@ -130,23 +152,34 @@ Full write-up: [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mo
 
 ### Settings & admin UI
 
-`https://127.0.0.1:58452/admin` — a simple in-browser page to:
+`https://127.0.0.1:58452/admin` — a Bootstrap 5 in-browser page with:
 
-- Change the **port** and the **default response format** for
-  `accounting/v1/clients` (`xml`/`json`). The format change applies
+- **Settings** — change the **port** and the **default response format**
+  for `accounting/v1/clients` (`xml`/`json`). The format change applies
   immediately (used whenever a request's `Accept` header doesn't explicitly
   ask for one or the other — an explicit `Accept: application/xml` or
   `Accept: application/json` always wins regardless of this setting). The
   port change is persisted but only takes effect on the **next restart** —
-  a running server can't rebind its own port live.
-- **View, add, edit, and delete** the mock's fictitious master-data and
-  accounting client records directly, plus reset both lists back to their
-  generated defaults. Edits are in-memory for the life of the process —
-  they're gone on restart (by design; only settings persist to disk, in a
-  git-ignored `settings.json`).
+  a running server can't rebind its own port live (the page shows a clear
+  notice when this applies).
+- **Editable datasets** — view, add, edit, and delete the mock's fictitious
+  master-data (18 records) and accounting (100 records) client records
+  directly, plus reset both lists back to their generated defaults. Edits
+  are in-memory for the life of the process — gone on restart (by design;
+  only settings persist to disk, in a git-ignored `settings.json`).
+- **API Catalog** — a browsable, accordion-grouped reference covering
+  **all 23 mocked endpoints** (Diagnostics, Base clients, Master Data,
+  Accounting, DMS), not just the 2 editable tables above. Each entry shows
+  its HTTP method, the real path with illustrative path-parameter values
+  resolved (this mock ignores their actual values by design — any value
+  works), an on-demand "View sample data" fetch rendered as a table (or a
+  `<pre>` block for the single-object `echo` diagnostic), and a "Copy curl"
+  button that builds a ready-to-run example using the live-configured port.
+  Nothing in the catalog fetches automatically on page load.
 
-Same JSON API backing the page is also usable directly (`GET`/`PUT
-/admin/api/settings`, `GET/POST/PUT/DELETE /admin/api/clients/{master-data,accounting}[/{id}]`,
+Same JSON API backing the two editable tables is also usable directly
+(`GET`/`PUT /admin/api/settings`,
+`GET/POST/PUT/DELETE /admin/api/clients/{master-data,accounting}[/{id}]`,
 `POST /admin/api/reset`) if you want to script dataset setup for a test run.
 
 ### Switching between mock and real DATEV
@@ -181,8 +214,8 @@ DATEV-Mock/
 ├── odd/tasks/
 │   ├── datev-mock.md                     # base API: epic/task tracking, decisions, progress log
 │   ├── datev-mock-settings.md            # settings/admin UI: same, for that epic
-│   └── datev-mock-extended-endpoints.md  # 21 extended endpoints: same, for that epic
-├── tests/                     # full test suite — 165/165 passing
+│   └── datev-mock-extended-endpoints.md  # 20 extended endpoints: same, for that epic
+├── tests/                     # full test suite — 167/167 passing
 ├── start.bat / start.sh       # bootstrap Python (portable if needed) + deps + run, one step
 ├── settings.json              # git-ignored, created on first settings change
 └── requirements.txt
@@ -203,7 +236,7 @@ python -m venv .venv
 .venv\Scripts\python -m pytest tests/ -v
 ```
 
-All 165 tests pass.
+All 167 tests pass.
 
 ## Running the server
 
@@ -219,9 +252,22 @@ Swagger UI: `https://127.0.0.1:58452/docs`. Admin/settings UI:
 `https://127.0.0.1:58452/admin`. Both verified live over real HTTPS,
 including the accounting endpoint's XML/JSON content negotiation.
 
+## Technology
+
+| | |
+|---|---|
+| **Language / runtime** | Python 3.12+ |
+| **Web framework** | [FastAPI](https://fastapi.tiangolo.com/) on [Uvicorn](https://www.uvicorn.org/) (ASGI) |
+| **Testing** | [pytest](https://pytest.org/) + FastAPI's `TestClient` (Starlette/httpx) |
+| **Frontend (admin UI)** | [Bootstrap 5](https://getbootstrap.com/) (CDN) + vanilla JS — no build step, no framework dependency |
+| **TLS** | Self-signed cert generated with the [`cryptography`](https://cryptography.io/) package |
+| **Serialization** | Hand-built XML (stdlib string templates, matching .NET `DataContractSerializer` conventions) + native JSON |
+| **Persistence** | In-memory data store (per-process, reset on restart) + a small git-ignored `settings.json` for port/format preferences |
+| **Bootstrap scripts** | Batch (`start.bat`) / POSIX shell (`start.sh`) — provision a project-local Python (system if available, else a portable download) with no admin rights |
+
 ## Tasks / Roadmap
 
-Three epics, all complete (165/165 tests). See each task doc for full
+All four epics complete (167/167 tests). See each task doc for full
 detail, decisions, and progress logs:
 
 **Base API** — [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (32 tests):
@@ -241,7 +287,22 @@ detail, decisions, and progress logs:
 - [x] Phase C — DMS domains/documents (2 endpoints, self-designed schema)
 - [x] D0 — this README update
 
-Nothing further is currently planned — the admin UI's dataset editor still
-covers only the original master-data/accounting clients lists, not the 21
-extended-endpoint resources; that would be a new decision if it's ever
-wanted.
+**Admin UI overhaul & documentation polish** — [`odd/tasks/datev-mock-admin-ui-polish.md`](odd/tasks/datev-mock-admin-ui-polish.md):
+- [x] Bootstrap 5 redesign of `/admin`, plus a full read-only catalog
+      covering all 23 mocked endpoints (not just the 2 CRUD-editable
+      tables) — each entry shows its HTTP method, resolved example path,
+      a "view sample data" action, and a copyable `curl` example.
+- [x] This README's polish pass (badges, technology table, table of
+      contents, this roadmap section).
+
+### Planned / not started
+
+- **Java port** — build an equivalent mock as a Java application (mirroring
+  the tech stack of the internal reference mock this project's extended
+  endpoints were gap-analyzed against, see
+  [`examples/DATEV_Mock_Server_Reference.md`](examples/DATEV_Mock_Server_Reference.md),
+  local-only). Not scoped or started — recorded here as a future
+  possibility, not a commitment.
+- Full CRUD (not just read-only display) for the 20 extended-endpoint
+  resources in the admin UI, if ever needed for interactive test-data
+  shaping beyond the existing master-data/accounting clients tables.
