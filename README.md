@@ -12,14 +12,11 @@ official developer portal where the two disagree (see
 
 ## Status
 
-**Work in progress — Strict TDD, currently RED phase.**
-
-A full test suite (`tests/`) already defines the expected behavior of every
-endpoint and fails on collection (`ModuleNotFoundError: No module named
-'app'`) because the implementation (`app/`) hasn't been written yet. That's
-the correct, observed RED state. See
-[`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) for the full task
-breakdown and progress log.
+**GREEN — implemented and passing.** All 32 tests pass
+(`.venv\Scripts\python -m pytest tests/ -v`), and the server has been
+verified live over real HTTPS on port 58452 (all 3 endpoints + Swagger UI).
+See [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) for the full task
+breakdown, decisions, and progress log.
 
 ## Endpoints mocked
 
@@ -76,7 +73,7 @@ consumes the API — **no hosts file edit, no DNS changes, no admin rights**:
 
 ```
 DATEV-Mock/
-├── app/                    # implementation (not written yet — RED phase)
+├── app/
 │   ├── main.py
 │   ├── routers/
 │   │   ├── diagnostics.py
@@ -86,10 +83,10 @@ DATEV-Mock/
 │   ├── xml_serializers.py
 │   ├── json_serializers.py # accounting JSON path only
 │   └── fake_data.py
-├── certs/                  # self-signed cert generation (not written yet)
+├── certs/                  # self-signed cert generation (generate_cert.py; *.pem is git-ignored)
 ├── examples/                # local-only, git-ignored — sensitive real captured samples
 ├── odd/tasks/datev-mock.md # epic/task tracking, decisions, progress log
-├── tests/                   # RED-phase test suite (written, passing target)
+├── tests/                   # full test suite — 32/32 passing
 └── requirements.txt
 ```
 
@@ -108,34 +105,32 @@ python -m venv .venv
 .venv\Scripts\python -m pytest tests/ -v
 ```
 
-Right now this fails at collection (expected RED). Once `app/` is
-implemented (GREEN phase), all tests should pass.
+All 32 tests pass.
 
 ## Running the server
 
-Not available yet — pending GREEN implementation. Once `app/` and
-`certs/generate_cert.py` exist:
-
 ```
-python certs/generate_cert.py
-uvicorn app.main:app --host 127.0.0.1 --port 58452 --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem
+.venv\Scripts\python certs\generate_cert.py
+.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 58452 --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem
 ```
 
-Swagger UI will be available at `https://127.0.0.1:58452/docs`.
+Swagger UI: `https://127.0.0.1:58452/docs`. Verified live over real HTTPS,
+including the accounting endpoint's XML/JSON content negotiation and
+Swagger UI itself.
 
 ## Tasks / Roadmap
 
-See [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) for the complete,
-up-to-date task list. Summary:
+See [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) for the complete
+task list, decisions, and progress log. Summary — all complete:
 
-- [x] T0 — RED-phase test suite (29 tests across diagnostics, master-data,
+- [x] T0 — RED-phase test suite (32 tests across diagnostics, master-data,
       accounting XML, accounting JSON)
-- [ ] T1 — Project scaffold (`app/` package, self-signed cert generation)
-- [ ] T2 — Data models (`ClientResource` 42 fields, accounting `Client`,
+- [x] T1 — Project scaffold (`app/` package, self-signed cert generation)
+- [x] T2 — Data models (`ClientResource` 42 fields, accounting `Client`,
       `Echo`)
-- [ ] T3 — Synthetic fake data generation (no real values)
-- [ ] T4 — XML serializers (all 3 shapes) + JSON serializer for accounting
-- [ ] T5 — FastAPI routers + content negotiation for accounting
-- [ ] T6 — This README
-- [ ] T7 — GREEN verification (full test pass + manual Swagger/curl sanity
-      check)
+- [x] T3 — Synthetic fake data generation (no real values)
+- [x] T4 — XML serializers (all 3 shapes) + JSON serializer for accounting
+- [x] T5 — FastAPI routers + content negotiation for accounting
+- [x] T6 — This README
+- [x] T7 — GREEN verification (32/32 passing + live HTTPS/Swagger sanity
+      check on port 58452)
