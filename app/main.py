@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from app.routers import accounting, admin, diagnostics, master_data
+from app.routers import accounting, admin, diagnostics, dms, master_data
 
 app = FastAPI(
     title="DATEV Local API Mock",
@@ -24,3 +24,4 @@ app.include_router(diagnostics.router)
 app.include_router(master_data.router)
 app.include_router(accounting.router)
 app.include_router(admin.router)
+app.include_router(dms.router)

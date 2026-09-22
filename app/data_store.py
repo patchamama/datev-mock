@@ -31,6 +31,8 @@ from app.fake_data import (
     COST_SYSTEMS,
     CREDITORS,
     DEBITORS,
+    DOCUMENTS,
+    DOMAINS,
     FISCAL_YEARS,
     GENERAL_LEDGER_ACCOUNTS,
     POSTING_PROPOSAL_RULES_INCOMING_INVOICES,
@@ -47,6 +49,8 @@ from app.fake_data import (
     _generate_cost_systems,
     _generate_creditors,
     _generate_debitors,
+    _generate_documents,
+    _generate_domains,
     _generate_fiscal_years,
     _generate_general_ledger_accounts,
     _generate_open_items,
@@ -65,6 +69,8 @@ from app.models import (
     CostSystem,
     Creditor,
     Debitor,
+    Document,
+    Domain,
     FiscalYear,
     GeneralLedgerAccount,
     OpenItem,
@@ -100,6 +106,8 @@ _posting_proposal_rules_outgoing_invoices: list[PostingProposalRule] = list(
     POSTING_PROPOSAL_RULES_OUTGOING_INVOICES
 )
 _terms_of_payment: list[TermOfPayment] = list(TERMS_OF_PAYMENT)
+_domains: list[Domain] = list(DOMAINS)
+_documents: list[Document] = list(DOCUMENTS)
 
 
 # --- master-data ---
@@ -253,6 +261,21 @@ def list_terms_of_payment() -> list[TermOfPayment]:
     return list(_terms_of_payment)
 
 
+# --- DMS (read-only, Phase C of the extended-endpoints epic) ---
+#
+# Self-designed schema, no official spec exists (see `app/models.py::Domain`/
+# `Document`). Same "no path-param filtering" convention: these listers take
+# no arguments (DMS endpoints don't even have path params, unlike accounting).
+
+
+def list_domains() -> list[Domain]:
+    return list(_domains)
+
+
+def list_documents() -> list[Document]:
+    return list(_documents)
+
+
 # --- reset ---
 
 
@@ -277,3 +300,5 @@ def reset() -> None:
     _posting_proposal_rules_incoming_invoices[:] = _generate_posting_proposal_rules(outgoing=False)
     _posting_proposal_rules_outgoing_invoices[:] = _generate_posting_proposal_rules(outgoing=True)
     _terms_of_payment[:] = _generate_terms_of_payment()
+    _domains[:] = _generate_domains()
+    _documents[:] = _generate_documents()

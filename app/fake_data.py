@@ -29,6 +29,8 @@ from app.models import (
     CreditorAccountingInformation,
     Debitor,
     DebitorAccountingInformation,
+    Document,
+    Domain,
     DueAsPeriod,
     DueDate,
     DueInDays,
@@ -865,6 +867,71 @@ def _generate_terms_of_payment(count: int = 4) -> list[TermOfPayment]:
     return records
 
 
+# --- DMS extension (extended-endpoints epic, Phase C) ---
+#
+# **No official spec exists for DMS** — this fixed tree and the document
+# fields below are a self-designed schema, not spec-derived. See
+# `app/models.py::Domain`/`Document` and `tests/test_dms.py`'s module
+# docstring for the full reasoning. Kept as a hand-authored fixed
+# adjacency-list tree (not randomly generated) so the domain/folder/register
+# hierarchy stays coherent and easy to reason about, unlike the flat
+# unrelated-record lists generated elsewhere in this module.
+
+_DMS_DOMAIN_TREE = [
+    # (id, name, type, parent_id)
+    ("DOM0001", "Unternehmen", "domain", None),
+    ("DOM0002", "Belege", "folder", "DOM0001"),
+    ("DOM0003", "Rechnungswesen", "folder", "DOM0001"),
+    ("DOM0004", "Rechnungseingang", "register", "DOM0002"),
+    ("DOM0005", "Rechnungsausgang", "register", "DOM0002"),
+    ("DOM0006", "Kontoauszüge", "register", "DOM0003"),
+]
+
+_DOCUMENT_CLASS_VALUES = ["invoice", "receipt", "contract", "delivery_note"]
+
+_DOCUMENT_NAME_POOL = [
+    "Rechnung_2024_001.pdf",
+    "Quittung_Buero.pdf",
+    "Vertrag_Wartung.pdf",
+    "Lieferschein_1042.pdf",
+    "Rechnung_2024_002.pdf",
+    "Quittung_Reise.pdf",
+]
+
+
+def _generate_domains() -> list[Domain]:
+    """Fixed adjacency-list tree (domain -> folder -> register). Self-designed
+    per the epic doc's Phase C note (no official DMS spec exists) — not
+    randomly generated, since a coherent hand-authored tree is clearer than
+    a randomized one for a resource this small."""
+    return [
+        Domain(id=node_id, name=name, type=node_type, parent_id=parent_id)
+        for node_id, name, node_type, parent_id in _DMS_DOMAIN_TREE
+    ]
+
+
+def _generate_documents(count: int = 6) -> list[Document]:
+    """Self-designed schema (epic doc Phase C note). `domain_id` cycles
+    through `_DMS_DOMAIN_TREE`'s fixed node ids so every generated document
+    references a real domain/folder/register node."""
+    domain_ids = [node_id for node_id, _, _, _ in _DMS_DOMAIN_TREE]
+    records: list[Document] = []
+    for index in range(count):
+        created = _random_timestamp()
+        records.append(
+            Document(
+                id=_fresh_guid(),
+                name=_DOCUMENT_NAME_POOL[index % len(_DOCUMENT_NAME_POOL)],
+                amount=round(19.99 + index * 42.5, 2),
+                document_class=_DOCUMENT_CLASS_VALUES[index % len(_DOCUMENT_CLASS_VALUES)],
+                domain_id=domain_ids[index % len(domain_ids)],
+                created_at=created,
+                modified_at=_random_date_after(created),
+            )
+        )
+    return records
+
+
 # Generated once at import time — stable for the lifetime of the process.
 CLIENT_RESOURCES: list[ClientResource] = _generate_client_resources()
 ACCOUNTING_CLIENTS: list[Client] = _generate_accounting_clients()
@@ -889,3 +956,5 @@ POSTING_PROPOSAL_RULES_OUTGOING_INVOICES: list[PostingProposalRule] = _generate_
     outgoing=True
 )
 TERMS_OF_PAYMENT: list[TermOfPayment] = _generate_terms_of_payment()
+DOMAINS: list[Domain] = _generate_domains()
+DOCUMENTS: list[Document] = _generate_documents()

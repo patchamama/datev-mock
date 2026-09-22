@@ -632,3 +632,52 @@ class TermOfPayment:
     due_as_period: Optional[DueAsPeriod] = None
     cash_discount1_percentage: Optional[float] = None
     cash_discount2_percentage: Optional[float] = None
+
+
+# --- DMS extension (extended-endpoints epic, Phase C) ---
+#
+# **No official spec exists for DMS** (confirmed via full-text grep of both
+# bundled OpenAPI specs — zero "dms" matches). Unlike every other dataclass
+# in this module, `Domain`/`Document` are a **self-designed schema**, built
+# only from two one-line table rows in
+# `examples/DATEV_Mock_Server_Reference.md`'s "DMS API" section plus
+# `tests/test_dms.py`'s locked-in RED contract (see that file's module
+# docstring and `odd/tasks/datev-mock-extended-endpoints.md`'s Phase C
+# entry for the full reasoning). Field completeness here should not be
+# assumed comparable to the spec-backed Phases A/B schemas above.
+
+
+@dataclass
+class Domain:
+    """DMS `domain`/`folder`/`register` tree node.
+
+    Modeled as a flat adjacency list (`parent_id` reference), not deep JSON
+    nesting: `type` distinguishes the three tree levels named literally in
+    the reference doc's description ("Domain/folder/register tree"),
+    `parent_id` is present on every `folder`/`register` record (referencing
+    another record's `id`) and **absent** (not `null`) on root
+    `type == "domain"` records, per this epic's "optionality = field
+    absence" convention.
+    """
+
+    id: str
+    name: str
+    type: str
+    parent_id: Optional[str] = None
+
+
+@dataclass
+class Document:
+    """DMS document metadata — per the reference doc's four named facets
+    (amount, class, GUIDs, timestamps). `id` is a real GUID (the doc says
+    "GUIDs" plural). `domain_id` ties a document to a node in the `domains`
+    tree; `document_class` is a small invented enum (no real DATEV DMS
+    document-class vocabulary exists anywhere in this repo's evidence)."""
+
+    id: str
+    name: str
+    amount: float
+    document_class: str
+    domain_id: str
+    created_at: str
+    modified_at: str
