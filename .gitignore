@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+certs/*.pem
+.pytest_cache/
+
+# Contains sensitive real DATEV data captured from a live environment — never publish
+examples/
+
+# Local tooling cache
+.atl/
