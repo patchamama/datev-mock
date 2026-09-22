@@ -12,7 +12,38 @@ import random
 import uuid
 from datetime import datetime, timedelta
 
-from app.models import Addressee, Bank, Client, ClientResource, CompanyData
+from app.models import (
+    Addressee,
+    AccountingSequenceProcessed,
+    AccountingTransactionKey,
+    AssetStocktaking,
+    AssignmentCriteria,
+    Bank,
+    Client,
+    ClientResource,
+    CompanyData,
+    CostCenter,
+    CostRate,
+    CostSystem,
+    Creditor,
+    CreditorAccountingInformation,
+    Debitor,
+    DebitorAccountingInformation,
+    DueAsPeriod,
+    DueDate,
+    DueInDays,
+    FiscalYear,
+    GeneralLedgerAccount,
+    GeneralLedgerAccountMinimal,
+    GeneralLedgerAccountTaxRate,
+    LegalPerson,
+    NaturalPerson,
+    OpenItem,
+    Period,
+    PostingProposalInformation,
+    PostingProposalRule,
+    TermOfPayment,
+)
 
 random.seed(42)
 
@@ -336,8 +367,525 @@ def _generate_banks(count: int = 6) -> list[Bank]:
     return records
 
 
+# --- Accounting extension, Phase B batch B1 (extended-endpoints epic) ---
+#
+# Per the epic's cross-phase "no path-param filtering" decision, none of
+# these datasets vary by client_id/fiscal_year_id/cost_system_id — routers
+# always serve the same fixed fake dataset regardless of the URL. Minimum
+# record counts follow the RED-imposed floors recorded in the task doc's B0
+# progress entry (judgment calls, not spec-derived).
+
+_LEGAL_FORM_VALUES = [
+    "not_specified",
+    "sole_proprietorship",
+    "corporation",
+    "cooperative",
+    "partnership_under_the_german_civil_code",
+    "limited_partnership_with_a_limited_liability_company_as_general_partner",
+    "limited_partnership",
+    "general_partnership",
+    "association",
+    "foundation",
+    "public_corporation",
+    "corporation_under_communal_budget_ordinance",
+    "non_profit_corporation",
+]
+_TAXATION_METHOD_VALUES = [
+    "not_specified",
+    "taxation_based_on_value_of_services_rendered",
+    "taxation_based_on_value_of_actual_receipts",
+    "taxation_based_on_value_of_actual_receipts_input_tax_deduction_at_payment",
+    "no_vat_calculation",
+    "lump_sum",
+]
+_NATIONAL_RIGHT_VALUES = ["DE", "AT"]
+_ACCOUNT_SYSTEM_VALUES = [3, 4, 4, 4, 49]  # DATEV SKR chart-of-accounts numbers (fictitious mix)
+
+# Hardcoded lookup sets — the spec types these as plain integers, valid
+# values only documented in free-text description, no OpenAPI enum. See
+# `app/models.py::GeneralLedgerAccount` and the epic doc's explicit note.
+_MAIN_FUNCTION_VALUES = [1, 2, 3, 4, 5, 6, 7]
+_MAIN_FUNCTION_NUMBER_VALUES = [10, 11, 12, 20, 21, 25, 90, 91, 98]
+_ADDITIONAL_FUNCTION_VALUES = [0, 1, 3, 8]
+
+_LEGAL_ENTITY_TYPES = ["natural_person", "legal_person"]
+
+_GL_ACCOUNT_CAPTIONS = [
+    "Bank",
+    "Kasse",
+    "Forderungen aus Lieferungen und Leistungen",
+    "Verbindlichkeiten aus Lieferungen und Leistungen",
+    "Umsatzerlöse",
+    "Wareneingang",
+    "Abschreibungen auf Sachanlagen",
+    "Sonstige betriebliche Aufwendungen",
+    "Vorsteuer",
+    "Umsatzsteuer",
+]
+
+
+def _generate_fiscal_years(count: int = 3) -> list[FiscalYear]:
+    records: list[FiscalYear] = []
+    for index in range(count):
+        year = 2022 + index
+        begin = f"{year}-01-01T00:00:00.000"
+        end = f"{year}-12-31T23:59:59.000"
+        records.append(
+            FiscalYear(
+                id=f"{year}0101",
+                account_system=_ACCOUNT_SYSTEM_VALUES[index % len(_ACCOUNT_SYSTEM_VALUES)],
+                currency_code="EUR",
+                legal_form=_LEGAL_FORM_VALUES[index % len(_LEGAL_FORM_VALUES)],
+                taxation_method=_TAXATION_METHOD_VALUES[index % len(_TAXATION_METHOD_VALUES)],
+                national_right=_NATIONAL_RIGHT_VALUES[index % len(_NATIONAL_RIGHT_VALUES)],
+                is_locked=index % 2 == 0,
+                account_length=8,
+                begin=begin,
+                end=end,
+                client_number=10000 + index,
+                consultant_number=1000 + index,
+                cost_length=8,
+                is_invoice_date_check_on=index % 2 == 0,
+                is_using_delivery_date=index % 3 == 0,
+                is_using_receivable_type=index % 3 == 1,
+                method_of_determining_net_income=(
+                    "balance_sheet" if index % 2 == 0 else "cash_method_of_accounting"
+                ),
+            )
+        )
+    return records
+
+
+def _generate_cost_systems(count: int = 3) -> list[CostSystem]:
+    records: list[CostSystem] = []
+    for index in range(count):
+        records.append(
+            CostSystem(
+                id=str(index + 1),
+                short_name=f"KoRe{index + 1}",
+                is_activated_for_postings=index % 2 == 0,
+                number=index + 1,
+                cost_field=f"KOST{index + 1}",
+            )
+        )
+    return records
+
+
+def _generate_cost_centers(count: int = 4) -> list[CostCenter]:
+    records: list[CostCenter] = []
+    for index in range(count):
+        creation_year = 2016 + index
+        cost_rates = [
+            CostRate(
+                valid_from=int(f"{creation_year}1201"),
+                valid_to=int(f"{creation_year + 1}1130"),
+                rate=round(35.5 + index * 2.25, 2),
+            )
+        ] if index % 2 == 0 else []
+        records.append(
+            CostCenter(
+                id=f"KST{index + 1:03d}",
+                long_name=f"Kostenstelle {index + 1} Verwaltung",
+                short_name=f"KST{index + 1}",
+                creation_date=f"{creation_year}-01-15T00:00:00.000",
+                cost_rates=cost_rates,
+                date_last_modification=f"{creation_year}-06-01T00:00:00.000",
+                responsible=_PERSON_NAME_POOL[index % len(_PERSON_NAME_POOL)],
+            )
+        )
+    return records
+
+
+def _generate_creditors(count: int = 4) -> list[Creditor]:
+    """Forces both `legal_entity_type` values present (indices 0/1), same
+    "not vacuous" pattern as `_generate_addressees`."""
+    records: list[Creditor] = []
+    org_names = random.sample(_ORG_NAME_POOL, k=min(count, len(_ORG_NAME_POOL)))
+    person_names = random.sample(_PERSON_NAME_POOL, k=min(count, len(_PERSON_NAME_POOL)))
+
+    for index in range(count):
+        if index == 0:
+            entity_type = "natural_person"
+        elif index == 1:
+            entity_type = "legal_person"
+        else:
+            entity_type = random.choice(_LEGAL_ENTITY_TYPES)
+
+        account_number = 70000 + index
+        business_partner_number = str(account_number)
+        addressee_id = _fresh_guid()
+
+        natural_person = None
+        legal_person = None
+        if entity_type == "natural_person":
+            full_name = person_names[index % len(person_names)]
+            firstname, surname = _split_person_name(full_name)
+            natural_person = NaturalPerson(firstname=firstname, surname=surname)
+            short_name = f"{surname}"[:15]
+        else:
+            company_name = org_names[index % len(org_names)]
+            legal_person = LegalPerson(legal_name=company_name)
+            short_name = company_name.split(" ")[0][:15]
+
+        records.append(
+            Creditor(
+                id=str(account_number),
+                account_number=account_number,
+                addressee_id=addressee_id,
+                business_partner_number=business_partner_number,
+                legal_entity_type=entity_type,
+                short_name=short_name,
+                natural_person=natural_person,
+                legal_person=legal_person,
+                accounting_information=CreditorAccountingInformation(
+                    currency_management="payments_in_euro",
+                    is_insolvent=False,
+                    is_various_account=False,
+                    language="german",
+                    output_destination="print",
+                    payment_medium="sepa_bank_transfer_with_one_invoice",
+                ),
+                is_business_partner_active=True,
+                is_organization_business_partner=entity_type != "natural_person",
+                caption=short_name,
+            )
+        )
+    return records
+
+
+def _generate_debitors(count: int = 4) -> list[Debitor]:
+    """Debitor is structurally identical to creditor for the shared
+    top-level fields (epic doc: GREEN must still populate
+    `natural_person`/`legal_person` consistently, even though RED doesn't
+    directly assert it for debitors)."""
+    records: list[Debitor] = []
+    org_names = random.sample(_ORG_NAME_POOL, k=min(count, len(_ORG_NAME_POOL)))
+    person_names = random.sample(_PERSON_NAME_POOL, k=min(count, len(_PERSON_NAME_POOL)))
+
+    for index in range(count):
+        if index == 0:
+            entity_type = "natural_person"
+        elif index == 1:
+            entity_type = "legal_person"
+        else:
+            entity_type = random.choice(_LEGAL_ENTITY_TYPES)
+
+        account_number = 10000 + index
+        business_partner_number = str(account_number)
+        addressee_id = _fresh_guid()
+
+        natural_person = None
+        legal_person = None
+        if entity_type == "natural_person":
+            full_name = person_names[index % len(person_names)]
+            firstname, surname = _split_person_name(full_name)
+            natural_person = NaturalPerson(firstname=firstname, surname=surname)
+            short_name = f"{surname}"[:15]
+        else:
+            company_name = org_names[index % len(org_names)]
+            legal_person = LegalPerson(legal_name=company_name)
+            short_name = company_name.split(" ")[0][:15]
+
+        records.append(
+            Debitor(
+                id=str(account_number),
+                account_number=account_number,
+                addressee_id=addressee_id,
+                business_partner_number=business_partner_number,
+                legal_entity_type=entity_type,
+                short_name=short_name,
+                natural_person=natural_person,
+                legal_person=legal_person,
+                accounting_information=DebitorAccountingInformation(
+                    account_statement="account_statement_for_all_items",
+                    credit_limit=50000 + index * 1000,
+                    currency_management="payments_in_euro",
+                    direct_debit="no_direct_debit_with_this_debitor",
+                    dunning_procedure="first_and_second_dun",
+                    interest_calculation="no_interest_calculated_for_this_debitor",
+                    is_insolvent=False,
+                    is_various_account=False,
+                    language="german",
+                    output_destination="print",
+                ),
+                is_business_partner_active=True,
+                is_organization_business_partner=entity_type != "natural_person",
+                caption=short_name,
+            )
+        )
+    return records
+
+
+def _generate_general_ledger_accounts(count: int = 6) -> list[GeneralLedgerAccount]:
+    records: list[GeneralLedgerAccount] = []
+    for index in range(count):
+        records.append(
+            GeneralLedgerAccount(
+                id=str(1000 + index),
+                account_number=1000 + index,
+                caption=_GL_ACCOUNT_CAPTIONS[index % len(_GL_ACCOUNT_CAPTIONS)],
+                main_function=_MAIN_FUNCTION_VALUES[index % len(_MAIN_FUNCTION_VALUES)],
+                main_function_number=_MAIN_FUNCTION_NUMBER_VALUES[
+                    index % len(_MAIN_FUNCTION_NUMBER_VALUES)
+                ],
+                additional_function=_ADDITIONAL_FUNCTION_VALUES[
+                    index % len(_ADDITIONAL_FUNCTION_VALUES)
+                ],
+                function_description=_GL_ACCOUNT_CAPTIONS[index % len(_GL_ACCOUNT_CAPTIONS)],
+                tax_rates=(
+                    [GeneralLedgerAccountTaxRate(tax_rate=19.0, valid_from="2021-01-01T00:00:00.000")]
+                    if index % 2 == 0
+                    else []
+                ),
+            )
+        )
+    return records
+
+
+# --- Accounting extension, Phase B batch B2 (extended-endpoints epic) ---
+#
+# Same "no path-param filtering" convention as batch B1's generators above.
+# Minimum record counts follow the RED-imposed floors recorded in the task
+# doc's B0 progress entry.
+
+_EVIDENCE_TYPE_VALUES = [
+    "invoice",
+    "credit_note",
+    "credit_note_by_revocation",
+    "deposit",
+    "payment",
+    "cash_discount",
+]
+_DEBIT_CREDIT_IDENTIFIER_VALUES = ["S", "H"]
+_DUNNING_LEVEL_VALUES = ["none", "level1", "level2", "level3"]
+
+
+def _generate_open_items(count: int = 4, receivable: bool = False) -> list[OpenItem]:
+    """Shared generator for `accounts-payable` (#6), `accounts-payable/condense`
+    (#2) and `accounts-receivable/condense` (#3) — all three share the
+    `OpenItem` schema per the compiled spec doc. `receivable=True` also
+    populates the receivable-only `dunning_level` field on every record (a
+    RED-imposed fake-data contract, see the epic doc's B0 progress entry)."""
+    records: list[OpenItem] = []
+    base_account = 10000 if receivable else 70000
+    for index in range(count):
+        debit_credit = _DEBIT_CREDIT_IDENTIFIER_VALUES[index % len(_DEBIT_CREDIT_IDENTIFIER_VALUES)]
+        amount = round(100.0 + index * 37.5, 2)
+        record = OpenItem(
+            id=_fresh_guid(),
+            account_number=base_account + index,
+            amount_debit=amount if debit_credit == "S" else 0.0,
+            amount_credit=amount if debit_credit == "H" else 0.0,
+            amount_entered=amount,
+            currency_code="EUR",
+            evidence_type=_EVIDENCE_TYPE_VALUES[index % len(_EVIDENCE_TYPE_VALUES)],
+            debit_credit_identifier=debit_credit,
+            is_cleared=index % 3 == 0,
+            open_balance_of_item=round(amount * 0.5, 2),
+            accounting_sequence_id=str(1000 + index),
+            date=f"2024-{(index % 9) + 1:02d}-15T00:00:00.000",
+            due_date=f"2024-{((index % 2) + 10):02d}-15T00:00:00.000",
+            due_days=30,
+            posting_description=f"Beleg {index + 1}",
+            tax_rate=19.0,
+        )
+        if receivable:
+            record.dunning_level = _DUNNING_LEVEL_VALUES[index % len(_DUNNING_LEVEL_VALUES)]
+            if index % 2 == 0:
+                record.dunning_date1 = "2024-02-01T00:00:00.000"
+        records.append(record)
+    return records
+
+
+_ACCOUNTING_REASON_VALUES = [
+    "independent_from_accounting_reason",
+    "reserved1",
+    "reserved2",
+    "commercial_law",
+    "tax_law",
+    "ifrs",
+    "for_calculation",
+]
+_ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES = ["financial_accounting", "annual_financial_statements"]
+
+
+def _generate_accounting_sequences_processed(count: int = 4) -> list[AccountingSequenceProcessed]:
+    records: list[AccountingSequenceProcessed] = []
+    for index in range(count):
+        records.append(
+            AccountingSequenceProcessed(
+                id=str(2000 + index),
+                accounting_sequence_id=str(3000 + index),
+                description=f"Buchungsstapel {index + 1}",
+                date_from=f"2024-{(index % 9) + 1:02d}-01T00:00:00.000",
+                date_to=f"2024-{(index % 9) + 1:02d}-28T23:59:59.000",
+                is_committed=index % 2 == 0,
+                record_type=_ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES[
+                    index % len(_ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES)
+                ],
+                accounting_reason=_ACCOUNTING_REASON_VALUES[index % len(_ACCOUNTING_REASON_VALUES)],
+                initials="ABC",
+            )
+        )
+    return records
+
+
+_TRANSACTION_KEY_TAX_RATE_VALUES = [19.0, 7.0, 0.0, 16.0]
+
+
+def _generate_accounting_transaction_keys(count: int = 4) -> list[AccountingTransactionKey]:
+    records: list[AccountingTransactionKey] = []
+    for index in range(count):
+        records.append(
+            AccountingTransactionKey(
+                id=str(4000 + index),
+                number=(index + 1) * 100,
+                tax_rate=_TRANSACTION_KEY_TAX_RATE_VALUES[index % len(_TRANSACTION_KEY_TAX_RATE_VALUES)],
+                is_tax_rate_selectable=index % 2 == 0,
+                caption=f"Steuerschlüssel {index + 1}",
+            )
+        )
+    return records
+
+
+_STOCKTAKING_ACCOUNTING_REASON_VALUES = [50, 30, 40, 64, 11, 12]
+
+
+def _generate_asset_stocktakings(count: int = 4) -> list[AssetStocktaking]:
+    records: list[AssetStocktaking] = []
+    for index in range(count):
+        gl_account = (
+            GeneralLedgerAccountMinimal(
+                account_number=1000 + index,
+                caption=_GL_ACCOUNT_CAPTIONS[index % len(_GL_ACCOUNT_CAPTIONS)],
+            )
+            if index % 2 == 0
+            else None
+        )
+        records.append(
+            AssetStocktaking(
+                id=str(5000 + index),
+                asset_number=6000 + index,
+                inventory_number=f"INV-{index + 1:04d}",
+                accounting_reason=_STOCKTAKING_ACCOUNTING_REASON_VALUES[
+                    index % len(_STOCKTAKING_ACCOUNTING_REASON_VALUES)
+                ],
+                general_ledger_account=gl_account,
+                inventory_name=f"Anlagegut {index + 1}",
+                price=round(500.0 + index * 120, 2),
+                quantity=1.0,
+                stocktaking_date="2024-06-01T00:00:00.000",
+                unit="Stück",
+            )
+        )
+    return records
+
+
+_ORIGIN_OF_POSTING_DESCRIPTION_INCOMING_VALUES = [
+    "own_input",
+    "posting_description",
+    "goods_and_services",
+    "business_partner_name",
+    "not_specified",
+]
+_ORIGIN_OF_POSTING_DESCRIPTION_OUTGOING_VALUES = _ORIGIN_OF_POSTING_DESCRIPTION_INCOMING_VALUES + [
+    "email",
+    "transaction_key",
+]
+
+
+def _generate_posting_proposal_rules(count: int = 4, outgoing: bool = False) -> list[PostingProposalRule]:
+    """Shared generator for `posting-proposal-rules-incoming-invoices` (#13)
+    and `-outgoing-invoices` (#14) — identical shape per the compiled spec
+    doc, only the allowed `origin_of_posting_description` enum differs."""
+    origin_values = (
+        _ORIGIN_OF_POSTING_DESCRIPTION_OUTGOING_VALUES if outgoing else _ORIGIN_OF_POSTING_DESCRIPTION_INCOMING_VALUES
+    )
+    id_base = 8000 if outgoing else 7000
+    records: list[PostingProposalRule] = []
+    for index in range(count):
+        info_entries = [
+            PostingProposalInformation(
+                accounting_transaction_key=(index + 1) * 100,
+                account_number=1000 + index,
+                origin_of_posting_description=origin_values[index % len(origin_values)],
+                posting_description=f"Buchungstext {index + 1}",
+            )
+        ]
+        records.append(
+            PostingProposalRule(
+                id=str(id_base + index),
+                uncertain_label=index % 3 == 0,
+                assignment_criteria=AssignmentCriteria(
+                    name=f"Kriterium {index + 1}",
+                    tax_rate=19.0,
+                ),
+                posting_proposal_information=info_entries,
+                creation_date="2024-01-01T00:00:00.000",
+            )
+        )
+    return records
+
+
+_RELATED_MONTH_VALUES = ["current_month", "next_month", "month_after_next"]
+
+
+def _generate_terms_of_payment(count: int = 4) -> list[TermOfPayment]:
+    """Guarantees both `due_type` variants are present (even indices get
+    `due_in_days`, odd get `due_as_period`), same non-vacuous-mix pattern as
+    `_generate_addressees`/`_generate_creditors`."""
+    records: list[TermOfPayment] = []
+    for index in range(count):
+        if index % 2 == 0:
+            due_type = "due_in_days"
+            due_in_days = DueInDays(due_in_days=14 + index * 5, cash_discount1_days=7)
+            due_as_period = None
+        else:
+            due_type = "due_as_period"
+            due_in_days = None
+            due_as_period = DueAsPeriod(
+                period1=Period(
+                    invoice_day_of_month=15,
+                    due_date_net=DueDate(
+                        related_month=_RELATED_MONTH_VALUES[index % len(_RELATED_MONTH_VALUES)],
+                        day_of_month=10,
+                    ),
+                )
+            )
+        records.append(
+            TermOfPayment(
+                id=str(9000 + index),
+                caption=f"Zahlungsbedingung {index + 1}",
+                due_type=due_type,
+                due_in_days=due_in_days,
+                due_as_period=due_as_period,
+                cash_discount1_percentage=2.0 if due_type == "due_in_days" else None,
+            )
+        )
+    return records
+
+
 # Generated once at import time — stable for the lifetime of the process.
 CLIENT_RESOURCES: list[ClientResource] = _generate_client_resources()
 ACCOUNTING_CLIENTS: list[Client] = _generate_accounting_clients()
 ADDRESSEES: list[Addressee] = _generate_addressees()
 BANKS: list[Bank] = _generate_banks()
+FISCAL_YEARS: list[FiscalYear] = _generate_fiscal_years()
+COST_SYSTEMS: list[CostSystem] = _generate_cost_systems()
+COST_CENTERS: list[CostCenter] = _generate_cost_centers()
+CREDITORS: list[Creditor] = _generate_creditors()
+DEBITORS: list[Debitor] = _generate_debitors()
+GENERAL_LEDGER_ACCOUNTS: list[GeneralLedgerAccount] = _generate_general_ledger_accounts()
+ACCOUNTS_PAYABLE: list[OpenItem] = _generate_open_items(receivable=False)
+ACCOUNTS_PAYABLE_CONDENSE: list[OpenItem] = _generate_open_items(receivable=False)
+ACCOUNTS_RECEIVABLE_CONDENSE: list[OpenItem] = _generate_open_items(receivable=True)
+ACCOUNTING_SEQUENCES_PROCESSED: list[AccountingSequenceProcessed] = _generate_accounting_sequences_processed()
+ACCOUNTING_TRANSACTION_KEYS: list[AccountingTransactionKey] = _generate_accounting_transaction_keys()
+ASSETS_STOCKTAKINGS: list[AssetStocktaking] = _generate_asset_stocktakings()
+POSTING_PROPOSAL_RULES_INCOMING_INVOICES: list[PostingProposalRule] = _generate_posting_proposal_rules(
+    outgoing=False
+)
+POSTING_PROPOSAL_RULES_OUTGOING_INVOICES: list[PostingProposalRule] = _generate_posting_proposal_rules(
+    outgoing=True
+)
+TERMS_OF_PAYMENT: list[TermOfPayment] = _generate_terms_of_payment()

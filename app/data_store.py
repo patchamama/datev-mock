@@ -18,15 +18,59 @@ from typing import Any
 
 from app.fake_data import (
     ACCOUNTING_CLIENTS,
+    ACCOUNTING_SEQUENCES_PROCESSED,
+    ACCOUNTING_TRANSACTION_KEYS,
+    ACCOUNTS_PAYABLE,
+    ACCOUNTS_PAYABLE_CONDENSE,
+    ACCOUNTS_RECEIVABLE_CONDENSE,
     ADDRESSEES,
+    ASSETS_STOCKTAKINGS,
     BANKS,
     CLIENT_RESOURCES,
+    COST_CENTERS,
+    COST_SYSTEMS,
+    CREDITORS,
+    DEBITORS,
+    FISCAL_YEARS,
+    GENERAL_LEDGER_ACCOUNTS,
+    POSTING_PROPOSAL_RULES_INCOMING_INVOICES,
+    POSTING_PROPOSAL_RULES_OUTGOING_INVOICES,
+    TERMS_OF_PAYMENT,
     _generate_accounting_clients,
+    _generate_accounting_sequences_processed,
+    _generate_accounting_transaction_keys,
     _generate_addressees,
+    _generate_asset_stocktakings,
     _generate_banks,
     _generate_client_resources,
+    _generate_cost_centers,
+    _generate_cost_systems,
+    _generate_creditors,
+    _generate_debitors,
+    _generate_fiscal_years,
+    _generate_general_ledger_accounts,
+    _generate_open_items,
+    _generate_posting_proposal_rules,
+    _generate_terms_of_payment,
 )
-from app.models import Addressee, Bank, Client, ClientResource
+from app.models import (
+    AccountingSequenceProcessed,
+    AccountingTransactionKey,
+    Addressee,
+    AssetStocktaking,
+    Bank,
+    Client,
+    ClientResource,
+    CostCenter,
+    CostSystem,
+    Creditor,
+    Debitor,
+    FiscalYear,
+    GeneralLedgerAccount,
+    OpenItem,
+    PostingProposalRule,
+    TermOfPayment,
+)
 
 
 def _fresh_id() -> str:
@@ -37,6 +81,25 @@ _master_data: list[ClientResource] = list(CLIENT_RESOURCES)
 _accounting_clients: list[Client] = list(ACCOUNTING_CLIENTS)
 _addressees: list[Addressee] = list(ADDRESSEES)
 _banks: list[Bank] = list(BANKS)
+_fiscal_years: list[FiscalYear] = list(FISCAL_YEARS)
+_cost_systems: list[CostSystem] = list(COST_SYSTEMS)
+_cost_centers: list[CostCenter] = list(COST_CENTERS)
+_creditors: list[Creditor] = list(CREDITORS)
+_debitors: list[Debitor] = list(DEBITORS)
+_general_ledger_accounts: list[GeneralLedgerAccount] = list(GENERAL_LEDGER_ACCOUNTS)
+_accounts_payable: list[OpenItem] = list(ACCOUNTS_PAYABLE)
+_accounts_payable_condense: list[OpenItem] = list(ACCOUNTS_PAYABLE_CONDENSE)
+_accounts_receivable_condense: list[OpenItem] = list(ACCOUNTS_RECEIVABLE_CONDENSE)
+_accounting_sequences_processed: list[AccountingSequenceProcessed] = list(ACCOUNTING_SEQUENCES_PROCESSED)
+_accounting_transaction_keys: list[AccountingTransactionKey] = list(ACCOUNTING_TRANSACTION_KEYS)
+_assets_stocktakings: list[AssetStocktaking] = list(ASSETS_STOCKTAKINGS)
+_posting_proposal_rules_incoming_invoices: list[PostingProposalRule] = list(
+    POSTING_PROPOSAL_RULES_INCOMING_INVOICES
+)
+_posting_proposal_rules_outgoing_invoices: list[PostingProposalRule] = list(
+    POSTING_PROPOSAL_RULES_OUTGOING_INVOICES
+)
+_terms_of_payment: list[TermOfPayment] = list(TERMS_OF_PAYMENT)
 
 
 # --- master-data ---
@@ -115,6 +178,81 @@ def list_banks() -> list[Bank]:
     return list(_banks)
 
 
+# --- accounting extension (read-only, Phase B batch B1 of the
+# extended-endpoints epic) ---
+#
+# Per the epic's cross-phase "no path-param filtering" decision, every one
+# of these always returns the same fixed fake dataset regardless of the
+# client_id/fiscal_year_id/cost_system_id in the URL — these listers accept
+# no arguments on purpose.
+
+
+def list_fiscal_years() -> list[FiscalYear]:
+    return list(_fiscal_years)
+
+
+def list_cost_systems() -> list[CostSystem]:
+    return list(_cost_systems)
+
+
+def list_cost_centers() -> list[CostCenter]:
+    return list(_cost_centers)
+
+
+def list_creditors() -> list[Creditor]:
+    return list(_creditors)
+
+
+def list_debitors() -> list[Debitor]:
+    return list(_debitors)
+
+
+def list_general_ledger_accounts() -> list[GeneralLedgerAccount]:
+    return list(_general_ledger_accounts)
+
+
+# --- accounting extension (read-only, Phase B batch B2 of the
+# extended-endpoints epic) ---
+#
+# Same "no path-param filtering" convention as batch B1's listers above.
+
+
+def list_accounts_payable() -> list[OpenItem]:
+    return list(_accounts_payable)
+
+
+def list_accounts_payable_condense() -> list[OpenItem]:
+    return list(_accounts_payable_condense)
+
+
+def list_accounts_receivable_condense() -> list[OpenItem]:
+    return list(_accounts_receivable_condense)
+
+
+def list_accounting_sequences_processed() -> list[AccountingSequenceProcessed]:
+    return list(_accounting_sequences_processed)
+
+
+def list_accounting_transaction_keys() -> list[AccountingTransactionKey]:
+    return list(_accounting_transaction_keys)
+
+
+def list_assets_stocktakings() -> list[AssetStocktaking]:
+    return list(_assets_stocktakings)
+
+
+def list_posting_proposal_rules_incoming_invoices() -> list[PostingProposalRule]:
+    return list(_posting_proposal_rules_incoming_invoices)
+
+
+def list_posting_proposal_rules_outgoing_invoices() -> list[PostingProposalRule]:
+    return list(_posting_proposal_rules_outgoing_invoices)
+
+
+def list_terms_of_payment() -> list[TermOfPayment]:
+    return list(_terms_of_payment)
+
+
 # --- reset ---
 
 
@@ -124,3 +262,18 @@ def reset() -> None:
     _accounting_clients[:] = _generate_accounting_clients()
     _addressees[:] = _generate_addressees()
     _banks[:] = _generate_banks()
+    _fiscal_years[:] = _generate_fiscal_years()
+    _cost_systems[:] = _generate_cost_systems()
+    _cost_centers[:] = _generate_cost_centers()
+    _creditors[:] = _generate_creditors()
+    _debitors[:] = _generate_debitors()
+    _general_ledger_accounts[:] = _generate_general_ledger_accounts()
+    _accounts_payable[:] = _generate_open_items(receivable=False)
+    _accounts_payable_condense[:] = _generate_open_items(receivable=False)
+    _accounts_receivable_condense[:] = _generate_open_items(receivable=True)
+    _accounting_sequences_processed[:] = _generate_accounting_sequences_processed()
+    _accounting_transaction_keys[:] = _generate_accounting_transaction_keys()
+    _assets_stocktakings[:] = _generate_asset_stocktakings()
+    _posting_proposal_rules_incoming_invoices[:] = _generate_posting_proposal_rules(outgoing=False)
+    _posting_proposal_rules_outgoing_invoices[:] = _generate_posting_proposal_rules(outgoing=True)
+    _terms_of_payment[:] = _generate_terms_of_payment()
