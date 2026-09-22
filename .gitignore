@@ -5,6 +5,7 @@ __pycache__/
 *.pyo
 certs/*.pem
 .pytest_cache/
+settings.json
 
 # Contains sensitive real DATEV data captured from a live environment — never publish
 examples/

@@ -1,0 +1,282 @@
+"""RED-phase tests for the `/admin` HTML page and `/admin/api/*` JSON
+endpoints (`app/routers/admin.py`, mounted in `app/main.py`).
+
+`app/config.py` does not exist yet (imported below), and neither does
+`app/routers/admin.py` nor its mount point in `app/main.py`; this file is
+expected to fail on collection with `ModuleNotFoundError` until S1/S2/S3
+(GREEN phase) implement them. See `odd/tasks/datev-mock-settings.md` for the
+planned contract this test file is designing.
+
+## Test isolation
+
+Unlike the other test modules, these tests mutate shared, process-lifetime
+state (the live settings and the in-memory data store), so a **local**,
+module-scoped autouse fixture resets both before/after every test:
+  - `app.config.SETTINGS_PATH` is monkeypatched to a fresh `tmp_path` file
+    per test, so `PUT /admin/api/settings` never touches the real project's
+    settings file, and each test starts from the documented defaults
+    (port 58452, format "xml") because the fresh tmp file never exists yet.
+  - `POST /admin/api/reset` is called to restore both fake-data lists to
+    their original generated cardinality before (and after) every test.
+
+This deliberately does **not** touch `tests/conftest.py`. An eager
+module-level `import app.config` / `import app.data_store` there would
+break collection for *every* other test file (`test_accounting.py`,
+`test_master_data.py`, `test_diagnostics.py`, `test_accounting_json.py`)
+during this RED phase, not just this one — conftest.py is imported before
+any test module in the session. Keeping the isolation fixture local to this
+file keeps the blast radius of the still-missing modules contained to this
+file's own (expected) collection failure, exactly as instructed: "Do NOT
+modify tests/test_accounting.py, tests/test_accounting_json.py,
+tests/test_diagnostics.py, or tests/test_master_data.py."
+
+## Contract under test (settled here, for the GREEN implementer)
+
+  - `GET /admin` — 200, `text/html` page (markup itself not asserted).
+  - `GET /admin/api/settings` — 200, JSON `{"port": int,
+    "default_accounting_format": str}`.
+  - `PUT /admin/api/settings` — body requires BOTH fields (full replace, not
+    a partial patch): `{"port": int, "default_accounting_format": str}`.
+    Response is 200 with the new settings plus a `"restart_required": bool`
+    field, true iff the submitted `port` differs from the port that was
+    live *before* this call. `default_accounting_format` changes always
+    take effect immediately (`restart_required` reflects the port only).
+    An invalid `port` (outside 1-65535) or `default_accounting_format`
+    (anything other than "xml"/"json") is rejected with a 4xx status and
+    leaves settings unchanged.
+  - `GET/POST/PUT/DELETE /admin/api/clients/master-data[/{id}]` and
+    `GET/POST/PUT/DELETE /admin/api/clients/accounting[/{id}]` — JSON CRUD
+    over `app.data_store`. POST returns 200 or 201 with the created record
+    (including a fresh, server-generated `"Id"`). PUT on an unknown id
+    returns 404. DELETE removes the record (unknown-id DELETE behavior is
+    intentionally left unasserted here — `app.data_store.delete_*` is a
+    clean no-op per `tests/test_data_store.py`, so the router is free to
+    mirror that as a 200 no-op rather than inventing a 404 this task never
+    required).
+  - `POST /admin/api/reset` — 200, restores both datasets to their original
+    generated cardinality (18 master-data / 8 accounting).
+"""
+from __future__ import annotations
+
+import pytest
+
+from app import config  # noqa: F401  -- RED: app/config.py does not exist yet
+
+ADMIN_PAGE = "/admin"
+SETTINGS_ENDPOINT = "/admin/api/settings"
+MASTER_DATA_ENDPOINT = "/admin/api/clients/master-data"
+ACCOUNTING_ENDPOINT = "/admin/api/clients/accounting"
+RESET_ENDPOINT = "/admin/api/reset"
+ACCOUNTING_CLIENTS_ENDPOINT = "/datev/api/accounting/v1/clients"
+
+DEFAULT_PORT = 58452
+DEFAULT_FORMAT = "xml"
+MASTER_DATA_COUNT = 18
+ACCOUNTING_COUNT = 8
+
+
+@pytest.fixture(autouse=True)
+def _isolated_admin_state(tmp_path, monkeypatch, client):
+    monkeypatch.setattr(config, "SETTINGS_PATH", tmp_path / "settings.json")
+    client.post(RESET_ENDPOINT)
+    yield
+    client.post(RESET_ENDPOINT)
+
+
+# --- GET /admin ---
+
+
+def test_admin_page_returns_200_html(client):
+    response = client.get(ADMIN_PAGE)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+
+
+# --- settings ---
+
+
+def test_get_settings_returns_defaults(client):
+    response = client.get(SETTINGS_ENDPOINT)
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["port"] == DEFAULT_PORT
+    assert body["default_accounting_format"] == DEFAULT_FORMAT
+
+
+def test_put_settings_changing_port_signals_restart_required(client):
+    response = client.put(
+        SETTINGS_ENDPOINT, json={"port": 9999, "default_accounting_format": DEFAULT_FORMAT}
+    )
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["port"] == 9999
+    assert body["restart_required"] is True
+
+
+def test_put_settings_changing_format_takes_effect_immediately(client):
+    response = client.put(
+        SETTINGS_ENDPOINT, json={"port": DEFAULT_PORT, "default_accounting_format": "json"}
+    )
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["default_accounting_format"] == "json"
+    assert body["restart_required"] is False
+
+    # Ambiguous/no Accept header must now resolve to the newly-set default.
+    accounting_response = client.get(ACCOUNTING_CLIENTS_ENDPOINT)
+    assert accounting_response.headers["content-type"].startswith("application/json")
+
+
+def test_put_settings_format_only_change_does_not_flag_restart(client):
+    # Change port once, then only the format in a second call: the second
+    # call's restart_required must reflect that this specific call's port
+    # (9999) is unchanged from what's already live, not "was ever changed".
+    client.put(SETTINGS_ENDPOINT, json={"port": 9999, "default_accounting_format": DEFAULT_FORMAT})
+
+    response = client.put(SETTINGS_ENDPOINT, json={"port": 9999, "default_accounting_format": "json"})
+
+    assert response.json()["restart_required"] is False
+
+
+def test_put_settings_invalid_port_is_rejected_and_does_not_change_state(client):
+    response = client.put(
+        SETTINGS_ENDPOINT, json={"port": 0, "default_accounting_format": DEFAULT_FORMAT}
+    )
+    assert 400 <= response.status_code < 500
+
+    unchanged = client.get(SETTINGS_ENDPOINT).json()
+    assert unchanged["port"] == DEFAULT_PORT
+
+
+def test_put_settings_invalid_format_is_rejected_and_does_not_change_state(client):
+    response = client.put(
+        SETTINGS_ENDPOINT, json={"port": DEFAULT_PORT, "default_accounting_format": "yaml"}
+    )
+    assert 400 <= response.status_code < 500
+
+    unchanged = client.get(SETTINGS_ENDPOINT).json()
+    assert unchanged["default_accounting_format"] == DEFAULT_FORMAT
+
+
+# --- master-data CRUD ---
+
+
+def test_get_master_data_returns_current_list(client):
+    response = client.get(MASTER_DATA_ENDPOINT)
+    assert response.status_code == 200
+
+    records = response.json()
+    assert isinstance(records, list)
+    assert len(records) == MASTER_DATA_COUNT
+    assert "Id" in records[0] and "Name" in records[0]
+
+
+def test_post_master_data_creates_record_with_generated_id(client):
+    payload = {"Name": "Testfirma GmbH", "Number": 9999, "Status": "active", "Type": "legal_person"}
+
+    response = client.post(MASTER_DATA_ENDPOINT, json=payload)
+    assert response.status_code in (200, 201)
+
+    created = response.json()
+    assert created["Id"]
+    assert created["Name"] == "Testfirma GmbH"
+
+    listing = client.get(MASTER_DATA_ENDPOINT).json()
+    assert any(r["Id"] == created["Id"] for r in listing)
+    assert len(listing) == MASTER_DATA_COUNT + 1
+
+
+def test_put_master_data_updates_existing_record(client):
+    existing = client.get(MASTER_DATA_ENDPOINT).json()[0]
+
+    response = client.put(f"{MASTER_DATA_ENDPOINT}/{existing['Id']}", json={"Name": "Renamed GmbH"})
+    assert response.status_code == 200
+    assert response.json()["Name"] == "Renamed GmbH"
+
+
+def test_put_master_data_unknown_id_returns_404(client):
+    response = client.put(f"{MASTER_DATA_ENDPOINT}/does-not-exist", json={"Name": "X"})
+    assert response.status_code == 404
+
+
+def test_delete_master_data_removes_record(client):
+    existing = client.get(MASTER_DATA_ENDPOINT).json()[0]
+
+    response = client.delete(f"{MASTER_DATA_ENDPOINT}/{existing['Id']}")
+    assert response.status_code == 200
+
+    listing = client.get(MASTER_DATA_ENDPOINT).json()
+    assert all(r["Id"] != existing["Id"] for r in listing)
+    assert len(listing) == MASTER_DATA_COUNT - 1
+
+
+# --- accounting CRUD ---
+
+
+def test_get_accounting_clients_admin_returns_current_list(client):
+    response = client.get(ACCOUNTING_ENDPOINT)
+    assert response.status_code == 200
+
+    records = response.json()
+    assert isinstance(records, list)
+    assert len(records) == ACCOUNTING_COUNT
+    assert "Id" in records[0] and "Name" in records[0]
+
+
+def test_post_accounting_client_creates_record_with_generated_id(client):
+    payload = {"Name": "Testkunde AG", "Number": 88888}
+
+    response = client.post(ACCOUNTING_ENDPOINT, json=payload)
+    assert response.status_code in (200, 201)
+
+    created = response.json()
+    assert created["Id"]
+    assert created["Name"] == "Testkunde AG"
+
+    listing = client.get(ACCOUNTING_ENDPOINT).json()
+    assert any(r["Id"] == created["Id"] for r in listing)
+    assert len(listing) == ACCOUNTING_COUNT + 1
+
+
+def test_put_accounting_client_updates_existing_record(client):
+    existing = client.get(ACCOUNTING_ENDPOINT).json()[0]
+
+    response = client.put(f"{ACCOUNTING_ENDPOINT}/{existing['Id']}", json={"Name": "Renamed AG"})
+    assert response.status_code == 200
+    assert response.json()["Name"] == "Renamed AG"
+
+
+def test_put_accounting_client_unknown_id_returns_404(client):
+    response = client.put(f"{ACCOUNTING_ENDPOINT}/does-not-exist", json={"Name": "X"})
+    assert response.status_code == 404
+
+
+def test_delete_accounting_client_removes_record(client):
+    existing = client.get(ACCOUNTING_ENDPOINT).json()[0]
+
+    response = client.delete(f"{ACCOUNTING_ENDPOINT}/{existing['Id']}")
+    assert response.status_code == 200
+
+    listing = client.get(ACCOUNTING_ENDPOINT).json()
+    assert all(r["Id"] != existing["Id"] for r in listing)
+    assert len(listing) == ACCOUNTING_COUNT - 1
+
+
+# --- reset ---
+
+
+def test_reset_restores_both_datasets_to_original_cardinality(client):
+    client.post(
+        MASTER_DATA_ENDPOINT,
+        json={"Name": "Extra", "Number": 1, "Status": "active", "Type": "legal_person"},
+    )
+    client.post(ACCOUNTING_ENDPOINT, json={"Name": "Extra", "Number": 1})
+
+    response = client.post(RESET_ENDPOINT)
+    assert response.status_code == 200
+
+    assert len(client.get(MASTER_DATA_ENDPOINT).json()) == MASTER_DATA_COUNT
+    assert len(client.get(ACCOUNTING_ENDPOINT).json()) == ACCOUNTING_COUNT

@@ -12,11 +12,27 @@ official developer portal where the two disagree (see
 
 ## Status
 
-**GREEN — implemented and passing.** All 32 tests pass
+**GREEN — implemented and passing.** All 77 tests pass
 (`.venv\Scripts\python -m pytest tests/ -v`), and the server has been
-verified live over real HTTPS on port 58452 (all 3 endpoints + Swagger UI).
-See [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) for the full task
-breakdown, decisions, and progress log.
+verified live over real HTTPS on port 58452 (all 3 mocked endpoints, the
+admin UI, and Swagger UI). See
+[`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (base API) and
+[`odd/tasks/datev-mock-settings.md`](odd/tasks/datev-mock-settings.md)
+(settings/admin UI) for the full task breakdowns, decisions, and progress
+logs.
+
+## Quick start
+
+No Python installed? These scripts bootstrap a project-local Python (system
+Python if available, otherwise a portable download into this folder — no
+system-wide install, no admin rights), install dependencies, generate the
+HTTPS cert, and start the server:
+
+- Windows: `start.bat`
+- Linux/macOS: `./start.sh`
+
+Then open `https://127.0.0.1:58452/admin` (accept the self-signed cert
+warning once) or `https://127.0.0.1:58452/docs` for Swagger.
 
 ## Endpoints mocked
 
@@ -60,6 +76,27 @@ explicitly out of scope for now.
 
 Full write-up: [`odd/tasks/datev-mock.md` → "Decisions"](odd/tasks/datev-mock.md#decisions).
 
+### Settings & admin UI
+
+`https://127.0.0.1:58452/admin` — a simple in-browser page to:
+
+- Change the **port** and the **default response format** for
+  `accounting/v1/clients` (`xml`/`json`). The format change applies
+  immediately (used whenever a request's `Accept` header doesn't explicitly
+  ask for one or the other — an explicit `Accept: application/xml` or
+  `Accept: application/json` always wins regardless of this setting). The
+  port change is persisted but only takes effect on the **next restart** —
+  a running server can't rebind its own port live.
+- **View, add, edit, and delete** the mock's fictitious master-data and
+  accounting client records directly, plus reset both lists back to their
+  generated defaults. Edits are in-memory for the life of the process —
+  they're gone on restart (by design; only settings persist to disk, in a
+  git-ignored `settings.json`).
+
+Same JSON API backing the page is also usable directly (`GET`/`PUT
+/admin/api/settings`, `GET/POST/PUT/DELETE /admin/api/clients/{master-data,accounting}[/{id}]`,
+`POST /admin/api/reset`) if you want to script dataset setup for a test run.
+
 ### Switching between mock and real DATEV
 
 The mock runs on the exact same port and path structure as the real local
@@ -78,15 +115,22 @@ DATEV-Mock/
 │   ├── routers/
 │   │   ├── diagnostics.py
 │   │   ├── master_data.py
-│   │   └── accounting.py
+│   │   ├── accounting.py
+│   │   └── admin.py         # settings + dataset CRUD + the /admin page
 │   ├── models.py
 │   ├── xml_serializers.py
-│   ├── json_serializers.py # accounting JSON path only
-│   └── fake_data.py
-├── certs/                  # self-signed cert generation (generate_cert.py; *.pem is git-ignored)
-├── examples/                # local-only, git-ignored — sensitive real captured samples
-├── odd/tasks/datev-mock.md # epic/task tracking, decisions, progress log
-├── tests/                   # full test suite — 32/32 passing
+│   ├── json_serializers.py  # accounting JSON path only
+│   ├── fake_data.py         # seeded generators
+│   ├── data_store.py        # mutable in-memory store the routers read from
+│   └── config.py            # Settings (port, default format), settings.json persistence
+├── certs/                   # self-signed cert generation (generate_cert.py; *.pem is git-ignored)
+├── examples/                 # local-only, git-ignored — sensitive real captured samples
+├── odd/tasks/
+│   ├── datev-mock.md          # base API: epic/task tracking, decisions, progress log
+│   └── datev-mock-settings.md # settings/admin UI: same, for that epic
+├── tests/                     # full test suite — 77/77 passing
+├── start.bat / start.sh       # bootstrap Python (portable if needed) + deps + run, one step
+├── settings.json              # git-ignored, created on first settings change
 └── requirements.txt
 ```
 
@@ -105,32 +149,40 @@ python -m venv .venv
 .venv\Scripts\python -m pytest tests/ -v
 ```
 
-All 32 tests pass.
+All 77 tests pass.
 
 ## Running the server
+
+Easiest: `start.bat` (Windows) / `./start.sh` (Linux/macOS) — see
+[Quick start](#quick-start) above. Manually:
 
 ```
 .venv\Scripts\python certs\generate_cert.py
 .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 58452 --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem
 ```
 
-Swagger UI: `https://127.0.0.1:58452/docs`. Verified live over real HTTPS,
-including the accounting endpoint's XML/JSON content negotiation and
-Swagger UI itself.
+Swagger UI: `https://127.0.0.1:58452/docs`. Admin/settings UI:
+`https://127.0.0.1:58452/admin`. Both verified live over real HTTPS,
+including the accounting endpoint's XML/JSON content negotiation.
 
 ## Tasks / Roadmap
 
-See [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) for the complete
-task list, decisions, and progress log. Summary — all complete:
+See [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (base API, 32
+tests) and [`odd/tasks/datev-mock-settings.md`](odd/tasks/datev-mock-settings.md)
+(settings/admin UI, 45 more tests) for the complete task lists, decisions,
+and progress logs. Both epics are complete:
 
-- [x] T0 — RED-phase test suite (32 tests across diagnostics, master-data,
-      accounting XML, accounting JSON)
-- [x] T1 — Project scaffold (`app/` package, self-signed cert generation)
-- [x] T2 — Data models (`ClientResource` 42 fields, accounting `Client`,
-      `Echo`)
-- [x] T3 — Synthetic fake data generation (no real values)
-- [x] T4 — XML serializers (all 3 shapes) + JSON serializer for accounting
-- [x] T5 — FastAPI routers + content negotiation for accounting
-- [x] T6 — This README
-- [x] T7 — GREEN verification (32/32 passing + live HTTPS/Swagger sanity
-      check on port 58452)
+**Base API:**
+- [x] T0–T7 — RED-phase tests → models → fake data → XML/JSON serializers →
+      routers → README → GREEN verification. See task doc for detail.
+
+**Settings & admin UI:**
+- [x] S0–S7 — RED-phase tests → `config.py` (port/format persistence) →
+      mutable data store → `/admin/api/*` CRUD → admin HTML page → live
+      content-negotiation wiring → this README section → GREEN
+      verification. See task doc for detail.
+
+A gap-analysis reference against a separate existing internal DATEV mock
+(19 additional endpoints across fiscal-years, cost-systems, creditors/
+debitors, general-ledger-accounts, DMS, addressees, banks, etc.) exists for
+future scope decisions but is explicitly out of scope for now.

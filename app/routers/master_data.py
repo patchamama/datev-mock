@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Response
 
-from app.fake_data import CLIENT_RESOURCES
+from app import data_store
 from app.xml_serializers import serialize_client_resources
 
 router = APIRouter(tags=["master-data"])
@@ -18,6 +18,6 @@ ENDPOINT = "/datev/api/master-data/v1/clients"
 )
 def get_clients() -> Response:
     return Response(
-        content=serialize_client_resources(CLIENT_RESOURCES),
+        content=serialize_client_resources(data_store.list_master_data()),
         media_type="application/xml",
     )
