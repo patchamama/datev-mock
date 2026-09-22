@@ -156,3 +156,54 @@ class Echo:
 
     echo_message: str
     id: str
+
+
+@dataclass
+class Addressee:
+    """Master-data `Addressee` — flat top-level fields only.
+
+    Real DATEV `Addressee` also carries `detail`/`addresses`/`communications`/
+    `bank_accounts`/`tax_offices`/`contact_persons`, but per the official spec
+    those are only included when the request uses `expand=...`; this mock
+    does not implement `expand`, so — consistent with real API behavior when
+    `expand` is absent — those nested collections are simply not modeled or
+    served here.
+
+    `type` (`natural_person`|`legal_person`) is a flat enum with parallel
+    sibling fields for each type (no real OpenAPI polymorphism), per the
+    compiled spec doc.
+    """
+
+    id: str
+    type: str
+    status: str
+    timestamp: str
+    eu_vat_id_country_code: Optional[str] = None
+    eu_vat_id_number: Optional[str] = None
+    current_short_name: Optional[str] = None
+    surrogate_name: Optional[str] = None
+    # natural_person-only (by convention/description, not schema-enforced)
+    date_of_birth: Optional[str] = None
+    etin: Optional[str] = None
+    firstname: Optional[str] = None
+    sex: Optional[str] = None
+    current_surname: Optional[str] = None
+    tax_identification_number: Optional[str] = None
+    # legal_person-only (by convention/description, not schema-enforced)
+    current_company_name: Optional[str] = None
+    date_of_foundation: Optional[str] = None
+    current_legal_form_id: Optional[str] = None
+
+
+@dataclass
+class Bank:
+    """Master-data `Bank` — full flat schema (small, no nesting)."""
+
+    id: str
+    bank_code: str
+    bic: str
+    city: str
+    country_code: str
+    name: str
+    standard: bool
+    timestamp: str

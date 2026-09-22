@@ -18,11 +18,15 @@ from typing import Any
 
 from app.fake_data import (
     ACCOUNTING_CLIENTS,
+    ADDRESSEES,
+    BANKS,
     CLIENT_RESOURCES,
     _generate_accounting_clients,
+    _generate_addressees,
+    _generate_banks,
     _generate_client_resources,
 )
-from app.models import Client, ClientResource
+from app.models import Addressee, Bank, Client, ClientResource
 
 
 def _fresh_id() -> str:
@@ -31,6 +35,8 @@ def _fresh_id() -> str:
 
 _master_data: list[ClientResource] = list(CLIENT_RESOURCES)
 _accounting_clients: list[Client] = list(ACCOUNTING_CLIENTS)
+_addressees: list[Addressee] = list(ADDRESSEES)
+_banks: list[Bank] = list(BANKS)
 
 
 # --- master-data ---
@@ -91,10 +97,30 @@ def delete_accounting_client(id: str) -> None:
     _accounting_clients[:] = [record for record in _accounting_clients if record.Id != id]
 
 
+# --- addressees / banks (read-only, Phase A of the extended-endpoints epic) ---
+
+
+def list_addressees() -> list[Addressee]:
+    return list(_addressees)
+
+
+def get_addressee(id: str) -> Addressee | None:
+    for record in _addressees:
+        if record.id == id:
+            return record
+    return None
+
+
+def list_banks() -> list[Bank]:
+    return list(_banks)
+
+
 # --- reset ---
 
 
 def reset() -> None:
-    """Restore both datasets together to a freshly generated dataset."""
+    """Restore all datasets together to a freshly generated dataset."""
     _master_data[:] = _generate_client_resources()
     _accounting_clients[:] = _generate_accounting_clients()
+    _addressees[:] = _generate_addressees()
+    _banks[:] = _generate_banks()

@@ -12,7 +12,7 @@ import random
 import uuid
 from datetime import datetime, timedelta
 
-from app.models import Client, ClientResource, CompanyData
+from app.models import Addressee, Bank, Client, ClientResource, CompanyData
 
 random.seed(42)
 
@@ -207,6 +207,137 @@ def _generate_accounting_clients(count: int = 8) -> list[Client]:
     return records
 
 
+# --- addressees / banks (Phase A of the extended-endpoints epic) ---
+
+# Fictitious legal-form ids (6 chars, DATEV `current_legal_form_id` shape),
+# invented — do not correspond to any real DATEV lookup value.
+_LEGAL_FORM_ID_POOL = ["GMBH01", "AG0001", "KG0001", "UG0001", "EV0000"]
+
+# Maps each _PERSON_NAME_POOL first name to its matching sex, so generated
+# natural_person records don't pair a name with a mismatched sex value.
+_FIRST_NAME_SEX = {
+    "Erika": "female",
+    "Jonas": "male",
+    "Mira": "female",
+    "Tobias": "male",
+    "Lena": "female",
+    "Felix": "male",
+    "Katrin": "female",
+    "Simon": "male",
+    "Anja": "female",
+    "David": "male",
+    "Nadine": "female",
+    "Paul": "male",
+    "Sabine": "female",
+    "Lukas": "male",
+    "Julia": "female",
+}
+
+
+def _split_person_name(full_name: str) -> tuple[str, str]:
+    firstname, _, surname = full_name.partition(" ")
+    return firstname, surname
+
+
+def _generate_addressees(count: int = 8) -> list[Addressee]:
+    """Generate a mixed natural_person/legal_person dataset.
+
+    Guarantees both types are present (indices 0/1 forced to opposite types,
+    the rest random) so the served list never vacuously satisfies the
+    "both types present" contract by chance alone.
+    """
+    records: list[Addressee] = []
+    org_names = random.sample(_ORG_NAME_POOL, k=min(count, len(_ORG_NAME_POOL)))
+    person_names = random.sample(_PERSON_NAME_POOL, k=min(count, len(_PERSON_NAME_POOL)))
+
+    for index in range(count):
+        if index == 0:
+            addressee_type = "natural_person"
+        elif index == 1:
+            addressee_type = "legal_person"
+        else:
+            addressee_type = random.choice(_CLIENT_TYPES)
+
+        timestamp = _random_timestamp()
+        eu_vat_country = "DE" if index % 3 == 0 else None
+
+        if addressee_type == "natural_person":
+            full_name = person_names[index % len(person_names)]
+            firstname, surname = _split_person_name(full_name)
+            records.append(
+                Addressee(
+                    id=_fresh_guid(),
+                    type=addressee_type,
+                    status=random.choice(_STATUS_WEIGHTED_POOL),
+                    timestamp=timestamp,
+                    eu_vat_id_country_code=eu_vat_country,
+                    eu_vat_id_number=f"DE{100000000 + index}" if eu_vat_country else None,
+                    current_short_name=firstname[:15],
+                    surrogate_name=f"{surname}, {firstname}"[:50],
+                    date_of_birth=_random_timestamp(1950, 2000)[:10],
+                    etin=f"MUSTER{index:02d}A{index % 10}B",
+                    firstname=firstname,
+                    sex=_FIRST_NAME_SEX.get(firstname, "diverse"),
+                    current_surname=surname,
+                    tax_identification_number=str(10000000000 + index),
+                )
+            )
+        else:
+            company_name = org_names[index % len(org_names)]
+            records.append(
+                Addressee(
+                    id=_fresh_guid(),
+                    type=addressee_type,
+                    status=random.choice(_STATUS_WEIGHTED_POOL),
+                    timestamp=timestamp,
+                    eu_vat_id_country_code=eu_vat_country,
+                    eu_vat_id_number=f"DE{200000000 + index}" if eu_vat_country else None,
+                    current_short_name=company_name.split(" ")[0][:15],
+                    surrogate_name=company_name[:50],
+                    current_company_name=company_name,
+                    date_of_foundation=_random_timestamp(1970, 2020)[:10],
+                    current_legal_form_id=_LEGAL_FORM_ID_POOL[index % len(_LEGAL_FORM_ID_POOL)],
+                )
+            )
+
+    return records
+
+
+# Fictitious bank pool — invented BIC/name/city combinations, none matching
+# any real German (or other) bank's actual identifiers.
+_BANK_POOL = [
+    {"name": "Musterbank Nord eG", "bic": "MUSTDE1XXX", "city": "Hamburg", "country_code": "DE"},
+    {"name": "Fiktivbank Süd AG", "bic": "FIKTDE2XXX", "city": "München", "country_code": "DE"},
+    {"name": "Beispielkasse West", "bic": "BEISDE3X", "city": "Köln", "country_code": "DE"},
+    {"name": "Probebank Ost eG", "bic": "PROBDE4XXX", "city": "Dresden", "country_code": "DE"},
+    {"name": "Testfeld Sparkasse", "bic": "TESTDE5X", "city": "Stuttgart", "country_code": "DE"},
+    {"name": "Musterland Bank AT", "bic": "MUSTAT2X", "city": "Wien", "country_code": "AT"},
+    {"name": "Fiktivinstitut PL", "bic": "FIKTPL22", "city": "Warszawa", "country_code": "PL"},
+    {"name": "Beispielbank CH", "bic": "BEISCH1X", "city": "Zürich", "country_code": "CH"},
+]
+
+
+def _generate_banks(count: int = 6) -> list[Bank]:
+    records: list[Bank] = []
+    pool = _BANK_POOL[: min(count, len(_BANK_POOL))]
+    for index, entry in enumerate(pool):
+        records.append(
+            Bank(
+                id=f"{index + 1:06d}",
+                bank_code=str(10000000 + index * 111)[: (8 if entry["country_code"] == "DE" else 5)],
+                bic=entry["bic"],
+                city=entry["city"],
+                country_code=entry["country_code"],
+                name=entry["name"],
+                standard=index % 3 != 0,
+                timestamp=_random_timestamp()[:10],
+            )
+        )
+    return records
+
+
 # Generated once at import time — stable for the lifetime of the process.
 CLIENT_RESOURCES: list[ClientResource] = _generate_client_resources()
 ACCOUNTING_CLIENTS: list[Client] = _generate_accounting_clients()
+ADDRESSEES: list[Addressee] = _generate_addressees()
+BANKS: list[Bank] = _generate_banks()
