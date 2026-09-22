@@ -6,10 +6,10 @@ See `odd/tasks/datev-mock-settings.md` for the planned contract this test
 file is designing.
 
 Cardinality: `app/fake_data.py` generates 18 `ClientResource` (master-data)
-records and 8 `Client` (accounting) records by default — confirmed by
+records and 100 `Client` (accounting) records by default — confirmed by
 reading `_generate_client_resources(count: int = 18)` and
-`_generate_accounting_clients(count: int = 8)`, and their module-level call
-sites (`CLIENT_RESOURCES = _generate_client_resources()`,
+`_generate_accounting_clients(count: int = 100)`, and their module-level
+call sites (`CLIENT_RESOURCES = _generate_client_resources()`,
 `ACCOUNTING_CLIENTS = _generate_accounting_clients()`), both called with no
 override.
 
@@ -38,7 +38,7 @@ import pytest
 from app import data_store
 
 MASTER_DATA_COUNT = 18
-ACCOUNTING_COUNT = 8
+ACCOUNTING_COUNT = 100
 
 
 @pytest.fixture(autouse=True)

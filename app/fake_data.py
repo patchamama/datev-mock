@@ -209,7 +209,7 @@ def _generate_client_resources(count: int = 18) -> list[ClientResource]:
     return records
 
 
-def _generate_accounting_clients(count: int = 8) -> list[Client]:
+def _generate_accounting_clients(count: int = 100) -> list[Client]:
     records: list[Client] = []
     names = random.sample(_ORG_NAME_POOL, k=min(count, len(_ORG_NAME_POOL)))
     while len(names) < count:

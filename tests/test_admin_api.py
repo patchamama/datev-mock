@@ -72,7 +72,7 @@ ACCOUNTING_CLIENTS_ENDPOINT = "/datev/api/accounting/v1/clients"
 DEFAULT_PORT = 58452
 DEFAULT_FORMAT = "xml"
 MASTER_DATA_COUNT = 18
-ACCOUNTING_COUNT = 8
+ACCOUNTING_COUNT = 100
 
 
 @pytest.fixture(autouse=True)
