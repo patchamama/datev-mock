@@ -79,29 +79,29 @@ New tests covering the JSON branch: `tests/test_accounting_json.py`.
   `tests/conftest.py`, `tests/test_diagnostics.py`, `tests/test_master_data.py`, `tests/test_accounting.py`, plus root `requirements.txt`. Tests are written against `app.main.app`, which does not exist yet — collection is expected to fail with `ModuleNotFoundError` (RED). No `app/` or `certs/` code was written in this task.
   Run with: `python -m pytest tests/ -v` (from `C:\Users\eloadmin\DATEV-Mock`; expected result right now: collection error on `from app.main import app`, which is correct RED).
 
-- [ ] **T1 — Scaffold project** *(blocked on user approval of T0's test suite)*
+- [x] **T1 — Scaffold project**
   `requirements.txt` (done in T0), `app/` package init, `certs/generate_cert.py` (self-signed cert generation via `cryptography`).
 
-- [ ] **T2 — `app/models.py`** *(blocked on approval)*
-  Dataclasses for `ClientResource` (41-field layout per plan — see note below), `Client` (accounting, 8 fields), `Echo`.
+- [x] **T2 — `app/models.py`**
+  Dataclasses for `ClientResource` (42-field layout, see note below), `Client` (accounting, 8 XML fields + JSON-only `company_data`), `Echo`.
 
-- [ ] **T3 — `app/fake_data.py`** *(blocked on approval)*
-  Seeded synthetic dataset generation, no real values. Must satisfy T0's cardinality assertions: ≥15 `ClientResource` records, ≥3 accounting `Client` records, unique sequential `Number` values, at least one record with `Note`/`RiskAssessment` left `i:nil="true"`.
-  **New (per "## Decisions" above):** at least one accounting `Client` record needs a populated `company_data.creditor_identifier` value available for the JSON branch (T0's `tests/test_accounting_json.py` asserts this), while others may leave it unset/`None` (JSON `null`/absent, mirroring the XML `i:nil="true"` records). No change to the XML shape or existing cardinality minimums.
+- [x] **T3 — `app/fake_data.py`**
+  Seeded synthetic dataset generation (`random.seed(42)`), no real values. Satisfies T0's cardinality assertions: 18 `ClientResource` records (≥15), 5 accounting `Client` records (≥3), unique `Number` values, at least one record with `Note`/`RiskAssessment` left `i:nil="true"`.
+  Per "## Decisions": the first accounting `Client` record carries a populated `company_data.creditor_identifier`; the rest leave `company_data` unset (`None` → JSON `null`). No change to the XML shape.
 
-- [ ] **T4 — `app/xml_serializers.py`** *(blocked on approval)*
-  Hand-built XML rendering (namespaces, `i:nil`, element order) for all 3 shapes. Must satisfy T0's structural assertions (root tags, namespaces, field presence, `i:nil` attribute behavior).
-  **New (per "## Decisions" above):** the accounting `/clients` endpoint also needs a JSON-serialization path for `Accept: application/json` requests, matching the documented DATEV shape (`id`, `name`, `number`-as-string, optional `company_data.creditor_identifier`). Keep `xml_serializers.py` XML-only; add a small, separate `app/json_serializers.py` (or fold the JSON building directly into the accounting router in T5, since the shape is a handful of plain dict fields with no namespace/nil machinery) — whichever stays simplest is fine, but keep XML and JSON building in clearly separate functions/modules so the XML path is untouched. Master Data and Diagnostics stay XML-only; no JSON path needed there.
+- [x] **T4 — `app/xml_serializers.py`** + **`app/json_serializers.py`**
+  Hand-built XML rendering via string templates (not `ElementTree` — its serializer cannot reproduce the real contract's per-field bare `xmlns=` namespace overrides without hoisting to `ns0`/`ns1` prefixes) for all 3 XML shapes. Satisfies T0's structural assertions (root tags, namespaces, field presence/order, `i:nil` attribute behavior).
+  Added separate `app/json_serializers.py` for the accounting JSON branch (`id`, `name`, `number`-as-string, optional `company_data.creditor_identifier`), keeping XML and JSON building in clearly separate modules. Master Data and Diagnostics stay XML-only.
 
-- [ ] **T5 — `app/routers/{diagnostics,master_data,accounting}.py` + `app/main.py`** *(blocked on approval)*
-  FastAPI app wiring, `Content-Type: application/xml` responses, Swagger-visible sample docs. Echo endpoint must generate a fresh `id` and timestamp per call (T0 asserts two calls differ).
-  **New (per "## Decisions" above):** the accounting router's `GET /datev/api/accounting/v1/clients` handler must do content negotiation on the same port (58452) — no second port/server binding. Read the `Accept` header: `application/json` → build the JSON shape (via T4's JSON path) and return `Content-Type: application/json`; `application/xml` or no explicit preference (current default) → keep the existing XML behavior, unchanged. Master Data and Diagnostics routers are unaffected (XML-only). OData-style query params (`select`, `filter`, `skip`, `top`, `expand`) are explicitly out of scope — do not implement.
+- [x] **T5 — `app/routers/{diagnostics,master_data,accounting}.py` + `app/main.py`**
+  FastAPI app wiring, `Content-Type: application/xml` responses, Swagger-visible docs. Echo endpoint generates a fresh `id` (uuid4) and timestamp per call.
+  Accounting router does content negotiation on the same port (58452): `Accept: application/json` → JSON branch, `Content-Type: application/json`; `application/xml` or no explicit preference → existing XML behavior. Master Data and Diagnostics routers unaffected. OData-style query params remain out of scope, not implemented.
 
-- [ ] **T6 — `README.md`** *(blocked on approval)*
+- [x] **T6 — `README.md`** *(already done, written earlier)*
   Run instructions, cert generation, mock-vs-real switch explanation.
 
-- [ ] **T7 — GREEN verification + manual sanity check** *(blocked on approval, depends on T1–T6)*
-  Run `python -m pytest tests/ -v` until all tests pass (GREEN). Then the plan's original manual verification: run server, hit all 3 endpoints via curl and Swagger UI, compare structure against `examples/*.xml`.
+- [x] **T7 — GREEN verification + manual sanity check**
+  `python -m pytest tests/ -v` → **32 passed** (all green, no test file modified). `certs/generate_cert.py` sanity-run confirmed: produces `certs/cert.pem` / `certs/key.pem` without error (both gitignored via existing `certs/*.pem` rule). Manual curl/Swagger walkthrough against a live `uvicorn` server was out of scope for this pass (TestClient covers behavior; not started per instructions).
 
 ## Note on field count discrepancy (found while writing T0)
 The task brief describing `ClientResource` said "exactly these 41 child elements" but the enumerated list that followed has **42** entries (verified by literal count). `tests/test_master_data.py` treats the enumerated field list as authoritative (not the "41" label) and asserts presence of all 42 named fields via `EXPECTED_FIELDS`, derived from the list rather than a hardcoded count. Flagged here for T2/T4 implementers and for the user to confirm against the real `examples/clients.xml` shape during GREEN.
@@ -116,3 +116,4 @@ The task brief describing `ClientResource` said "exactly these 41 child elements
 - Task file created 2026-09-22, before first source write.
 - 2026-09-22: T0 complete — RED-phase test suite written (`tests/conftest.py`, `tests/test_diagnostics.py`, `tests/test_master_data.py`, `tests/test_accounting.py`) plus `requirements.txt`. No `app/` or `certs/` code exists yet; suite fails on collection (`ModuleNotFoundError: No module named 'app'`), which is the correct RED state. Next step: user approval, then T1–T6 (GREEN implementation).
 - 2026-09-22: Real-vs-docs conflict found and resolved with the user — see "## Decisions" above. Decision: accounting `/clients` supports both XML (existing) and JSON (new, per official docs) via content negotiation on port 58452, no second port. Added `tests/test_accounting_json.py` (still RED — fails on collection like the rest of the suite, no `app/` code written). Updated T3/T4/T5 task descriptions accordingly. Master Data, Diagnostics, and OData query params remain explicitly out of scope.
+- 2026-09-22: GREEN phase complete. Implemented `app/` (models, fake_data, xml_serializers, json_serializers, routers/{diagnostics,master_data,accounting}, main) and `certs/generate_cert.py`, without editing any test file. `python -m pytest tests/ -v` → `32 passed, 2 warnings in 0.42s` (first clean run, no fixes needed after initial implementation). Cert generator sanity-run confirmed working. T1–T5 and T7 checked off; T6 (README) was already done earlier. Next step: optional REFACTOR pass / user review, then git commit (not done by this task — handled separately per instructions).
