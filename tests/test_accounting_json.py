@@ -25,9 +25,12 @@ second port binding. `Accept: application/json` returns this JSON shape;
 `Accept: application/xml` (or no explicit preference) keeps the existing XML
 shape asserted in `test_accounting.py`, unchanged.
 
-Note the deliberate discrepancy: the documented JSON `number` field is a
-*string* (`"47011"`), unlike the XML `Number` field, which is int-like text.
-Do not coerce — this test asserts `number` is a `str`.
+Correction (epic `datev-mock-real-data-reconciliation`, W1, real evidence
+from a live installation capture, `examples/accounting-clients.xml`, JSON
+content despite the filename): the real `number` field is a plain
+**integer**, not a string. The official docs' `"number": "47011"` example
+this project originally followed appears stale/inaccurate. `number` is
+asserted as an `int` below, not a `str`.
 """
 from __future__ import annotations
 
@@ -75,18 +78,23 @@ def test_accounting_json_record_has_id_name_number(client):
 
         assert isinstance(record["name"], str) and record["name"].strip()
 
-        # Deliberate discrepancy vs the XML `Number` (int-like text): the
-        # documented JSON shape has `number` as a string, e.g. "47011".
-        assert isinstance(record["number"], str)
+        # Real evidence (`examples/accounting-clients.xml`) shows `number` is
+        # a real integer, not the string the stale docs example implied.
+        assert isinstance(record["number"], int)
 
 
-def test_accounting_json_number_is_not_coerced_to_int(client):
-    """Guards against silently "fixing" the documented string quirk."""
+def test_accounting_json_number_is_a_real_int_not_a_string(client):
+    """Corrected per real evidence (epic `datev-mock-real-data-reconciliation`,
+    W1): this test previously guarded the opposite, now-known-wrong behavior
+    (asserting `number` was NOT an int, i.e. that it stayed a string). A real
+    installation capture (`examples/accounting-clients.xml`) shows `number`
+    as a real JSON integer, so this now asserts the corrected behavior."""
     records = _get_json_records(client)
     assert records, "no client records returned"
 
     for record in records:
-        assert not isinstance(record["number"], int)
+        assert isinstance(record["number"], int)
+        assert not isinstance(record["number"], str)
 
 
 def test_accounting_json_at_least_one_record_has_populated_company_data(client):

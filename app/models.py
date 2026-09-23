@@ -449,8 +449,12 @@ class OpenItem:
     """Accounting `accounts-payable` (endpoint #6) / `accounts-payable/condense`
     (#2) / `accounts-receivable/condense` (#3) — the three share a single
     schema per the compiled spec doc; condense is a server-side aggregation,
-    not a different shape. `dunning_level`/`dunning_date1/2/3` are
-    receivable-only fields (absent from `accounts-payable`)."""
+    not a different shape. `dunning_date1/2/3` are receivable-only fields
+    (absent from `accounts-payable`). `has_dunning_block` is real (per
+    `examples/accounts-receivable-condense.xml` and `examples/condense.xml`,
+    both JSON content) and present on **both** payable and receivable
+    records — replaces this project's earlier invented `dunning_level`
+    field, which real evidence confirmed does not exist."""
 
     id: str
     account_number: int
@@ -470,12 +474,12 @@ class OpenItem:
     date: Optional[str] = None
     due_date: Optional[str] = None
     due_days: Optional[int] = None
+    has_dunning_block: bool = False
     is_condensed: Optional[bool] = None
     posting_description: Optional[str] = None
     tax_rate: Optional[float] = None
     term_of_payment_id: Optional[int] = None
     # receivable-only (see class docstring)
-    dunning_level: Optional[str] = None
     dunning_date1: Optional[str] = None
     dunning_date2: Optional[str] = None
     dunning_date3: Optional[str] = None

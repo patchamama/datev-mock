@@ -9,7 +9,11 @@ Covers 3 of the 15 target endpoints:
     server-side aggregation, not a different shape)
   - `GET .../fiscal-years/{fiscal-year-id}/accounts-receivable/condense`
     (compiled spec doc #3 — same base fields as accounts-payable plus
-    `dunning_level`/`dunning_date1/2/3`, no equivalent in accounts-payable)
+    `dunning_date1/2/3`, no equivalent in accounts-payable. Originally also
+    listed an invented `dunning_level` field here; corrected in epic
+    `datev-mock-real-data-reconciliation`, W1 — real evidence showed no such
+    field exists, replaced by `has_dunning_block`, present on both
+    accounts-payable and accounts-receivable/condense.)
 
 Ground truth: the compiled OpenAPI reference written to the session
 scratchpad's `datev-endpoint-specs.md`, plus the cross-phase decisions in
@@ -175,17 +179,19 @@ def test_accounts_receivable_condense_returns_200_json_array_with_minimum_record
 
 
 def test_accounts_receivable_condense_record_has_core_fields(client):
-    """Shares accounts-payable's core fields, plus receivable-only
-    `dunning_level` — a RED-imposed fake-data contract requiring it
-    populated on every record (the OpenAPI schema itself doesn't mark it
-    required), mirroring Phase A's precedent for addressee type-specific
-    fields."""
+    """Corrected per real evidence (epic `datev-mock-real-data-reconciliation`,
+    W1): this test previously asserted this project's own invented
+    `dunning_level` field (a RED-imposed fake-data contract, not
+    spec-derived). Real captured evidence
+    (`examples/accounts-receivable-condense.xml`, JSON content) shows
+    `dunning_level` does not exist — the real, analogous field is
+    `has_dunning_block` (boolean), present on every record."""
     records = _get(client, ACCOUNTS_RECEIVABLE_CONDENSE_ENDPOINT)
     assert records, "no condensed accounts-receivable records returned"
 
     for record in records:
         _assert_open_item_core_fields(record)
-        assert isinstance(record.get("dunning_level"), str) and record["dunning_level"].strip()
+        assert isinstance(record.get("has_dunning_block"), bool)
 
 
 def test_accounts_receivable_condense_ignores_path_param_values(client):

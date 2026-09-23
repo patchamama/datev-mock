@@ -74,8 +74,11 @@ _ACCOUNTING_REASON_VALUES = {
     "for_calculation",
 }
 _STOCKTAKING_ACCOUNTING_REASON_VALUES = {50, 30, 40, 64, 11, 12}
-_MAIN_FUNCTION_VALUES = {1, 2, 3, 4, 5, 6, 7}
-_MAIN_FUNCTION_NUMBER_VALUES = {10, 11, 12, 20, 21, 25, 90, 91, 98}
+# `0` added per real evidence (epic `datev-mock-real-data-reconciliation`,
+# W1, `examples/general-ledger-accounts.xml`) — a real observed value for
+# both fields, not covered by the original 1-based ranges.
+_MAIN_FUNCTION_VALUES = {0, 1, 2, 3, 4, 5, 6, 7}
+_MAIN_FUNCTION_NUMBER_VALUES = {0, 10, 11, 12, 20, 21, 25, 90, 91, 98}
 _ORIGIN_OF_POSTING_DESCRIPTION_INCOMING_VALUES = {
     "own_input",
     "posting_description",

@@ -12,8 +12,11 @@ from app.models import Client
 def serialize_clients_json(records: list[Client]) -> list[dict]:
     """Render accounting clients per the documented DATEV JSON shape.
 
-    `number` is deliberately a string (matching the documented example,
-    `"number": "47011"`), unlike the XML `Number`, which is int-like text.
+    `number` is a real integer, matching real captured evidence (a live
+    installation capture in `examples/accounting-clients.xml`, JSON content
+    despite the filename). The official docs' example, `"number": "47011"`
+    (a string), was based on stale/inaccurate documentation and is not what
+    a real installation actually returns — do not coerce to `str`.
     `company_data` is `null` for records without a populated creditor
     identifier, and an object with `creditor_identifier` for the ones that
     have one.
@@ -23,7 +26,7 @@ def serialize_clients_json(records: list[Client]) -> list[dict]:
         entry: dict = {
             "id": record.Id,
             "name": record.Name,
-            "number": str(record.Number),
+            "number": record.Number,
             "company_data": (
                 {"creditor_identifier": record.company_data.creditor_identifier}
                 if record.company_data is not None

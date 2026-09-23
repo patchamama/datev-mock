@@ -14,11 +14,13 @@ scratchpad's `datev-endpoint-specs.md`, plus the cross-phase decisions in
   tested explicitly below, not just documented.
 - `creditor`/`debitor` use the exact same "no real OpenAPI polymorphism"
   pattern already established for `Addressee` in Phase A: a flat
-  `legal_entity_type` enum (`not_specified`/`natural_person`/`legal_person`)
-  plus co-located, optional `natural_person`/`legal_person`/
-  `not_specified_person` sibling objects, gated only by description text.
-  This suite mirrors Phase A's "both types present, type-specific fields
-  populated" test pattern for that same reason.
+  `legal_entity_type` enum (`not_specified`/`natural_person`/`legal_person`).
+  Correction (epic `datev-mock-real-data-reconciliation`, W1, real evidence
+  from `examples/creditors.xml`): the co-located `natural_person`/
+  `legal_person`/`not_specified_person` sibling objects this project
+  originally invented never appear in the observed real default (non-
+  `expand`) response — they are deliberately left unpopulated (`None`) now,
+  not "gated only by description text" as originally assumed.
 - `debitor` is structurally identical to `creditor` except for a richer
   `accounting_information` sub-schema (dunning/credit-limit/direct-debit
   fields) — this suite does not re-assert every one of debitor's ~30 extra
@@ -99,27 +101,34 @@ def test_creditor_dataset_contains_both_natural_and_legal_person_types(client):
     )
 
 
-def test_natural_person_creditors_have_representative_fields(client):
+def test_natural_person_creditors_do_not_populate_nested_natural_person(client):
+    """Corrected per real evidence (epic `datev-mock-real-data-reconciliation`,
+    W1): this test previously asserted a populated `natural_person` nested
+    sub-object, which this project invented without evidence. Real captured
+    evidence (`examples/creditors.xml`) shows the observed real record never
+    carries `natural_person` at the top level of the default (non-`expand`)
+    response, so it must be absent (or `None`), not populated."""
     records = _get(client, CREDITORS_ENDPOINT)
     natural_person_records = [r for r in records if r.get("legal_entity_type") == "natural_person"]
     assert natural_person_records, "no natural_person creditor records returned"
 
     for record in natural_person_records:
-        natural_person = record.get("natural_person")
-        assert isinstance(natural_person, dict)
-        assert isinstance(natural_person.get("firstname"), str) and natural_person["firstname"].strip()
-        assert isinstance(natural_person.get("surname"), str) and natural_person["surname"].strip()
+        assert record.get("natural_person") is None
 
 
-def test_legal_person_creditors_have_representative_fields(client):
+def test_legal_person_creditors_do_not_populate_nested_legal_person(client):
+    """Corrected per real evidence (epic `datev-mock-real-data-reconciliation`,
+    W1): this test previously asserted a populated `legal_person` nested
+    sub-object, which this project invented without evidence. Real captured
+    evidence (`examples/creditors.xml`) shows the observed real record never
+    carries `legal_person` at the top level of the default (non-`expand`)
+    response, so it must be absent (or `None`), not populated."""
     records = _get(client, CREDITORS_ENDPOINT)
     legal_person_records = [r for r in records if r.get("legal_entity_type") == "legal_person"]
     assert legal_person_records, "no legal_person creditor records returned"
 
     for record in legal_person_records:
-        legal_person = record.get("legal_person")
-        assert isinstance(legal_person, dict)
-        assert isinstance(legal_person.get("legal_name"), str) and legal_person["legal_name"].strip()
+        assert record.get("legal_person") is None
 
 
 def test_creditors_ignores_path_param_values(client):

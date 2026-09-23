@@ -38,8 +38,6 @@ from app.models import (
     GeneralLedgerAccount,
     GeneralLedgerAccountMinimal,
     GeneralLedgerAccountTaxRate,
-    LegalPerson,
-    NaturalPerson,
     OpenItem,
     Period,
     PostingProposalInformation,
@@ -406,8 +404,11 @@ _ACCOUNT_SYSTEM_VALUES = [3, 4, 4, 4, 49]  # DATEV SKR chart-of-accounts numbers
 # Hardcoded lookup sets — the spec types these as plain integers, valid
 # values only documented in free-text description, no OpenAPI enum. See
 # `app/models.py::GeneralLedgerAccount` and the epic doc's explicit note.
-_MAIN_FUNCTION_VALUES = [1, 2, 3, 4, 5, 6, 7]
-_MAIN_FUNCTION_NUMBER_VALUES = [10, 11, 12, 20, 21, 25, 90, 91, 98]
+# `0` is included per real captured evidence
+# (`examples/general-ledger-accounts.xml`, JSON content) — a real observed
+# value for both fields, not just the spec's implied 1-based ranges.
+_MAIN_FUNCTION_VALUES = [0, 1, 2, 3, 4, 5, 6, 7]
+_MAIN_FUNCTION_NUMBER_VALUES = [0, 10, 11, 12, 20, 21, 25, 90, 91, 98]
 _ADDITIONAL_FUNCTION_VALUES = [0, 1, 3, 8]
 
 _LEGAL_ENTITY_TYPES = ["natural_person", "legal_person"]
@@ -517,16 +518,17 @@ def _generate_creditors(count: int = 4) -> list[Creditor]:
         business_partner_number = str(account_number)
         addressee_id = _fresh_guid()
 
-        natural_person = None
-        legal_person = None
+        # `natural_person`/`legal_person` are deliberately never populated
+        # here: real captured evidence (`examples/creditors.xml`) shows they
+        # never appear in the default (non-`expand`) response — this
+        # project's earlier population of them was invented, not observed.
+        # `short_name` is still derived from the same name pools.
         if entity_type == "natural_person":
             full_name = person_names[index % len(person_names)]
-            firstname, surname = _split_person_name(full_name)
-            natural_person = NaturalPerson(firstname=firstname, surname=surname)
+            _, surname = _split_person_name(full_name)
             short_name = f"{surname}"[:15]
         else:
             company_name = org_names[index % len(org_names)]
-            legal_person = LegalPerson(legal_name=company_name)
             short_name = company_name.split(" ")[0][:15]
 
         records.append(
@@ -537,8 +539,6 @@ def _generate_creditors(count: int = 4) -> list[Creditor]:
                 business_partner_number=business_partner_number,
                 legal_entity_type=entity_type,
                 short_name=short_name,
-                natural_person=natural_person,
-                legal_person=legal_person,
                 accounting_information=CreditorAccountingInformation(
                     currency_management="payments_in_euro",
                     is_insolvent=False,
@@ -576,16 +576,18 @@ def _generate_debitors(count: int = 4) -> list[Debitor]:
         business_partner_number = str(account_number)
         addressee_id = _fresh_guid()
 
-        natural_person = None
-        legal_person = None
+        # `natural_person`/`legal_person` are deliberately never populated
+        # here: real captured evidence (`examples/debitors.xml`, real XML)
+        # shows `NaturalPerson`/`LegalPerson` always `i:nil="true"` in the
+        # default (non-`expand`) response — this project's earlier
+        # population of them was invented, not observed. `short_name` is
+        # still derived from the same name pools.
         if entity_type == "natural_person":
             full_name = person_names[index % len(person_names)]
-            firstname, surname = _split_person_name(full_name)
-            natural_person = NaturalPerson(firstname=firstname, surname=surname)
+            _, surname = _split_person_name(full_name)
             short_name = f"{surname}"[:15]
         else:
             company_name = org_names[index % len(org_names)]
-            legal_person = LegalPerson(legal_name=company_name)
             short_name = company_name.split(" ")[0][:15]
 
         records.append(
@@ -596,8 +598,6 @@ def _generate_debitors(count: int = 4) -> list[Debitor]:
                 business_partner_number=business_partner_number,
                 legal_entity_type=entity_type,
                 short_name=short_name,
-                natural_person=natural_person,
-                legal_person=legal_person,
                 accounting_information=DebitorAccountingInformation(
                     account_statement="account_statement_for_all_items",
                     credit_limit=50000 + index * 1000,
@@ -659,15 +659,16 @@ _EVIDENCE_TYPE_VALUES = [
     "cash_discount",
 ]
 _DEBIT_CREDIT_IDENTIFIER_VALUES = ["S", "H"]
-_DUNNING_LEVEL_VALUES = ["none", "level1", "level2", "level3"]
 
 
 def _generate_open_items(count: int = 4, receivable: bool = False) -> list[OpenItem]:
     """Shared generator for `accounts-payable` (#6), `accounts-payable/condense`
     (#2) and `accounts-receivable/condense` (#3) — all three share the
-    `OpenItem` schema per the compiled spec doc. `receivable=True` also
-    populates the receivable-only `dunning_level` field on every record (a
-    RED-imposed fake-data contract, see the epic doc's B0 progress entry)."""
+    `OpenItem` schema per the compiled spec doc. `has_dunning_block` is
+    populated on every record regardless of `receivable`, per real evidence
+    (`examples/accounts-receivable-condense.xml` and `examples/condense.xml`)
+    showing it present on both payable and receivable records — replaces the
+    earlier receivable-only, invented `dunning_level` field."""
     records: list[OpenItem] = []
     base_account = 10000 if receivable else 70000
     for index in range(count):
@@ -688,13 +689,12 @@ def _generate_open_items(count: int = 4, receivable: bool = False) -> list[OpenI
             date=f"2024-{(index % 9) + 1:02d}-15T00:00:00.000",
             due_date=f"2024-{((index % 2) + 10):02d}-15T00:00:00.000",
             due_days=30,
+            has_dunning_block=index % 4 == 0,
             posting_description=f"Beleg {index + 1}",
             tax_rate=19.0,
         )
-        if receivable:
-            record.dunning_level = _DUNNING_LEVEL_VALUES[index % len(_DUNNING_LEVEL_VALUES)]
-            if index % 2 == 0:
-                record.dunning_date1 = "2024-02-01T00:00:00.000"
+        if receivable and index % 2 == 0:
+            record.dunning_date1 = "2024-02-01T00:00:00.000"
         records.append(record)
     return records
 
