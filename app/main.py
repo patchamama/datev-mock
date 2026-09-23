@@ -6,9 +6,22 @@ Swagger UI is available at `/docs` (FastAPI default) for manual testing.
 """
 from __future__ import annotations
 
+import sys
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
 from fastapi import FastAPI
 
+from app import windows_proactor_noise
 from app.routers import accounting, admin, diagnostics, dms, master_data
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    if sys.platform == "win32":
+        windows_proactor_noise.install()
+    yield
+
 
 app = FastAPI(
     title="DATEV Local API Mock",
@@ -18,6 +31,7 @@ app = FastAPI(
         "Also serves a small admin/settings UI at /admin."
     ),
     version="0.1.0",
+    lifespan=_lifespan,
 )
 
 app.include_router(diagnostics.router)
