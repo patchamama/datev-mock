@@ -14,11 +14,23 @@ from __future__ import annotations
 from xml.sax.saxutils import escape
 
 from app.models import (
+    BUSINESS_PARTNER_COMMON_NS_FIELDS,
+    BUSINESS_PARTNER_FIELD_ORDER,
     CLIENT_FIELD_ORDER,
     CLIENT_RESOURCE_FIELD_ORDER,
+    COST_CENTER_FIELD_ORDER,
+    COST_SYSTEM_FIELD_ORDER,
+    FISCAL_YEAR_FIELD_ORDER,
+    GENERAL_LEDGER_ACCOUNT_FIELD_ORDER,
     Client,
     ClientResource,
+    CostCenter,
+    CostSystem,
+    Creditor,
+    Debitor,
     Echo,
+    FiscalYear,
+    GeneralLedgerAccount,
 )
 
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
@@ -37,13 +49,105 @@ ACCOUNTING_PRODUCTIVITIES_NS = (
     "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.Productivities"
 )
 
+# --- Real-data reconciliation epic, W2 batch A ---
+#
+# Namespaces for the 6 newly XML-capable resources. `COST_SYSTEMS_NS` and
+# `BUSINESS_PARTNERS_NS` are **confirmed** by real captures
+# (`examples/cost-systems.xml`, `examples/debitors.xml`). The other 3 are
+# **inferred by pattern** (`ArrayOf<PascalName>` / `...Contracts.<PascalName>`,
+# the convention every other confirmed sample in this project follows) —
+# flagged here explicitly, never presented as more certain than that. Note
+# `BUSINESS_PARTNERS_NS` itself is evidence that the generic "namespace ==
+# singular resource name" pattern isn't universal (debitors' real namespace
+# is the *contract family* name `BusinessPartners`, not `Debitor`) — applied
+# to `creditors` too by inference, since creditor/debitor are the same
+# contract family.
+FISCAL_YEAR_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.FiscalYear"
+)
+COST_SYSTEMS_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.CostSystems"
+)
+COST_CENTER_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.CostCenter"
+)
+BUSINESS_PARTNERS_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.BusinessPartners"
+)
+GENERAL_LEDGER_ACCOUNT_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.GeneralLedgerAccount"
+)
+ACCOUNTING_COMMON_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.Common"
+)
+
 XML_DECLARATION = '<?xml version="1.0" encoding="utf-8"?>'
 
 
 def _render_field(name: str, value: object, ns_attr: str = "") -> str:
     if value is None:
         return f'<{name}{ns_attr} i:nil="true"/>'
-    return f"<{name}{ns_attr}>{escape(str(value))}</{name}>"
+    if isinstance(value, bool):
+        # DataContractSerializer renders booleans lowercase (`true`/`false`),
+        # confirmed by `examples/cost-systems.xml` (`IsActivatedForPostings`)
+        # and `examples/debitors.xml` (`IsBusinessPartnerActive`) — Python's
+        # `str(True)` would otherwise emit the wrong-case `True`.
+        text = "true" if value else "false"
+    else:
+        text = str(value)
+    return f"<{name}{ns_attr}>{escape(text)}</{name}>"
+
+
+def _pascal(name: str) -> str:
+    """Naive snake_case -> PascalCase (capitalize each `_`-separated word).
+
+    Matches every confirmed real DATEV field name 1:1 (`cost_field` ->
+    `CostField`, `is_business_partner_active` -> `IsBusinessPartnerActive`,
+    etc. — see `examples/cost-systems.xml`/`examples/debitors.xml`), the
+    well-evidenced convention this mock's whole JSON<->XML field-name
+    mapping relies on."""
+    return "".join(part.capitalize() for part in name.split("_"))
+
+
+def _xml_tag(field_name: str) -> str:
+    if field_name == "id":
+        return "Id"
+    if field_name == "parent":
+        return "Parent"
+    if field_name == "members_to_serialize":
+        return "membersToSerialize"
+    return _pascal(field_name)
+
+
+def _field_value(record: object, field_name: str) -> object:
+    # `parent`/`members_to_serialize` are synthetic (not real dataclass
+    # fields) — every confirmed sample in this project always renders them
+    # `i:nil="true"`.
+    if field_name in ("parent", "members_to_serialize"):
+        return None
+    return getattr(record, field_name)
+
+
+def _generic_ns_attr(field_name: str, common_ns_fields: frozenset = frozenset()) -> str:
+    if field_name in ("id", "parent"):
+        return f' xmlns="{SERVICEBUS_NS}"'
+    if field_name == "members_to_serialize":
+        return f' xmlns:d3p1="{ARRAYS_NS}" xmlns="{CONNECT_CONTRACTS_NS}"'
+    if field_name in common_ns_fields:
+        return f' xmlns:d3p1="{ACCOUNTING_COMMON_NS}"'
+    return ""
+
+
+def _render_generic_record(
+    record: object, field_order: list[str], tag: str, common_ns_fields: frozenset = frozenset()
+) -> str:
+    fields = "".join(
+        _render_field(
+            _xml_tag(name), _field_value(record, name), _generic_ns_attr(name, common_ns_fields)
+        )
+        for name in field_order
+    )
+    return f"<{tag}>{fields}</{tag}>"
 
 
 def _master_data_ns_attr(field_name: str) -> str:
@@ -107,4 +211,91 @@ def serialize_echo(echo: Echo) -> str:
         f"<echo_message>{escape(echo.echo_message)}</echo_message>"
         f"<id>{escape(echo.id)}</id>"
         "</Echo>"
+    )
+
+
+# --- Real-data reconciliation epic, W2 batch A: fiscal_years, cost_systems,
+# cost_centers, creditors, debitors, general_ledger_accounts XML negotiation.
+# See the namespace constants' comments above for confirmed-vs-inferred
+# status per endpoint.
+
+
+def serialize_fiscal_years(records: list[FiscalYear]) -> str:
+    body = "".join(
+        _render_generic_record(r, FISCAL_YEAR_FIELD_ORDER, "FiscalYear") for r in records
+    )
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfFiscalYear xmlns:i="{XSI_NS}" xmlns="{FISCAL_YEAR_NS}">'
+        f"{body}"
+        "</ArrayOfFiscalYear>"
+    )
+
+
+def serialize_cost_systems(records: list[CostSystem]) -> str:
+    # Repeated element is `CostSystems` (plural) — confirmed by
+    # `examples/cost-systems.xml`, not the generically-expected singular.
+    body = "".join(
+        _render_generic_record(r, COST_SYSTEM_FIELD_ORDER, "CostSystems") for r in records
+    )
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfCostSystems xmlns:i="{XSI_NS}" xmlns="{COST_SYSTEMS_NS}">'
+        f"{body}"
+        "</ArrayOfCostSystems>"
+    )
+
+
+def serialize_cost_centers(records: list[CostCenter]) -> str:
+    body = "".join(
+        _render_generic_record(r, COST_CENTER_FIELD_ORDER, "CostCenter") for r in records
+    )
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfCostCenter xmlns:i="{XSI_NS}" xmlns="{COST_CENTER_NS}">'
+        f"{body}"
+        "</ArrayOfCostCenter>"
+    )
+
+
+def serialize_creditors(records: list[Creditor]) -> str:
+    body = "".join(
+        _render_generic_record(
+            r, BUSINESS_PARTNER_FIELD_ORDER, "Creditor", BUSINESS_PARTNER_COMMON_NS_FIELDS
+        )
+        for r in records
+    )
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfCreditor xmlns:i="{XSI_NS}" xmlns="{BUSINESS_PARTNERS_NS}">'
+        f"{body}"
+        "</ArrayOfCreditor>"
+    )
+
+
+def serialize_debitors(records: list[Debitor]) -> str:
+    body = "".join(
+        _render_generic_record(
+            r, BUSINESS_PARTNER_FIELD_ORDER, "Debitor", BUSINESS_PARTNER_COMMON_NS_FIELDS
+        )
+        for r in records
+    )
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfDebitor xmlns:i="{XSI_NS}" xmlns="{BUSINESS_PARTNERS_NS}">'
+        f"{body}"
+        "</ArrayOfDebitor>"
+    )
+
+
+def serialize_general_ledger_accounts(records: list[GeneralLedgerAccount]) -> str:
+    body = "".join(
+        _render_generic_record(r, GENERAL_LEDGER_ACCOUNT_FIELD_ORDER, "GeneralLedgerAccount")
+        for r in records
+    )
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfGeneralLedgerAccount xmlns:i="{XSI_NS}" xmlns="{GENERAL_LEDGER_ACCOUNT_NS}">'
+        f"{body}"
+        "</ArrayOfGeneralLedgerAccount>"
     )

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import re
 import uuid
+import xml.etree.ElementTree as ET
 
 from app.routers.accounting import (
     COST_CENTERS_ENDPOINT,
@@ -44,6 +45,40 @@ from app.routers.accounting import (
 MIN_FISCAL_YEARS = 2
 MIN_COST_SYSTEMS = 2
 MIN_COST_CENTERS = 3
+
+# Content negotiation (epic `datev-mock-real-data-reconciliation`, W2): these
+# 3 endpoints now default to XML (same mechanism as accounting.clients) when
+# the Accept header doesn't explicitly request JSON — every bare-JSON
+# assertion below must pass this header explicitly.
+JSON_ACCEPT_HEADERS = {"accept": "application/json"}
+XML_ACCEPT_HEADERS = {"accept": "application/xml"}
+
+XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+NIL_ATTR = f"{{{XSI_NS}}}nil"
+FISCAL_YEAR_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.FiscalYear"
+)
+COST_SYSTEMS_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.CostSystems"
+)
+COST_CENTER_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.CostCenter"
+)
+
+
+def _local_name(tag: str) -> str:
+    return tag.split("}", 1)[1] if "}" in tag else tag
+
+
+def _field(record: ET.Element, local_name: str) -> ET.Element:
+    for child in record:
+        if _local_name(child.tag) == local_name:
+            return child
+    raise AssertionError(f"expected field {local_name!r} not found")
+
+
+def _is_nil(field_el: ET.Element) -> bool:
+    return field_el.get(NIL_ATTR) == "true"
 
 _LEGAL_FORM_VALUES = {
     "not_specified",
@@ -78,13 +113,16 @@ def _fresh_id() -> str:
 
 
 def _get_fiscal_years(client, client_id: str = "any-client") -> list[dict]:
-    response = client.get(FISCAL_YEARS_ENDPOINT.format(client_id=client_id))
+    response = client.get(
+        FISCAL_YEARS_ENDPOINT.format(client_id=client_id), headers=JSON_ACCEPT_HEADERS
+    )
     return response.json()
 
 
 def _get_cost_systems(client, client_id: str = "any-client", fiscal_year_id: str = "any-fy") -> list[dict]:
     response = client.get(
-        COST_SYSTEMS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id)
+        COST_SYSTEMS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id),
+        headers=JSON_ACCEPT_HEADERS,
     )
     return response.json()
 
@@ -98,7 +136,8 @@ def _get_cost_centers(
     response = client.get(
         COST_CENTERS_ENDPOINT.format(
             client_id=client_id, fiscal_year_id=fiscal_year_id, cost_system_id=cost_system_id
-        )
+        ),
+        headers=JSON_ACCEPT_HEADERS,
     )
     return response.json()
 
@@ -107,7 +146,9 @@ def _get_cost_centers(
 
 
 def test_fiscal_years_returns_200_json_array_with_minimum_records(client):
-    response = client.get(FISCAL_YEARS_ENDPOINT.format(client_id=_fresh_id()))
+    response = client.get(
+        FISCAL_YEARS_ENDPOINT.format(client_id=_fresh_id()), headers=JSON_ACCEPT_HEADERS
+    )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
 
@@ -128,10 +169,60 @@ def test_fiscal_year_record_has_core_fields(client):
         )
         assert isinstance(record.get("account_system"), int)
         assert isinstance(record.get("currency_code"), str) and 1 <= len(record["currency_code"]) <= 3
-        assert record.get("legal_form") in _LEGAL_FORM_VALUES
+        # `legal_form` is genuinely optional (real evidence:
+        # `examples/fiscal-years.xml` — absent, not null, on some records) —
+        # corrected from the earlier "always populated, always a member of
+        # the enum" assumption.
+        if "legal_form" in record:
+            assert record["legal_form"] in _LEGAL_FORM_VALUES
         assert record.get("taxation_method") in _TAXATION_METHOD_VALUES
         assert record.get("national_right") in _NATIONAL_RIGHT_VALUES
         assert isinstance(record.get("is_locked"), bool)
+
+
+def test_fiscal_year_record_has_expanded_real_fields(client):
+    """Real evidence (`examples/fiscal-years.xml`, epic
+    `datev-mock-real-data-reconciliation`, W2): the real shape is 23
+    top-level fields, 19 always present. Asserts the always-present ones not
+    already covered by `test_fiscal_year_record_has_core_fields`."""
+    records = _get_fiscal_years(client)
+    assert records, "no fiscal-year records returned"
+
+    for record in records:
+        assert isinstance(record.get("account_length"), int)
+        assert isinstance(record.get("advance_turnover_tax_return"), str) and record[
+            "advance_turnover_tax_return"
+        ].strip()
+        assert isinstance(record.get("begin"), str) and record["begin"].strip()
+        assert isinstance(record.get("end"), str) and record["end"].strip()
+        assert isinstance(record.get("client_number"), int)
+        assert isinstance(record.get("consultant_number"), int)
+        assert isinstance(record.get("cost_length"), int)
+        assert isinstance(record.get("creditor_term_of_payment_id"), int)
+        assert isinstance(record.get("is_invoice_date_check_on"), bool)
+        assert isinstance(record.get("is_using_delivery_date"), bool)
+        assert isinstance(record.get("is_using_individual_referencesystem"), bool)
+        assert isinstance(record.get("is_using_receivable_type"), bool)
+        assert isinstance(record.get("is_using_referencesystem"), bool)
+
+
+def test_fiscal_year_optional_fields_are_genuinely_absent_on_some_records(client):
+    """Locks in the real sparsity pattern (not just "the field type is
+    Optional") — at least one record must lack each of the 4 genuinely
+    optional fields, and at least one must carry it, for every one of them."""
+    records = _get_fiscal_years(client)
+    assert records, "no fiscal-year records returned"
+
+    for optional_field in (
+        "basis_of_checking_account_function",
+        "debitor_term_of_payment_id",
+        "legal_form",
+        "method_of_determining_net_income",
+    ):
+        present = [r for r in records if optional_field in r]
+        absent = [r for r in records if optional_field not in r]
+        assert present, f"expected at least one record with {optional_field!r} present"
+        assert absent, f"expected at least one record with {optional_field!r} absent"
 
 
 def test_fiscal_years_ignores_client_id_value(client):
@@ -148,7 +239,8 @@ def test_fiscal_years_ignores_client_id_value(client):
 
 def test_cost_systems_returns_200_json_array_with_minimum_records(client):
     response = client.get(
-        COST_SYSTEMS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+        COST_SYSTEMS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=JSON_ACCEPT_HEADERS,
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
@@ -171,6 +263,11 @@ def test_cost_system_record_has_core_fields(client):
         # Spec types `number` as "number" (format "short") despite being an
         # integer-valued field in practice — see epic doc's quirk note.
         assert isinstance(record.get("number"), int)
+        # `cost_field` is a real **int** field, confirmed by
+        # `examples/cost-systems.xml` — corrected from an earlier,
+        # unevidenced `Optional[str]` guess (epic
+        # `datev-mock-real-data-reconciliation`, W2).
+        assert isinstance(record.get("cost_field"), int)
 
 
 def test_cost_systems_ignores_client_and_fiscal_year_id_values(client):
@@ -186,7 +283,8 @@ def test_cost_centers_returns_200_json_array_with_minimum_records(client):
     response = client.get(
         COST_CENTERS_ENDPOINT.format(
             client_id=_fresh_id(), fiscal_year_id=_fresh_id(), cost_system_id=_fresh_id()
-        )
+        ),
+        headers=JSON_ACCEPT_HEADERS,
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
@@ -232,3 +330,97 @@ def test_cost_centers_ignores_client_fiscal_year_and_cost_system_id_values(clien
         client, client_id=_fresh_id(), fiscal_year_id=_fresh_id(), cost_system_id=_fresh_id()
     )
     assert first == second
+
+
+# --- XML content negotiation (epic `datev-mock-real-data-reconciliation`,
+# W2) — same style as `tests/test_accounting.py`'s XML assertions for
+# accounting.clients. `cost_systems`' root tag/namespace/repeated-element
+# name are **confirmed** by `examples/cost-systems.xml`; `fiscal_years`' and
+# `cost_centers`' are **inferred by pattern** (no direct real XML evidence).
+
+
+def test_fiscal_years_xml_root_tag_and_namespace(client):
+    response = client.get(
+        FISCAL_YEARS_ENDPOINT.format(client_id=_fresh_id()), headers=XML_ACCEPT_HEADERS
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{FISCAL_YEAR_NS}}}ArrayOfFiscalYear"
+
+    records = [child for child in root if _local_name(child.tag) == "FiscalYear"]
+    assert len(records) >= MIN_FISCAL_YEARS
+
+    first = records[0]
+    assert _field(first, "AccountSystem").text is not None
+    assert _field(first, "CurrencyCode").text is not None
+
+
+def test_fiscal_years_xml_optional_field_uses_nil_when_absent(client):
+    response = client.get(
+        FISCAL_YEARS_ENDPOINT.format(client_id=_fresh_id()), headers=XML_ACCEPT_HEADERS
+    )
+    root = ET.fromstring(response.content)
+    records = [child for child in root if _local_name(child.tag) == "FiscalYear"]
+
+    nil_seen = any(_is_nil(_field(record, "LegalForm")) for record in records)
+    assert nil_seen, "expected at least one FiscalYear record with LegalForm i:nil='true'"
+
+
+def test_cost_systems_xml_root_tag_and_namespace(client):
+    """Confirmed shape (`examples/cost-systems.xml`): root `ArrayOfCostSystems`,
+    repeated child `CostSystems` (plural, not the generically-expected
+    singular `CostSystem`)."""
+    response = client.get(
+        COST_SYSTEMS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=XML_ACCEPT_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{COST_SYSTEMS_NS}}}ArrayOfCostSystems"
+
+    records = [child for child in root if _local_name(child.tag) == "CostSystems"]
+    assert len(records) >= MIN_COST_SYSTEMS
+
+    first = records[0]
+    assert _field(first, "CostField").text is not None
+    assert _field(first, "ShortName").text is not None
+    assert _field(first, "IsActivatedForPostings").text in ("true", "false")
+
+
+def test_cost_centers_xml_root_tag_and_namespace(client):
+    response = client.get(
+        COST_CENTERS_ENDPOINT.format(
+            client_id=_fresh_id(), fiscal_year_id=_fresh_id(), cost_system_id=_fresh_id()
+        ),
+        headers=XML_ACCEPT_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{COST_CENTER_NS}}}ArrayOfCostCenter"
+
+    records = [child for child in root if _local_name(child.tag) == "CostCenter"]
+    assert len(records) >= MIN_COST_CENTERS
+
+    first = records[0]
+    assert _field(first, "LongName").text is not None
+    assert _field(first, "ShortName").text is not None
+
+
+def test_cost_centers_xml_optional_field_uses_nil_when_absent(client):
+    response = client.get(
+        COST_CENTERS_ENDPOINT.format(
+            client_id=_fresh_id(), fiscal_year_id=_fresh_id(), cost_system_id=_fresh_id()
+        ),
+        headers=XML_ACCEPT_HEADERS,
+    )
+    root = ET.fromstring(response.content)
+    records = [child for child in root if _local_name(child.tag) == "CostCenter"]
+
+    nil_seen = any(_is_nil(_field(record, "Note")) for record in records)
+    assert nil_seen, "expected at least one CostCenter record with Note i:nil='true'"

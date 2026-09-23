@@ -37,6 +37,7 @@ try/except around it to hide it.
 from __future__ import annotations
 
 import uuid
+import xml.etree.ElementTree as ET
 
 from app.routers.accounting import CREDITORS_ENDPOINT, DEBITORS_ENDPOINT
 
@@ -44,6 +45,18 @@ MIN_CREDITORS = 3
 MIN_DEBITORS = 3
 
 _LEGAL_ENTITY_TYPE_VALUES = {"not_specified", "natural_person", "legal_person"}
+
+# Content negotiation (epic `datev-mock-real-data-reconciliation`, W2):
+# creditors/debitors now default to XML (same mechanism as accounting.clients)
+# when the Accept header doesn't explicitly request JSON.
+JSON_ACCEPT_HEADERS = {"accept": "application/json"}
+XML_ACCEPT_HEADERS = {"accept": "application/xml"}
+
+XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+NIL_ATTR = f"{{{XSI_NS}}}nil"
+BUSINESS_PARTNERS_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.BusinessPartners"
+)
 
 
 def _fresh_id() -> str:
@@ -54,9 +67,25 @@ def _get(client, endpoint_template: str, client_id: str | None = None, fiscal_ye
     response = client.get(
         endpoint_template.format(
             client_id=client_id or _fresh_id(), fiscal_year_id=fiscal_year_id or _fresh_id()
-        )
+        ),
+        headers=JSON_ACCEPT_HEADERS,
     )
     return response.json()
+
+
+def _local_name(tag: str) -> str:
+    return tag.split("}", 1)[1] if "}" in tag else tag
+
+
+def _field(record: ET.Element, local_name: str) -> ET.Element:
+    for child in record:
+        if _local_name(child.tag) == local_name:
+            return child
+    raise AssertionError(f"expected field {local_name!r} not found")
+
+
+def _is_nil(field_el: ET.Element) -> bool:
+    return field_el.get(NIL_ATTR) == "true"
 
 
 def _assert_business_partner_core_fields(record: dict) -> None:
@@ -66,13 +95,28 @@ def _assert_business_partner_core_fields(record: dict) -> None:
     assert isinstance(record.get("business_partner_number"), str) and record["business_partner_number"].strip()
     assert record.get("legal_entity_type") in _LEGAL_ENTITY_TYPE_VALUES
     assert isinstance(record.get("short_name"), str) and record["short_name"].strip()
+    # Real 13-field shape (epic `datev-mock-real-data-reconciliation`, W2,
+    # `examples/creditors.xml`/`examples/debitors.xml`) — 11 always-present
+    # fields, checked here beyond the pre-existing 5 above.
+    assert isinstance(record.get("business_partner_relation_id"), str) and record[
+        "business_partner_relation_id"
+    ].strip()
+    assert isinstance(record.get("caption"), str) and record["caption"].strip()
+    assert isinstance(record.get("date_last_modification"), str) and record[
+        "date_last_modification"
+    ].strip()
+    assert isinstance(record.get("is_business_partner_active"), bool)
+    assert isinstance(record.get("is_organization_business_partner"), bool)
 
 
 # --- GET .../fiscal-years/{fiscal-year-id}/creditors ---
 
 
 def test_creditors_returns_200_json_array_with_minimum_records(client):
-    response = client.get(CREDITORS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()))
+    response = client.get(
+        CREDITORS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=JSON_ACCEPT_HEADERS,
+    )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
 
@@ -131,6 +175,31 @@ def test_legal_person_creditors_do_not_populate_nested_legal_person(client):
         assert record.get("legal_person") is None
 
 
+def test_creditors_do_not_populate_accounting_information(client):
+    """Real evidence (`examples/debitors.xml`, real XML) shows
+    `AccountingInformation` always `i:nil="true"` even though it's a real,
+    spec-derived field (unlike `natural_person`/`legal_person`, this project
+    previously did populate it) — corrected per epic
+    `datev-mock-real-data-reconciliation`, W2: `accounting_information` stays
+    unpopulated by default, matching the confirmed real behavior."""
+    records = _get(client, CREDITORS_ENDPOINT)
+    assert records, "no creditor records returned"
+
+    for record in records:
+        assert record.get("accounting_information") is None
+
+
+def test_creditor_eu_vat_fields_are_genuinely_optional(client):
+    """`eu_vat_id_country_code`/`eu_vat_id_number` are the only 2 genuinely
+    optional fields in the real 13-field shape — at least one record must
+    carry them and at least one must lack them."""
+    records = _get(client, CREDITORS_ENDPOINT)
+    present = [r for r in records if "eu_vat_id_country_code" in r]
+    absent = [r for r in records if "eu_vat_id_country_code" not in r]
+    assert present, "expected at least one creditor record with eu_vat_id_country_code present"
+    assert absent, "expected at least one creditor record with eu_vat_id_country_code absent"
+
+
 def test_creditors_ignores_path_param_values(client):
     first = _get(client, CREDITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
     second = _get(client, CREDITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
@@ -141,7 +210,10 @@ def test_creditors_ignores_path_param_values(client):
 
 
 def test_debitors_returns_200_json_array_with_minimum_records(client):
-    response = client.get(DEBITORS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()))
+    response = client.get(
+        DEBITORS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=JSON_ACCEPT_HEADERS,
+    )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
 
@@ -172,3 +244,91 @@ def test_debitors_ignores_path_param_values(client):
     first = _get(client, DEBITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
     second = _get(client, DEBITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
     assert first == second
+
+
+def test_debitors_do_not_populate_accounting_information(client):
+    """Real evidence (`examples/debitors.xml`, real XML): `AccountingInformation`
+    is always `i:nil="true"` — corrected per epic
+    `datev-mock-real-data-reconciliation`, W2, same as creditors above."""
+    records = _get(client, DEBITORS_ENDPOINT)
+    assert records, "no debitor records returned"
+
+    for record in records:
+        assert record.get("accounting_information") is None
+
+
+# --- XML content negotiation (epic `datev-mock-real-data-reconciliation`,
+# W2) — **confirmed** for `debitors` (`examples/debitors.xml`, real XML);
+# `creditors`' XML shape is **inferred by pattern** from debitors' confirmed
+# evidence (same `BusinessPartners` contract family, never directly observed
+# in real XML itself).
+
+
+def test_debitors_xml_root_tag_and_namespace(client):
+    response = client.get(
+        DEBITORS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=XML_ACCEPT_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{BUSINESS_PARTNERS_NS}}}ArrayOfDebitor"
+
+    records = [child for child in root if _local_name(child.tag) == "Debitor"]
+    assert len(records) >= MIN_DEBITORS
+
+    first = records[0]
+    assert _field(first, "AccountNumber").text is not None
+    assert _field(first, "ShortName").text is not None
+    assert _field(first, "IsBusinessPartnerActive").text in ("true", "false")
+
+
+def test_debitors_xml_always_nil_fields_use_nil(client):
+    """Locks in the always-nil field list confirmed by
+    `examples/debitors.xml`: `AccountingInformation`/`NaturalPerson`/
+    `LegalPerson` never populated by fake data, so every record must render
+    `i:nil="true"` for them."""
+    response = client.get(
+        DEBITORS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=XML_ACCEPT_HEADERS,
+    )
+    root = ET.fromstring(response.content)
+    records = [child for child in root if _local_name(child.tag) == "Debitor"]
+    assert records, "no Debitor records returned"
+
+    for record in records:
+        assert _is_nil(_field(record, "AccountingInformation"))
+        assert _is_nil(_field(record, "NaturalPerson"))
+        assert _is_nil(_field(record, "LegalPerson"))
+
+
+def test_creditors_xml_root_tag_and_namespace(client):
+    response = client.get(
+        CREDITORS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=XML_ACCEPT_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{BUSINESS_PARTNERS_NS}}}ArrayOfCreditor"
+
+    records = [child for child in root if _local_name(child.tag) == "Creditor"]
+    assert len(records) >= MIN_CREDITORS
+
+    first = records[0]
+    assert _field(first, "AccountNumber").text is not None
+    assert _field(first, "ShortName").text is not None
+
+
+def test_creditors_xml_optional_field_uses_nil_when_absent(client):
+    response = client.get(
+        CREDITORS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=XML_ACCEPT_HEADERS,
+    )
+    root = ET.fromstring(response.content)
+    records = [child for child in root if _local_name(child.tag) == "Creditor"]
+
+    nil_seen = any(_is_nil(_field(record, "EuVatIdCountryCode")) for record in records)
+    assert nil_seen, "expected at least one Creditor record with EuVatIdCountryCode i:nil='true'"

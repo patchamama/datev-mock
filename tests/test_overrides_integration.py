@@ -185,14 +185,21 @@ def test_accounting_creditors_ambiguous_group_resolved_and_served(client):
     assert response.json() == json.loads(override_json)
 
     # The other candidate in the ambiguous group must remain unaffected.
+    # Explicit Accept: application/json — debitors now has XML/JSON content
+    # negotiation (epic `datev-mock-real-data-reconciliation`, W2) and
+    # defaults to XML when the Accept header doesn't explicitly request JSON.
     debitors_response = client.get(
-        "/datev/api/accounting/v1/clients/c1/fiscal-years/f1/debitors"
+        "/datev/api/accounting/v1/clients/c1/fiscal-years/f1/debitors",
+        headers={"Accept": "application/json"},
     )
     assert debitors_response.json() != json.loads(override_json)
 
     _disable(client, "accounting.creditors")
 
-    response = client.get(endpoint)
+    # Explicit Accept: application/json — with the override disabled, this
+    # now falls through to the real content negotiation (creditors also has
+    # XML/JSON negotiation as of W2), which defaults to XML.
+    response = client.get(endpoint, headers={"Accept": "application/json"})
     assert response.json() != json.loads(override_json)
 
 

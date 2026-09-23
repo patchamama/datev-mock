@@ -26,9 +26,7 @@ from app.models import (
     CostRate,
     CostSystem,
     Creditor,
-    CreditorAccountingInformation,
     Debitor,
-    DebitorAccountingInformation,
     Document,
     Domain,
     DueAsPeriod,
@@ -410,6 +408,11 @@ _ACCOUNT_SYSTEM_VALUES = [3, 4, 4, 4, 49]  # DATEV SKR chart-of-accounts numbers
 _MAIN_FUNCTION_VALUES = [0, 1, 2, 3, 4, 5, 6, 7]
 _MAIN_FUNCTION_NUMBER_VALUES = [0, 10, 11, 12, 20, 21, 25, 90, 91, 98]
 _ADDITIONAL_FUNCTION_VALUES = [0, 1, 3, 8]
+# `function_extension` — real field confirmed by
+# `examples/general-ledger-accounts.xml` (observed value `0`); a small
+# plausible pool, `0`-dominant to match the observed evidence without
+# hardcoding every record to the exact same value.
+_FUNCTION_EXTENSION_VALUES = [0, 0, 1, 2]
 
 _LEGAL_ENTITY_TYPES = ["natural_person", "legal_person"]
 
@@ -428,31 +431,57 @@ _GL_ACCOUNT_CAPTIONS = [
 
 
 def _generate_fiscal_years(count: int = 3) -> list[FiscalYear]:
+    """Populates all 19 real always-present fields on every record. The 4
+    genuinely optional fields (`basis_of_checking_account_function`,
+    `debitor_term_of_payment_id`, `legal_form`,
+    `method_of_determining_net_income`) are deliberately left absent on the
+    earliest generated record (index 0) — matching the real sparsity pattern
+    observed in `examples/fiscal-years.xml` (earlier fiscal years lack these
+    fields, later ones carry them) — and `debitor_term_of_payment_id`
+    additionally stays absent until the most recent record, mirroring how it
+    only appears on the last couple of real sampled years."""
     records: list[FiscalYear] = []
     for index in range(count):
         year = 2022 + index
-        begin = f"{year}-01-01T00:00:00.000"
-        end = f"{year}-12-31T23:59:59.000"
+        # `+01:00` offset matches the real evidence's ISO-with-timezone shape
+        # (`examples/fiscal-years.xml`) — a structural detail, not a copied
+        # real value.
+        begin = f"{year}-01-01T00:00:00.000+01:00"
+        end = f"{year}-12-31T00:00:00.000+01:00"
+        has_later_year_fields = index != 0
+        has_debitor_term = index == count - 1
         records.append(
             FiscalYear(
                 id=f"{year}0101",
+                account_length=8 if index < count - 1 else 7,
                 account_system=_ACCOUNT_SYSTEM_VALUES[index % len(_ACCOUNT_SYSTEM_VALUES)],
-                currency_code="EUR",
-                legal_form=_LEGAL_FORM_VALUES[index % len(_LEGAL_FORM_VALUES)],
-                taxation_method=_TAXATION_METHOD_VALUES[index % len(_TAXATION_METHOD_VALUES)],
-                national_right=_NATIONAL_RIGHT_VALUES[index % len(_NATIONAL_RIGHT_VALUES)],
-                is_locked=index % 2 == 0,
-                account_length=8,
+                advance_turnover_tax_return="month",
                 begin=begin,
                 end=end,
                 client_number=10000 + index,
                 consultant_number=1000 + index,
                 cost_length=8,
+                creditor_term_of_payment_id=3,
+                currency_code="EUR",
                 is_invoice_date_check_on=index % 2 == 0,
+                is_locked=index % 2 == 0,
                 is_using_delivery_date=index % 3 == 0,
+                is_using_individual_referencesystem=index % 2 == 1,
                 is_using_receivable_type=index % 3 == 1,
+                is_using_referencesystem=index % 4 == 3,
+                national_right=_NATIONAL_RIGHT_VALUES[index % len(_NATIONAL_RIGHT_VALUES)],
+                taxation_method=_TAXATION_METHOD_VALUES[index % len(_TAXATION_METHOD_VALUES)],
+                basis_of_checking_account_function=(
+                    "all_purpose_financial_statement" if has_later_year_fields else None
+                ),
+                debitor_term_of_payment_id=10 if has_debitor_term else None,
+                legal_form=(
+                    _LEGAL_FORM_VALUES[index % len(_LEGAL_FORM_VALUES)]
+                    if has_later_year_fields
+                    else None
+                ),
                 method_of_determining_net_income=(
-                    "balance_sheet" if index % 2 == 0 else "cash_method_of_accounting"
+                    "balance_sheet" if has_later_year_fields else None
                 ),
             )
         )
@@ -460,6 +489,8 @@ def _generate_fiscal_years(count: int = 3) -> list[FiscalYear]:
 
 
 def _generate_cost_systems(count: int = 3) -> list[CostSystem]:
+    """`cost_field` is a real **int** (confirmed by
+    `examples/cost-systems.xml`), not the earlier unevidenced string guess."""
     records: list[CostSystem] = []
     for index in range(count):
         records.append(
@@ -468,7 +499,7 @@ def _generate_cost_systems(count: int = 3) -> list[CostSystem]:
                 short_name=f"KoRe{index + 1}",
                 is_activated_for_postings=index % 2 == 0,
                 number=index + 1,
-                cost_field=f"KOST{index + 1}",
+                cost_field=index + 1,
             )
         )
     return records
@@ -501,7 +532,10 @@ def _generate_cost_centers(count: int = 4) -> list[CostCenter]:
 
 def _generate_creditors(count: int = 4) -> list[Creditor]:
     """Forces both `legal_entity_type` values present (indices 0/1), same
-    "not vacuous" pattern as `_generate_addressees`."""
+    "not vacuous" pattern as `_generate_addressees`. Populates all 11 real
+    always-present top-level fields; `eu_vat_id_country_code`/
+    `eu_vat_id_number` are genuinely optional (sparse, same pattern as
+    `_generate_addressees`)."""
     records: list[Creditor] = []
     org_names = random.sample(_ORG_NAME_POOL, k=min(count, len(_ORG_NAME_POOL)))
     person_names = random.sample(_PERSON_NAME_POOL, k=min(count, len(_PERSON_NAME_POOL)))
@@ -517,10 +551,12 @@ def _generate_creditors(count: int = 4) -> list[Creditor]:
         account_number = 70000 + index
         business_partner_number = str(account_number)
         addressee_id = _fresh_guid()
+        eu_vat_country = "DE" if index % 3 == 0 else None
 
-        # `natural_person`/`legal_person` are deliberately never populated
-        # here: real captured evidence (`examples/creditors.xml`) shows they
-        # never appear in the default (non-`expand`) response — this
+        # `natural_person`/`legal_person`/`accounting_information` are
+        # deliberately never populated here: real captured evidence
+        # (`examples/creditors.xml`/`examples/debitors.xml`) shows none of
+        # them ever appear in the default (non-`expand`) response — this
         # project's earlier population of them was invented, not observed.
         # `short_name` is still derived from the same name pools.
         if entity_type == "natural_person":
@@ -537,19 +573,15 @@ def _generate_creditors(count: int = 4) -> list[Creditor]:
                 account_number=account_number,
                 addressee_id=addressee_id,
                 business_partner_number=business_partner_number,
-                legal_entity_type=entity_type,
-                short_name=short_name,
-                accounting_information=CreditorAccountingInformation(
-                    currency_management="payments_in_euro",
-                    is_insolvent=False,
-                    is_various_account=False,
-                    language="german",
-                    output_destination="print",
-                    payment_medium="sepa_bank_transfer_with_one_invoice",
-                ),
+                business_partner_relation_id=_fresh_guid(),
+                caption=short_name,
+                date_last_modification=_random_timestamp(),
                 is_business_partner_active=True,
                 is_organization_business_partner=entity_type != "natural_person",
-                caption=short_name,
+                legal_entity_type=entity_type,
+                short_name=short_name,
+                eu_vat_id_country_code=eu_vat_country,
+                eu_vat_id_number=f"DE{300000000 + index}" if eu_vat_country else None,
             )
         )
     return records
@@ -557,9 +589,9 @@ def _generate_creditors(count: int = 4) -> list[Creditor]:
 
 def _generate_debitors(count: int = 4) -> list[Debitor]:
     """Debitor is structurally identical to creditor for the shared
-    top-level fields (epic doc: GREEN must still populate
-    `natural_person`/`legal_person` consistently, even though RED doesn't
-    directly assert it for debitors)."""
+    top-level fields. Populates all 11 real always-present top-level fields;
+    `eu_vat_id_country_code`/`eu_vat_id_number` are genuinely optional
+    (sparse, same pattern as `_generate_addressees`/`_generate_creditors`)."""
     records: list[Debitor] = []
     org_names = random.sample(_ORG_NAME_POOL, k=min(count, len(_ORG_NAME_POOL)))
     person_names = random.sample(_PERSON_NAME_POOL, k=min(count, len(_PERSON_NAME_POOL)))
@@ -575,10 +607,12 @@ def _generate_debitors(count: int = 4) -> list[Debitor]:
         account_number = 10000 + index
         business_partner_number = str(account_number)
         addressee_id = _fresh_guid()
+        eu_vat_country = "DE" if index % 3 == 0 else None
 
-        # `natural_person`/`legal_person` are deliberately never populated
-        # here: real captured evidence (`examples/debitors.xml`, real XML)
-        # shows `NaturalPerson`/`LegalPerson` always `i:nil="true"` in the
+        # `natural_person`/`legal_person`/`accounting_information` are
+        # deliberately never populated here: real captured evidence
+        # (`examples/debitors.xml`, real XML) shows `NaturalPerson`/
+        # `LegalPerson`/`AccountingInformation` always `i:nil="true"` in the
         # default (non-`expand`) response — this project's earlier
         # population of them was invented, not observed. `short_name` is
         # still derived from the same name pools.
@@ -596,23 +630,15 @@ def _generate_debitors(count: int = 4) -> list[Debitor]:
                 account_number=account_number,
                 addressee_id=addressee_id,
                 business_partner_number=business_partner_number,
-                legal_entity_type=entity_type,
-                short_name=short_name,
-                accounting_information=DebitorAccountingInformation(
-                    account_statement="account_statement_for_all_items",
-                    credit_limit=50000 + index * 1000,
-                    currency_management="payments_in_euro",
-                    direct_debit="no_direct_debit_with_this_debitor",
-                    dunning_procedure="first_and_second_dun",
-                    interest_calculation="no_interest_calculated_for_this_debitor",
-                    is_insolvent=False,
-                    is_various_account=False,
-                    language="german",
-                    output_destination="print",
-                ),
+                business_partner_relation_id=_fresh_guid(),
+                caption=short_name,
+                date_last_modification=_random_timestamp(),
                 is_business_partner_active=True,
                 is_organization_business_partner=entity_type != "natural_person",
-                caption=short_name,
+                legal_entity_type=entity_type,
+                short_name=short_name,
+                eu_vat_id_country_code=eu_vat_country,
+                eu_vat_id_number=f"DE{400000000 + index}" if eu_vat_country else None,
             )
         )
     return records
@@ -630,10 +656,19 @@ def _generate_general_ledger_accounts(count: int = 6) -> list[GeneralLedgerAccou
                 main_function_number=_MAIN_FUNCTION_NUMBER_VALUES[
                     index % len(_MAIN_FUNCTION_NUMBER_VALUES)
                 ],
+                function_extension=_FUNCTION_EXTENSION_VALUES[
+                    index % len(_FUNCTION_EXTENSION_VALUES)
+                ],
                 additional_function=_ADDITIONAL_FUNCTION_VALUES[
                     index % len(_ADDITIONAL_FUNCTION_VALUES)
                 ],
-                function_description=_GL_ACCOUNT_CAPTIONS[index % len(_GL_ACCOUNT_CAPTIONS)],
+                # `function_description` is an unconfirmed, extra field (not
+                # part of the real 7-field shape) — left absent on the first
+                # record so it demonstrably stays optional, not silently
+                # always-populated.
+                function_description=(
+                    None if index == 0 else _GL_ACCOUNT_CAPTIONS[index % len(_GL_ACCOUNT_CAPTIONS)]
+                ),
                 tax_rates=(
                     [GeneralLedgerAccountTaxRate(tax_rate=19.0, valid_from="2021-01-01T00:00:00.000")]
                     if index % 2 == 0

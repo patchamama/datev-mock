@@ -221,42 +221,106 @@ class Bank:
 
 @dataclass
 class FiscalYear:
-    """Accounting `fiscal-year` — client-level list, not fiscal-year-scoped."""
+    """Accounting `fiscal-year` — client-level list, not fiscal-year-scoped.
+
+    Expanded to the real 23-field shape confirmed by a live-installation
+    capture (`examples/fiscal-years.xml`, JSON content despite the filename;
+    see `odd/tasks/datev-mock-real-data-reconciliation.md` W2). Only
+    `basis_of_checking_account_function`, `debitor_term_of_payment_id`,
+    `legal_form`, `method_of_determining_net_income` are genuinely optional
+    (absent, not `null`, on some real records) — every other field is
+    present on every observed record."""
 
     id: str  # YYYYMMDD, first day of the fiscal year
+    account_length: int
     account_system: int
+    advance_turnover_tax_return: str
+    begin: str
+    end: str
+    client_number: int
+    consultant_number: int
+    cost_length: int
+    creditor_term_of_payment_id: int
     currency_code: str
-    legal_form: str
-    taxation_method: str
-    national_right: str
+    is_invoice_date_check_on: bool
     is_locked: bool
-    account_length: Optional[int] = None
-    advance_turnover_tax_return: Optional[str] = None
+    is_using_delivery_date: bool
+    is_using_individual_referencesystem: bool
+    is_using_receivable_type: bool
+    is_using_referencesystem: bool
+    national_right: str
+    taxation_method: str
     basis_of_checking_account_function: Optional[str] = None
-    begin: Optional[str] = None
-    client_number: Optional[int] = None
-    consultant_number: Optional[int] = None
-    cost_length: Optional[int] = None
-    creditor_term_of_payment_id: Optional[int] = None
     debitor_term_of_payment_id: Optional[int] = None
-    end: Optional[str] = None
-    is_invoice_date_check_on: Optional[bool] = None
-    is_using_delivery_date: Optional[bool] = None
-    is_using_receivable_type: Optional[bool] = None
+    legal_form: Optional[str] = None
     method_of_determining_net_income: Optional[str] = None
+
+
+# Declaration order of the DataContractSerializer XML element layout,
+# inferred by pattern (no direct real XML evidence for this endpoint — see
+# `app/xml_serializers.py`'s module docstring). `parent`/`members_to_serialize`
+# are synthetic (not real dataclass fields, always nil), matching the
+# `Id`/`Parent`/`membersToSerialize` preamble observed on every confirmed
+# real DataContractSerializer sample in this project.
+FISCAL_YEAR_FIELD_ORDER = [
+    "id",
+    "parent",
+    "members_to_serialize",
+    "account_length",
+    "account_system",
+    "advance_turnover_tax_return",
+    "basis_of_checking_account_function",
+    "begin",
+    "client_number",
+    "consultant_number",
+    "cost_length",
+    "creditor_term_of_payment_id",
+    "currency_code",
+    "debitor_term_of_payment_id",
+    "end",
+    "is_invoice_date_check_on",
+    "is_locked",
+    "is_using_delivery_date",
+    "is_using_individual_referencesystem",
+    "is_using_receivable_type",
+    "is_using_referencesystem",
+    "legal_form",
+    "method_of_determining_net_income",
+    "national_right",
+    "taxation_method",
+]
 
 
 @dataclass
 class CostSystem:
     """Accounting `cost-system`. Spec types `number` as "number" (format
     "short") despite being integer-valued in practice — emitted as a plain
-    JSON int here."""
+    JSON int here. `cost_field` is a real **int** field, confirmed by a live
+    capture (`examples/cost-systems.xml`, real XML — `CostField` element,
+    always present on every sampled record) — corrected from an earlier,
+    unevidenced `Optional[str]` guess."""
 
     id: str  # maxLength 1
     short_name: str
     is_activated_for_postings: bool
     number: int
-    cost_field: Optional[str] = None
+    cost_field: int
+
+
+# Declaration order confirmed by real XML (`examples/cost-systems.xml`):
+# `Id`/`Parent`/`membersToSerialize` preamble, then the remaining fields in
+# alphabetical PascalCase order. Repeated element name is **`CostSystems`**
+# (plural) — a real, confirmed quirk, not the generically-expected singular
+# `CostSystem`.
+COST_SYSTEM_FIELD_ORDER = [
+    "id",
+    "parent",
+    "members_to_serialize",
+    "cost_field",
+    "is_activated_for_postings",
+    "number",
+    "short_name",
+]
 
 
 @dataclass
@@ -285,6 +349,32 @@ class CostCenter:
     postable_to: Optional[str] = None
     reference_value: Optional[str] = None
     responsible: Optional[str] = None
+
+
+# Declaration order for the inferred-by-pattern XML shape (no real XML
+# evidence for this endpoint — epic doc confirms no new field evidence
+# either). `Id`/`Parent`/`membersToSerialize` preamble, then the remaining
+# *scalar* fields in alphabetical PascalCase order. `cost_rates`/`properties`
+# are deliberately **excluded**: there's zero real evidence these array
+# fields exist in the XML contract at all (unlike `Client.company_data`,
+# which has a confirmed JSON-only precedent), so inventing a nested XML
+# shape for them would be pure guesswork — they stay JSON-only until real
+# evidence arrives.
+COST_CENTER_FIELD_ORDER = [
+    "id",
+    "parent",
+    "members_to_serialize",
+    "creation_date",
+    "date_last_modification",
+    "email",
+    "long_name",
+    "note",
+    "postable_from",
+    "postable_to",
+    "reference_value",
+    "responsible",
+    "short_name",
+]
 
 
 @dataclass
@@ -350,30 +440,43 @@ class DebitorAccountingInformation:
 
 @dataclass
 class Creditor:
-    """Accounting `creditor`. Uses the same "no real polymorphism" pattern as
-    `Addressee` (Phase A): a flat `legal_entity_type` enum plus co-located,
-    optional `natural_person`/`legal_person`/`not_specified_person` sibling
-    objects, gated only by convention/description text."""
+    """Accounting `creditor`. Real JSON confirmed 13 top-level fields
+    (`examples/creditors.xml`, JSON content) — 11 always present, 2
+    genuinely optional (`eu_vat_id_country_code`/`eu_vat_id_number`, absent
+    on some records). `natural_person`/`legal_person`/`not_specified_person`
+    (this project's own earlier "no real polymorphism" convention, same
+    pattern as `Addressee`) and `accounting_information` are never observed
+    in the real default (non-`expand`) response — corrected by W1/W2 to stay
+    unpopulated by default, kept only as latent fields for a possible future
+    `expand=all` implementation. `addresses`/`banks`/`communications`/
+    `complimentary_close` are additional always-nil fields confirmed by
+    debitors' real XML (see `Debitor` below) — inferred to apply here too
+    since creditor/debitor share the same `BusinessPartners` contract
+    family."""
 
     id: str
     account_number: int
     addressee_id: str
     business_partner_number: str
+    business_partner_relation_id: str
+    caption: str
+    date_last_modification: str
+    is_business_partner_active: bool
+    is_organization_business_partner: bool
     legal_entity_type: str
     short_name: str
-    natural_person: Optional[NaturalPerson] = None
-    legal_person: Optional[LegalPerson] = None
-    not_specified_person: Optional[NotSpecifiedPerson] = None
     accounting_information: Optional[CreditorAccountingInformation] = None
+    addresses: Optional[str] = None
     alternative_search_name: Optional[str] = None
-    business_partner_relation_id: Optional[str] = None
-    caption: Optional[str] = None
+    banks: Optional[str] = None
+    communications: Optional[str] = None
+    complimentary_close: Optional[str] = None
     correspondence_title: Optional[str] = None
-    date_last_modification: Optional[str] = None
     eu_vat_id_country_code: Optional[str] = None
     eu_vat_id_number: Optional[str] = None
-    is_business_partner_active: Optional[bool] = None
-    is_organization_business_partner: Optional[bool] = None
+    legal_person: Optional[LegalPerson] = None
+    natural_person: Optional[NaturalPerson] = None
+    not_specified_person: Optional[NotSpecifiedPerson] = None
     salutation: Optional[str] = None
     third_party_number: Optional[str] = None
 
@@ -382,29 +485,87 @@ class Creditor:
 class Debitor:
     """Accounting `debitor` — structurally identical to `creditor` for the
     shared top-level/business-partner fields, with a richer
-    `accounting_information` sub-schema (see `DebitorAccountingInformation`)."""
+    `accounting_information` sub-schema (see `DebitorAccountingInformation`).
+    Real **XML** confirmed (`examples/debitors.xml`, real capture): same 13
+    top-level fields as `creditor` (PascalCase), plus the full list of
+    nested/optional fields this project never modeled before —
+    `AccountingInformation`, `Addresses`, `AlternativeSearchName`, `Banks`,
+    `Communications`, `ComplimentaryClose`, `CorrespondenceTitle`,
+    `LegalPerson`, `NaturalPerson`, `NotSpecifiedPerson`, `Salutation`,
+    `ThirdPartyNumber` — every one of them observed as `i:nil="true"` on
+    every sampled record, never populated by fake data (see
+    `app/fake_data.py::_generate_debitors`)."""
 
     id: str
     account_number: int
     addressee_id: str
     business_partner_number: str
+    business_partner_relation_id: str
+    caption: str
+    date_last_modification: str
+    is_business_partner_active: bool
+    is_organization_business_partner: bool
     legal_entity_type: str
     short_name: str
-    natural_person: Optional[NaturalPerson] = None
-    legal_person: Optional[LegalPerson] = None
-    not_specified_person: Optional[NotSpecifiedPerson] = None
     accounting_information: Optional[DebitorAccountingInformation] = None
+    addresses: Optional[str] = None
     alternative_search_name: Optional[str] = None
-    business_partner_relation_id: Optional[str] = None
-    caption: Optional[str] = None
+    banks: Optional[str] = None
+    communications: Optional[str] = None
+    complimentary_close: Optional[str] = None
     correspondence_title: Optional[str] = None
-    date_last_modification: Optional[str] = None
     eu_vat_id_country_code: Optional[str] = None
     eu_vat_id_number: Optional[str] = None
-    is_business_partner_active: Optional[bool] = None
-    is_organization_business_partner: Optional[bool] = None
+    legal_person: Optional[LegalPerson] = None
+    natural_person: Optional[NaturalPerson] = None
+    not_specified_person: Optional[NotSpecifiedPerson] = None
     salutation: Optional[str] = None
     third_party_number: Optional[str] = None
+
+
+# Shared field order for both `Creditor` and `Debitor` XML — **confirmed**
+# by real evidence for `Debitor` (`examples/debitors.xml`: `Id`/`Parent`/
+# `membersToSerialize` preamble, then every remaining field in alphabetical
+# PascalCase order); applied to `Creditor` too by inference (same
+# `BusinessPartners` contract family, never directly observed as XML but
+# structurally identical per the real JSON evidence).
+BUSINESS_PARTNER_FIELD_ORDER = [
+    "id",
+    "parent",
+    "members_to_serialize",
+    "account_number",
+    "accounting_information",
+    "addressee_id",
+    "addresses",
+    "alternative_search_name",
+    "banks",
+    "business_partner_number",
+    "business_partner_relation_id",
+    "caption",
+    "communications",
+    "complimentary_close",
+    "correspondence_title",
+    "date_last_modification",
+    "eu_vat_id_country_code",
+    "eu_vat_id_number",
+    "is_business_partner_active",
+    "is_organization_business_partner",
+    "legal_entity_type",
+    "legal_person",
+    "natural_person",
+    "not_specified_person",
+    "salutation",
+    "short_name",
+    "third_party_number",
+]
+
+# Fields that carry the extra `xmlns:d3p1=".../Contracts.Common"` namespace
+# override when `i:nil="true"` — confirmed by `examples/debitors.xml` for
+# exactly these 6 fields (array/nested-object types); every other nil field
+# on `Creditor`/`Debitor` renders with no extra namespace attribute.
+BUSINESS_PARTNER_COMMON_NS_FIELDS = frozenset(
+    {"addresses", "banks", "communications", "legal_person", "natural_person", "not_specified_person"}
+)
 
 
 @dataclass
@@ -423,17 +584,42 @@ class GeneralLedgerAccount:
     `integer` in the spec (valid values only documented in free-text
     description, no OpenAPI `enum`) — hardcoded lookup sets are used in
     `app/fake_data.py` instead of an open int range, per the epic doc's
-    explicit quirk note."""
+    explicit quirk note. `function_extension` is a real field confirmed by a
+    live capture (`examples/general-ledger-accounts.xml`, JSON content) —
+    the real 7-field shape is `account_number`, `additional_function`,
+    `caption`, `function_extension`, `id`, `main_function`,
+    `main_function_number`; `function_description` is kept as an extra,
+    unconfirmed field (pre-existing, not contradicted by real evidence)."""
 
     id: str
     account_number: int
     caption: str
     main_function: int
     main_function_number: int
+    function_extension: int
     additional_function: Optional[int] = None
     function_description: Optional[str] = None
-    function_extension: Optional[int] = None
     tax_rates: list[GeneralLedgerAccountTaxRate] = field(default_factory=list)
+
+
+# Declaration order for the inferred-by-pattern XML shape (no real XML
+# evidence for this endpoint). `Id`/`Parent`/`membersToSerialize` preamble,
+# then the remaining *scalar* fields in alphabetical PascalCase order.
+# `tax_rates` is excluded for the same "no real evidence this array field
+# exists in XML" reason as `CostCenter.cost_rates`/`.properties` — see that
+# field-order list's comment.
+GENERAL_LEDGER_ACCOUNT_FIELD_ORDER = [
+    "id",
+    "parent",
+    "members_to_serialize",
+    "account_number",
+    "additional_function",
+    "caption",
+    "function_description",
+    "function_extension",
+    "main_function",
+    "main_function_number",
+]
 
 
 # --- Accounting extension, Phase B batch B2 (extended-endpoints epic) ---

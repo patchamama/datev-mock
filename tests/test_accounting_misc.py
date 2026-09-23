@@ -44,6 +44,7 @@ to hide it.
 from __future__ import annotations
 
 import uuid
+import xml.etree.ElementTree as ET
 
 from app.routers.accounting import (
     ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT,
@@ -54,6 +55,35 @@ from app.routers.accounting import (
     POSTING_PROPOSAL_RULES_OUTGOING_INVOICES_ENDPOINT,
     TERMS_OF_PAYMENT_ENDPOINT,
 )
+
+# Content negotiation (epic `datev-mock-real-data-reconciliation`, W2):
+# general_ledger_accounts now defaults to XML (same mechanism as
+# accounting.clients) when the Accept header doesn't explicitly request
+# JSON — every bare-JSON assertion for it below must pass this header
+# explicitly. Every *other* endpoint in this file is untouched (out of W2's
+# scope) and keeps its bare, header-less GET calls.
+GENERAL_LEDGER_ACCOUNTS_JSON_ACCEPT_HEADERS = {"accept": "application/json"}
+GENERAL_LEDGER_ACCOUNTS_XML_ACCEPT_HEADERS = {"accept": "application/xml"}
+GENERAL_LEDGER_ACCOUNT_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.GeneralLedgerAccount"
+)
+XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+NIL_ATTR = f"{{{XSI_NS}}}nil"
+
+
+def _local_name(tag: str) -> str:
+    return tag.split("}", 1)[1] if "}" in tag else tag
+
+
+def _xml_field(record: ET.Element, local_name: str) -> ET.Element:
+    for child in record:
+        if _local_name(child.tag) == local_name:
+            return child
+    raise AssertionError(f"expected field {local_name!r} not found")
+
+
+def _is_nil(field_el: ET.Element) -> bool:
+    return field_el.get(NIL_ATTR) == "true"
 
 MIN_ACCOUNTING_SEQUENCES_PROCESSED = 3
 MIN_ACCOUNTING_TRANSACTION_KEYS = 3
@@ -234,7 +264,8 @@ def test_assets_stocktakings_ignores_path_param_values(client):
 
 def test_general_ledger_accounts_returns_200_json_array_with_minimum_records(client):
     response = client.get(
-        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=GENERAL_LEDGER_ACCOUNTS_JSON_ACCEPT_HEADERS,
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
@@ -247,14 +278,26 @@ def test_general_ledger_accounts_returns_200_json_array_with_minimum_records(cli
     )
 
 
+def _get_general_ledger_accounts(client) -> list[dict]:
+    response = client.get(
+        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=GENERAL_LEDGER_ACCOUNTS_JSON_ACCEPT_HEADERS,
+    )
+    return response.json()
+
+
 def test_general_ledger_account_record_has_core_fields(client):
-    records = _get(client, GENERAL_LEDGER_ACCOUNTS_ENDPOINT)
+    records = _get_general_ledger_accounts(client)
     assert records, "no general-ledger-account records returned"
 
     for record in records:
         assert isinstance(record.get("id"), str) and record["id"].strip()
         assert isinstance(record.get("account_number"), int)
         assert isinstance(record.get("caption"), str) and record["caption"].strip()
+        # `function_extension` — real field confirmed by
+        # `examples/general-ledger-accounts.xml` (epic
+        # `datev-mock-real-data-reconciliation`, W2).
+        assert isinstance(record.get("function_extension"), int)
 
 
 def test_general_ledger_account_main_function_values_use_hardcoded_lookup_range(client):
@@ -263,7 +306,7 @@ def test_general_ledger_account_main_function_values_use_hardcoded_lookup_range(
     an OpenAPI `enum` — the epic doc explicitly flags these as needing a
     hardcoded lookup, so this test pins the fake data to those documented
     value sets instead of an unconstrained integer."""
-    records = _get(client, GENERAL_LEDGER_ACCOUNTS_ENDPOINT)
+    records = _get_general_ledger_accounts(client)
     assert records, "no general-ledger-account records returned"
 
     for record in records:
@@ -272,7 +315,52 @@ def test_general_ledger_account_main_function_values_use_hardcoded_lookup_range(
 
 
 def test_general_ledger_accounts_ignores_path_param_values(client):
-    _assert_ignores_path_params(client, GENERAL_LEDGER_ACCOUNTS_ENDPOINT)
+    first = client.get(
+        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=GENERAL_LEDGER_ACCOUNTS_JSON_ACCEPT_HEADERS,
+    ).json()
+    second = client.get(
+        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=GENERAL_LEDGER_ACCOUNTS_JSON_ACCEPT_HEADERS,
+    ).json()
+    assert first == second
+
+
+def test_general_ledger_accounts_xml_root_tag_and_namespace(client):
+    """Inferred by pattern (no direct real XML evidence for this endpoint —
+    epic `datev-mock-real-data-reconciliation`, W2)."""
+    response = client.get(
+        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=GENERAL_LEDGER_ACCOUNTS_XML_ACCEPT_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{GENERAL_LEDGER_ACCOUNT_NS}}}ArrayOfGeneralLedgerAccount"
+
+    records = [child for child in root if _local_name(child.tag) == "GeneralLedgerAccount"]
+    assert len(records) >= MIN_GENERAL_LEDGER_ACCOUNTS
+
+    first = records[0]
+    assert _xml_field(first, "AccountNumber").text is not None
+    assert _xml_field(first, "Caption").text is not None
+    assert _xml_field(first, "FunctionExtension").text is not None
+
+
+def test_general_ledger_accounts_xml_optional_field_uses_nil_when_absent(client):
+    response = client.get(
+        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=GENERAL_LEDGER_ACCOUNTS_XML_ACCEPT_HEADERS,
+    )
+    root = ET.fromstring(response.content)
+    records = [child for child in root if _local_name(child.tag) == "GeneralLedgerAccount"]
+
+    nil_seen = any(_is_nil(_xml_field(record, "FunctionDescription")) for record in records)
+    assert nil_seen, (
+        "expected at least one GeneralLedgerAccount record with "
+        "FunctionDescription i:nil='true'"
+    )
 
 
 # --- GET .../fiscal-years/{fiscal-year-id}/posting-proposal-rules-incoming-invoices ---

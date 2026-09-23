@@ -22,7 +22,15 @@ from fastapi import APIRouter, Request, Response
 
 from app import config, data_store, overrides
 from app.json_serializers import serialize_clients_json
-from app.xml_serializers import serialize_clients
+from app.xml_serializers import (
+    serialize_clients,
+    serialize_cost_centers,
+    serialize_cost_systems,
+    serialize_creditors,
+    serialize_debitors,
+    serialize_fiscal_years,
+    serialize_general_ledger_accounts,
+)
 
 router = APIRouter(tags=["accounting"])
 
@@ -81,6 +89,30 @@ def _to_json(record: Any) -> dict[str, Any]:
     return _strip_none(asdict(record))
 
 
+# --- Real-data reconciliation epic, W2 batch A ---
+#
+# XML/JSON content negotiation for `fiscal_years`, `cost_systems`,
+# `cost_centers`, `creditors`, `debitors`, `general_ledger_accounts` — the
+# exact same mechanism `get_accounting_clients` above already implements
+# (`Accept: application/json` explicit -> JSON; `Accept: application/xml`
+# explicit or ambiguous/missing -> the live `default_accounting_format`
+# setting, which defaults to `"xml"`). Factored into a shared helper here
+# since 6 endpoints now need it (accounting.clients' own inline copy above
+# is intentionally left untouched — out of this batch's scope).
+
+
+def _negotiate_format(request: Request) -> str:
+    accept = request.headers.get("accept", "").lower()
+    wants_json = "application/json" in accept
+    wants_xml = "application/xml" in accept
+
+    if wants_json and not wants_xml:
+        return "json"
+    if wants_xml and not wants_json:
+        return "xml"
+    return config.load_settings().default_accounting_format
+
+
 @router.get(
     ENDPOINT,
     summary="List accounting clients",
@@ -120,89 +152,149 @@ def get_accounting_clients(request: Request) -> Response:
 @router.get(
     FISCAL_YEARS_ENDPOINT,
     summary="List a client's fiscal years",
-    description="Bare JSON array of fiscal-year. Ignores client_id (no path-param filtering, per the epic's cross-phase decision).",
+    description=(
+        "Returns ArrayOfFiscalYear XML by default, or a bare JSON array when "
+        "Accept: application/json is sent (same content negotiation as "
+        "accounting.clients). Ignores client_id (no path-param filtering, "
+        "per the epic's cross-phase decision)."
+    ),
 )
-def get_fiscal_years(client_id: str) -> list[dict[str, Any]]:
+def get_fiscal_years(client_id: str, request: Request) -> Response:
     override = overrides.get_active_override("accounting.fiscal_years")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_fiscal_years()]
+    records = data_store.list_fiscal_years()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_fiscal_years(records), media_type="application/xml")
 
 
 @router.get(
     COST_SYSTEMS_ENDPOINT,
     summary="List a fiscal year's cost systems",
-    description="Bare JSON array of cost-system. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Returns ArrayOfCostSystems XML by default (confirmed real shape), "
+        "or a bare JSON array when Accept: application/json is sent. Ignores "
+        "client_id/fiscal_year_id."
+    ),
 )
-def get_cost_systems(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+def get_cost_systems(client_id: str, fiscal_year_id: str, request: Request) -> Response:
     override = overrides.get_active_override("accounting.cost_systems")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_cost_systems()]
+    records = data_store.list_cost_systems()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_cost_systems(records), media_type="application/xml")
 
 
 @router.get(
     COST_CENTERS_ENDPOINT,
     summary="List a cost system's cost centers",
-    description="Bare JSON array of cost-center. Ignores client_id/fiscal_year_id/cost_system_id.",
+    description=(
+        "Returns ArrayOfCostCenter XML by default (inferred by pattern - no "
+        "direct real XML evidence for this endpoint), or a bare JSON array "
+        "when Accept: application/json is sent. Ignores "
+        "client_id/fiscal_year_id/cost_system_id."
+    ),
 )
 def get_cost_centers(
-    client_id: str, fiscal_year_id: str, cost_system_id: str
-) -> list[dict[str, Any]]:
+    client_id: str, fiscal_year_id: str, cost_system_id: str, request: Request
+) -> Response:
     override = overrides.get_active_override("accounting.cost_centers")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_cost_centers()]
+    records = data_store.list_cost_centers()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_cost_centers(records), media_type="application/xml")
 
 
 @router.get(
     CREDITORS_ENDPOINT,
     summary="List a fiscal year's creditors",
-    description="Bare JSON array of creditor. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Returns ArrayOfCreditor XML by default (inferred by pattern from "
+        "debitors' confirmed real XML - same BusinessPartners contract "
+        "family), or a bare JSON array when Accept: application/json is "
+        "sent. Ignores client_id/fiscal_year_id."
+    ),
 )
-def get_creditors(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+def get_creditors(client_id: str, fiscal_year_id: str, request: Request) -> Response:
     override = overrides.get_active_override("accounting.creditors")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_creditors()]
+    records = data_store.list_creditors()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_creditors(records), media_type="application/xml")
 
 
 @router.get(
     DEBITORS_ENDPOINT,
     summary="List a fiscal year's debitors",
-    description="Bare JSON array of debitor. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Returns ArrayOfDebitor XML by default (confirmed real shape), or a "
+        "bare JSON array when Accept: application/json is sent. Ignores "
+        "client_id/fiscal_year_id."
+    ),
 )
-def get_debitors(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+def get_debitors(client_id: str, fiscal_year_id: str, request: Request) -> Response:
     override = overrides.get_active_override("accounting.debitors")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_debitors()]
+    records = data_store.list_debitors()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_debitors(records), media_type="application/xml")
 
 
 @router.get(
     GENERAL_LEDGER_ACCOUNTS_ENDPOINT,
     summary="List a fiscal year's general ledger accounts",
-    description="Bare JSON array of general-ledger-account. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Returns ArrayOfGeneralLedgerAccount XML by default (inferred by "
+        "pattern - no direct real XML evidence for this endpoint), or a "
+        "bare JSON array when Accept: application/json is sent. Ignores "
+        "client_id/fiscal_year_id."
+    ),
 )
 def get_general_ledger_accounts(
-    client_id: str, fiscal_year_id: str
-) -> list[dict[str, Any]]:
+    client_id: str, fiscal_year_id: str, request: Request
+) -> Response:
     override = overrides.get_active_override("accounting.general_ledger_accounts")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_general_ledger_accounts()]
+    records = data_store.list_general_ledger_accounts()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(
+        content=serialize_general_ledger_accounts(records), media_type="application/xml"
+    )
 
 
 @router.get(
