@@ -111,6 +111,35 @@ def test_admin_page_contains_full_endpoint_catalog_sample(client):
         assert representative_path_fragment in body
 
 
+def test_admin_page_references_highlight_js_cdn(client):
+    # Smoke test for the catalog's "View sample data" Table/Raw tabs
+    # follow-on: the Raw tab syntax-highlights the response body via
+    # highlight.js loaded from cdnjs, proportional per this project's
+    # testing rationale for presentational admin-page work.
+    body = client.get(ADMIN_PAGE).text
+    assert "cdnjs.cloudflare.com/ajax/libs/highlight.js/" in body
+    assert "highlight.min.js" in body
+
+
+def test_admin_page_catalog_sample_area_uses_bootstrap_tabs(client):
+    # Confirms the catalog-rendering JS builds a Table/Raw tabbed view
+    # (Bootstrap nav-tabs/tab-pane) instead of the old single-view render,
+    # without asserting exact markup.
+    body = client.get(ADMIN_PAGE).text
+    assert "nav-tabs" in body
+    assert "tab-pane" in body
+
+
+def test_admin_page_catalog_still_intact_after_tabbed_sample_view(client):
+    # The tabbed Table/Raw rendering change must not have broken the
+    # underlying catalog itself — same evidence as
+    # test_admin_page_contains_full_endpoint_catalog_sample, kept separate
+    # so a regression here is attributable to this follow-on change.
+    body = client.get(ADMIN_PAGE).text
+    for representative_path_fragment in ("addressees", "fiscal-years", "domains"):
+        assert representative_path_fragment in body
+
+
 # --- settings ---
 
 

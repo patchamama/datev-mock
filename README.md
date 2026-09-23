@@ -176,10 +176,12 @@ Full write-up: [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mo
   Accounting, DMS), not just the 2 editable tables above. Each entry shows
   its HTTP method, the real path with illustrative path-parameter values
   resolved (this mock ignores their actual values by design — any value
-  works), an on-demand "View sample data" fetch rendered as a table (or a
-  `<pre>` block for the single-object `echo` diagnostic), and a "Copy curl"
-  button that builds a ready-to-run example using the live-configured port.
-  Nothing in the catalog fetches automatically on page load.
+  works), an on-demand "View sample data" fetch with two tabs — **Table**
+  (rows/columns for JSON responses) and **Raw** (the full response body,
+  syntax-highlighted via [highlight.js](https://highlightjs.org/) — CDN,
+  XML and JSON both supported) — and a "Copy curl" button that builds a
+  ready-to-run example using the live-configured port. Nothing in the
+  catalog fetches automatically on page load.
 - **Custom Examples (Overrides)** — upload your own XML or JSON file and
   the mock automatically detects which endpoint it matches, then serves it
   verbatim for that endpoint until you disable or delete it. See
@@ -345,6 +347,7 @@ including the accounting endpoint's XML/JSON content negotiation.
 | **Web framework** | [FastAPI](https://fastapi.tiangolo.com/) on [Uvicorn](https://www.uvicorn.org/) (ASGI) |
 | **Testing** | [pytest](https://pytest.org/) + FastAPI's `TestClient` (Starlette/httpx) |
 | **Frontend (admin UI)** | [Bootstrap 5](https://getbootstrap.com/) (CDN) + vanilla JS — no build step, no framework dependency |
+| **Syntax highlighting** | [highlight.js](https://highlightjs.org/) (CDN, cdnjs) — raw XML/JSON view in the API Catalog |
 | **TLS** | Self-signed cert generated with the [`cryptography`](https://cryptography.io/) package |
 | **File uploads** | [`python-multipart`](https://pypi.org/project/python-multipart/) (FastAPI's multipart/form-data parsing, used by the custom-overrides upload) |
 | **Serialization** | Hand-built XML (stdlib string templates, matching .NET `DataContractSerializer` conventions) + native JSON |

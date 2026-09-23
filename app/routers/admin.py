@@ -291,6 +291,7 @@ _PAGE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DATEV Mock — Admin</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/styles/default.min.css" rel="stylesheet">
 <style>
   body { padding-bottom: 3rem; background: #f8f9fa; }
   main { max-width: 64rem; margin: 0 auto; padding: 1.5rem 1rem; }
@@ -456,6 +457,9 @@ _PAGE = """<!DOCTYPE html>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/languages/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/languages/json.min.js"></script>
 <script>
 const SETTINGS_URL = "/admin/api/settings";
 const MASTER_DATA_URL = "/admin/api/clients/master-data";
@@ -796,12 +800,48 @@ async function fetchSample(path, containerId) {
   try {
     const res = await fetch(path);
     const contentType = res.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-      const data = await res.json();
-      container.innerHTML = renderJsonSample(data);
+    const isJson = contentType.includes("application/json");
+    const text = await res.text();
+
+    let tableHtml;
+    if (isJson) {
+      try {
+        tableHtml = renderJsonSample(JSON.parse(text));
+      } catch (err) {
+        tableHtml = '<div class="text-muted small">Could not parse JSON response &mdash; see the Raw tab.</div>';
+      }
     } else {
-      const text = await res.text();
-      container.innerHTML = `<pre class="bg-light border rounded p-2 small mb-0 catalog-sample">${escapeHtml(text)}</pre>`;
+      tableHtml = '<div class="text-muted small">No tabular view for this content type &mdash; see the Raw tab.</div>';
+    }
+    const rawLang = isJson ? "json" : "xml";
+
+    // Same idx-based id scheme buildCatalogEntry uses for containerId
+    // (catalog-sample-<areaIdx>-<entryIdx>), extended with per-tab suffixes
+    // so multiple catalog entries never collide.
+    const tableTabId = `${containerId}-tab-table`;
+    const rawTabId = `${containerId}-tab-raw`;
+    const tablePaneId = `${containerId}-pane-table`;
+    const rawPaneId = `${containerId}-pane-raw`;
+    const codeId = `${containerId}-code`;
+    const tableActive = isJson;
+
+    container.innerHTML = `
+      <ul class="nav nav-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link ${tableActive ? "active" : ""}" id="${tableTabId}" data-bs-toggle="tab" data-bs-target="#${tablePaneId}" type="button" role="tab" aria-controls="${tablePaneId}" aria-selected="${tableActive}">Table</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link ${tableActive ? "" : "active"}" id="${rawTabId}" data-bs-toggle="tab" data-bs-target="#${rawPaneId}" type="button" role="tab" aria-controls="${rawPaneId}" aria-selected="${!tableActive}">Raw</button>
+        </li>
+      </ul>
+      <div class="tab-content border border-top-0 rounded-bottom p-2">
+        <div class="tab-pane fade ${tableActive ? "show active" : ""}" id="${tablePaneId}" role="tabpanel" aria-labelledby="${tableTabId}">${tableHtml}</div>
+        <div class="tab-pane fade ${tableActive ? "" : "show active"}" id="${rawPaneId}" role="tabpanel" aria-labelledby="${rawTabId}"><pre class="bg-light border-0 rounded p-2 small mb-0 catalog-sample"><code id="${codeId}" class="language-${rawLang}">${escapeHtml(text)}</code></pre></div>
+      </div>`;
+
+    const codeEl = document.getElementById(codeId);
+    if (codeEl && window.hljs) {
+      hljs.highlightElement(codeEl);
     }
   } catch (err) {
     container.innerHTML = `<div class="text-danger small">Failed to fetch: ${escapeHtml(String(err))}</div>`;
