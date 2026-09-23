@@ -56,8 +56,17 @@ _FINGERPRINTS: dict[frozenset[str], list[str]] = {
     frozenset(
         {"account_number", "caption", "main_function", "main_function_number"}
     ): ["accounting.general_ledger_accounts"],
+    # `amount_debit`/`amount_credit` were dropped from this fingerprint (W3,
+    # epic `datev-mock-real-data-reconciliation`): real evidence
+    # (`examples/condense.xml`, `examples/accounts-receivable-condense.xml`)
+    # shows they're mutually exclusive per record (driven by
+    # `debit_credit_identifier`, S -> debit, H -> credit) — no record ever
+    # carries both, so requiring both together (as this fingerprint
+    # previously did) could never match any real payload. Replaced with
+    # `open_balance_of_item`/`is_condensed`, two fields confirmed present on
+    # 100% of records on both the payable and receivable sides.
     frozenset(
-        {"amount_debit", "amount_credit", "evidence_type", "debit_credit_identifier"}
+        {"evidence_type", "debit_credit_identifier", "open_balance_of_item", "is_condensed"}
     ): [
         "accounting.accounts_payable",
         "accounting.accounts_payable_condense",

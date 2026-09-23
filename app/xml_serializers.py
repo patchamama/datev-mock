@@ -14,6 +14,8 @@ from __future__ import annotations
 from xml.sax.saxutils import escape
 
 from app.models import (
+    ACCOUNTING_SEQUENCE_PROCESSED_FIELD_ORDER,
+    ACCOUNTING_TRANSACTION_KEY_FIELD_ORDER,
     BUSINESS_PARTNER_COMMON_NS_FIELDS,
     BUSINESS_PARTNER_FIELD_ORDER,
     CLIENT_FIELD_ORDER,
@@ -22,6 +24,9 @@ from app.models import (
     COST_SYSTEM_FIELD_ORDER,
     FISCAL_YEAR_FIELD_ORDER,
     GENERAL_LEDGER_ACCOUNT_FIELD_ORDER,
+    OPEN_ITEM_FIELD_ORDER,
+    AccountingSequenceProcessed,
+    AccountingTransactionKey,
     Client,
     ClientResource,
     CostCenter,
@@ -31,6 +36,7 @@ from app.models import (
     Echo,
     FiscalYear,
     GeneralLedgerAccount,
+    OpenItem,
 )
 
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
@@ -79,6 +85,29 @@ GENERAL_LEDGER_ACCOUNT_NS = (
 )
 ACCOUNTING_COMMON_NS = (
     "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.Common"
+)
+
+# --- Real-data reconciliation epic, W3 batch B ---
+#
+# Inferred by pattern (no direct real XML evidence for any of these 3
+# endpoints — the "condense"/"accounting-sequences-processed"/"accounting-
+# transaction-keys" real captures were all JSON content despite their
+# `.xml` filenames, same quirk already noted for `fiscal_years` in W2).
+# `OPEN_ITEM_NS` covers all 3 open-item endpoints identically
+# (`accounts_payable`/`accounts_payable_condense`/
+# `accounts_receivable_condense`) since they share one real underlying
+# contract type (`OpenItem`) per the compiled spec doc and this project's
+# own override-detection "ambiguous group" design.
+OPEN_ITEM_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.OpenItem"
+)
+ACCOUNTING_SEQUENCE_PROCESSED_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
+    "AccountingSequenceProcessed"
+)
+ACCOUNTING_TRANSACTION_KEY_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
+    "AccountingTransactionKey"
 )
 
 XML_DECLARATION = '<?xml version="1.0" encoding="utf-8"?>'
@@ -298,4 +327,52 @@ def serialize_general_ledger_accounts(records: list[GeneralLedgerAccount]) -> st
         f'<ArrayOfGeneralLedgerAccount xmlns:i="{XSI_NS}" xmlns="{GENERAL_LEDGER_ACCOUNT_NS}">'
         f"{body}"
         "</ArrayOfGeneralLedgerAccount>"
+    )
+
+
+# --- Real-data reconciliation epic, W3 batch B: accounts_payable,
+# accounts_payable_condense, accounts_receivable_condense,
+# accounting_sequences_processed, accounting_transaction_keys XML
+# negotiation. See the namespace constants' comments above for confirmed-
+# vs-inferred status (all 5 are inferred by pattern — no direct real XML
+# evidence exists for any of them).
+
+
+def serialize_open_items(records: list[OpenItem]) -> str:
+    """Shared serializer for all 3 open-item endpoints (`accounts_payable`,
+    `accounts_payable_condense`, `accounts_receivable_condense`) — they
+    share the exact same `OpenItem` shape, so the root/element tag and
+    namespace are identical across all 3 call sites."""
+    body = "".join(_render_generic_record(r, OPEN_ITEM_FIELD_ORDER, "OpenItem") for r in records)
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfOpenItem xmlns:i="{XSI_NS}" xmlns="{OPEN_ITEM_NS}">'
+        f"{body}"
+        "</ArrayOfOpenItem>"
+    )
+
+
+def serialize_accounting_sequences_processed(records: list[AccountingSequenceProcessed]) -> str:
+    body = "".join(
+        _render_generic_record(r, ACCOUNTING_SEQUENCE_PROCESSED_FIELD_ORDER, "AccountingSequenceProcessed")
+        for r in records
+    )
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfAccountingSequenceProcessed xmlns:i="{XSI_NS}" xmlns="{ACCOUNTING_SEQUENCE_PROCESSED_NS}">'
+        f"{body}"
+        "</ArrayOfAccountingSequenceProcessed>"
+    )
+
+
+def serialize_accounting_transaction_keys(records: list[AccountingTransactionKey]) -> str:
+    body = "".join(
+        _render_generic_record(r, ACCOUNTING_TRANSACTION_KEY_FIELD_ORDER, "AccountingTransactionKey")
+        for r in records
+    )
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfAccountingTransactionKey xmlns:i="{XSI_NS}" xmlns="{ACCOUNTING_TRANSACTION_KEY_NS}">'
+        f"{body}"
+        "</ArrayOfAccountingTransactionKey>"
     )

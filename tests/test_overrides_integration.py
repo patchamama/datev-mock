@@ -204,11 +204,17 @@ def test_accounting_creditors_ambiguous_group_resolved_and_served(client):
 
 
 def test_accounting_accounts_payable_ambiguous_group_resolved_and_served(client):
+    # Fingerprint fields updated (W3, epic `datev-mock-real-data-
+    # reconciliation`): `open_balance_of_item`/`is_condensed` replace
+    # `amount_debit`/`amount_credit` in the ambiguous-group fingerprint —
+    # see `app/overrides.py` for why.
     override_json = json.dumps(
         [
             {
                 "amount_debit": 123.45,
                 "amount_credit": 0.0,
+                "open_balance_of_item": 123.45,
+                "is_condensed": False,
                 "evidence_type": "invoice",
                 "debit_credit_identifier": "debit",
             }
@@ -237,7 +243,11 @@ def test_accounting_accounts_payable_ambiguous_group_resolved_and_served(client)
 
     _disable(client, "accounting.accounts_payable")
 
-    response = client.get(endpoint)
+    # accounts_payable also gained XML/JSON content negotiation in W3;
+    # ambiguous/missing Accept now defaults to XML, same as every other
+    # negotiated endpoint (matching W2's precedent fix for creditors/
+    # debitors bare GETs in `test_overrides_integration.py`).
+    response = client.get(endpoint, headers={"Accept": "application/json"})
     assert response.json() != json.loads(override_json)
 
 

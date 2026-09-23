@@ -23,6 +23,8 @@ from fastapi import APIRouter, Request, Response
 from app import config, data_store, overrides
 from app.json_serializers import serialize_clients_json
 from app.xml_serializers import (
+    serialize_accounting_sequences_processed,
+    serialize_accounting_transaction_keys,
     serialize_clients,
     serialize_cost_centers,
     serialize_cost_systems,
@@ -30,6 +32,7 @@ from app.xml_serializers import (
     serialize_debitors,
     serialize_fiscal_years,
     serialize_general_ledger_accounts,
+    serialize_open_items,
 )
 
 router = APIRouter(tags=["accounting"])
@@ -300,83 +303,131 @@ def get_general_ledger_accounts(
 @router.get(
     ACCOUNTS_PAYABLE_ENDPOINT,
     summary="List a fiscal year's accounts payable open items",
-    description="Bare JSON array of open-item. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Returns ArrayOfOpenItem XML by default (inferred by pattern - no "
+        "direct real XML evidence for this endpoint), or a bare JSON array "
+        "when Accept: application/json is sent. Ignores "
+        "client_id/fiscal_year_id."
+    ),
 )
-def get_accounts_payable(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+def get_accounts_payable(client_id: str, fiscal_year_id: str, request: Request) -> Response:
     override = overrides.get_active_override("accounting.accounts_payable")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_accounts_payable()]
+    records = data_store.list_accounts_payable()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_open_items(records), media_type="application/xml")
 
 
 @router.get(
     ACCOUNTS_PAYABLE_CONDENSE_ENDPOINT,
     summary="List a fiscal year's condensed accounts payable open items",
     description=(
-        "Bare JSON array of open-item, same schema as accounts-payable (condense "
-        "is a server-side aggregation, not a different shape). Ignores "
+        "Same schema/negotiation as accounts-payable (condense is a "
+        "server-side aggregation, not a different shape). Ignores "
         "client_id/fiscal_year_id."
     ),
 )
 def get_accounts_payable_condense(
-    client_id: str, fiscal_year_id: str
-) -> list[dict[str, Any]]:
+    client_id: str, fiscal_year_id: str, request: Request
+) -> Response:
     override = overrides.get_active_override("accounting.accounts_payable_condense")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_accounts_payable_condense()]
+    records = data_store.list_accounts_payable_condense()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_open_items(records), media_type="application/xml")
 
 
 @router.get(
     ACCOUNTS_RECEIVABLE_CONDENSE_ENDPOINT,
     summary="List a fiscal year's condensed accounts receivable open items",
-    description="Bare JSON array of open-item, plus receivable-only dunning fields. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Same OpenItem schema/negotiation as accounts-payable, plus the "
+        "receivable-only dunning_date1/2/3 fields. Ignores "
+        "client_id/fiscal_year_id."
+    ),
 )
 def get_accounts_receivable_condense(
-    client_id: str, fiscal_year_id: str
-) -> list[dict[str, Any]]:
+    client_id: str, fiscal_year_id: str, request: Request
+) -> Response:
     override = overrides.get_active_override("accounting.accounts_receivable_condense")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_accounts_receivable_condense()]
+    records = data_store.list_accounts_receivable_condense()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_open_items(records), media_type="application/xml")
 
 
 @router.get(
     ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT,
     summary="List a fiscal year's processed accounting sequences",
-    description="Bare JSON array of accounting-sequence-read. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Returns ArrayOfAccountingSequenceProcessed XML by default "
+        "(inferred by pattern - no direct real XML evidence for this "
+        "endpoint), or a bare JSON array when Accept: application/json is "
+        "sent. Ignores client_id/fiscal_year_id."
+    ),
 )
 def get_accounting_sequences_processed(
-    client_id: str, fiscal_year_id: str
-) -> list[dict[str, Any]]:
+    client_id: str, fiscal_year_id: str, request: Request
+) -> Response:
     override = overrides.get_active_override("accounting.accounting_sequences_processed")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_accounting_sequences_processed()]
+    records = data_store.list_accounting_sequences_processed()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(
+        content=serialize_accounting_sequences_processed(records), media_type="application/xml"
+    )
 
 
 @router.get(
     ACCOUNTING_TRANSACTION_KEYS_ENDPOINT,
     summary="List a fiscal year's accounting transaction keys",
-    description="Bare JSON array of accounting-transaction-key. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Returns ArrayOfAccountingTransactionKey XML by default (inferred "
+        "by pattern - no direct real XML evidence for this endpoint), or a "
+        "bare JSON array when Accept: application/json is sent. Ignores "
+        "client_id/fiscal_year_id."
+    ),
 )
 def get_accounting_transaction_keys(
-    client_id: str, fiscal_year_id: str
-) -> list[dict[str, Any]]:
+    client_id: str, fiscal_year_id: str, request: Request
+) -> Response:
     override = overrides.get_active_override("accounting.accounting_transaction_keys")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_accounting_transaction_keys()]
+    records = data_store.list_accounting_transaction_keys()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(
+        content=serialize_accounting_transaction_keys(records), media_type="application/xml"
+    )
 
 
 @router.get(

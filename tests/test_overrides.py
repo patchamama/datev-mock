@@ -261,11 +261,16 @@ def test_detect_creditor_debitor_fingerprint_is_ambiguous():
 
 
 def test_detect_open_item_fingerprint_is_ambiguous():
+    # Fingerprint fields updated (W3, epic `datev-mock-real-data-
+    # reconciliation`): `amount_debit`/`amount_credit` dropped in favor of
+    # `open_balance_of_item`/`is_condensed` — real evidence showed the
+    # amount fields are mutually exclusive per record (never both present
+    # together), so requiring both could never match a real payload.
     content = _json_content(
         [
             {
-                "amount_debit": 100.0,
-                "amount_credit": 0.0,
+                "open_balance_of_item": 100.0,
+                "is_condensed": False,
                 "evidence_type": "invoice",
                 "debit_credit_identifier": "debit",
                 "extra": "x",

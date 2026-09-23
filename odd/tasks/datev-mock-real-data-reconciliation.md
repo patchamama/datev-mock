@@ -143,18 +143,38 @@ already known), `document_field1`/`document_field2` (str), `evidence_type`
 (str enum), `has_dunning_block` (bool), `has_interest_block` (bool), `id`,
 `is_cleared` (bool), `is_condensed` (bool), `kost1_cost_center_id` (str),
 `open_balance_of_item` (float), `open_item_number` (str), `payment_method`
-(str enum), `posting_description` (str), `posting_record_number` (likely
-int, truncated in the captured summary — verify against the full file),
-`tax_rate` (float). Payable-side observed `amount_credit` (float);
-receivable-side observed `amount_debit` (float) **plus 3 receivable-only
-fields**: `due_date` (ISO datetime w/ tz), `due_days` (int),
-`term_of_payment_id` (int). **This confirms payable and receivable are
-NOT byte-identical schemas in practice** — receivable has 3 extra fields.
+(str enum), `posting_description` (str), `posting_record_number` (**int**,
+confirmed unquoted in both real capture files — W3), `tax_rate` (float).
+
+**W3 correction (supersedes the paragraph below, kept only for history):**
+this table originally claimed `amount_credit` is payable-only and
+`amount_debit`/`due_date`/`due_days`/`term_of_payment_id` are
+receivable-only, based on a single first-record summary. W3 counted real
+field occurrences directly across the full capture files
+(`examples/condense.xml`, 3642 records; `examples/accounts-receivable-
+condense.xml`, 3455 records) and found this wrong:
+`amount_debit`/`amount_credit` are **mutually exclusive per record** on
+**both** payable and receivable (driven by `debit_credit_identifier`
+S/H — counts sum to the total record count on both sides), and
+`due_date`/`due_days`/`term_of_payment_id` are present on ~49% of records
+on **both** sides (not receivable-only). Payable and receivable are, in
+practice, the **same** schema (aside from `dunning_date1/2/3`, kept
+receivable-only per this project's pre-existing design — zero real
+evidence either way in either file). `OpenItem` needed ~19 always-present
++ several evidenced-optional fields, not ~9. Remove the invented
+`dunning_level`; use `has_dunning_block` instead (done in W1).
+
+~~Payable-side observed `amount_credit` (float); receivable-side observed
+`amount_debit` (float) plus 3 receivable-only fields: `due_date`
+(ISO datetime w/ tz), `due_days` (int), `term_of_payment_id` (int). This
+confirms payable and receivable are NOT byte-identical schemas in
+practice — receivable has 3 extra fields.~~ (superseded above — kept
+struck through for history, not for the field shape).
+
 Keep them in the same override-detection "ambiguous group" regardless
 (the shared subset is still what makes them indistinguishable from a
 fingerprint alone — this doesn't change the override epic's design, just
-the model completeness). Remove the invented `dunning_level`; use
-`has_dunning_block` instead. `OpenItem` needs ~19 fields, not ~9.
+the model completeness).
 
 ### `accounting_sequences_processed` (JSON confirmed)
 Real fields: `accounting_reason` (str enum), `accounting_sequence_id`
@@ -256,7 +276,7 @@ evidence arrives.
       `CostSystems`, add missing `cost_field`), `cost_centers` (XML
       negotiation only, no field changes — no new evidence), `creditors`,
       `debitors`, `general_ledger_accounts`.
-- [ ] W3 — RED+GREEN batch B: expand fields + add XML negotiation for
+- [x] W3 — RED+GREEN batch B: expand fields + add XML negotiation for
       `accounts_payable`, `accounts_payable_condense`,
       `accounts_receivable_condense` (incl. the 3 receivable-only fields),
       `accounting_sequences_processed`, `accounting_transaction_keys`.
@@ -299,3 +319,13 @@ and commits after each batch, same discipline as every prior epic.
   - Self-check: grepped every changed file for real names/GUIDs/numbers observed while reading `examples/debitors.xml`/`examples/fiscal-years.xml` directly (`Bolz`, `Manuel`, `Atvur`, `Oguzhan`, `Radowski`, `Silvio`, the sampled account numbers/GUIDs, `10015`, `100627`) — zero matches in any code or test file.
   - Live check (port 58459, since 58452 was occupied by the user's own server per the workflow instructions): started `uvicorn`, curled all 6 endpoints with both `Accept: application/xml` and `Accept: application/json` — all 6 returned correct root tags/namespaces (`ArrayOfFiscalYear`, `ArrayOfCostSystems`/`CostSystems` plural, `ArrayOfCostCenter`, `ArrayOfCreditor`, `ArrayOfDebitor`, `ArrayOfGeneralLedgerAccount`) and correct `content-type` per format; default (no `Accept` header) confirmed XML. Stopped via `taskkill //F //PID 2200`; verified port 58459 had no LISTENING socket afterward.
   - Final: `248 passed, 2 warnings in 2.95s` (pytest tests/ -v).
+- 2026-09-23: W3 done (RED+GREEN, delegated direct). Field expansion + XML/JSON content negotiation added for `accounts_payable`, `accounts_payable_condense`, `accounts_receivable_condense`, `accounting_sequences_processed`, `accounting_transaction_keys`. 257/257 tests passing (248 + 9 new). Route: delegated direct (touched `app/models.py`, `app/fake_data.py`, `app/xml_serializers.py`, `app/routers/accounting.py`, `app/overrides.py`, 4 test files — well over the Writer trigger).
+  - **Correction to this doc's own field table** (see the "W3 correction" note under the `accounts_payable`/`accounts_payable_condense`/`accounts_receivable_condense` section above): the original table, derived from a single first-record summary, wrongly claimed `amount_credit` is payable-only and `amount_debit`/`due_date`/`due_days`/`term_of_payment_id` are receivable-only. Direct occurrence-counting against the full real capture files (`examples/condense.xml`, 3642 records; `examples/accounts-receivable-condense.xml`, 3455 records) showed `amount_debit`/`amount_credit` are mutually exclusive per record on both sides (driven by `debit_credit_identifier`), and `due_date`/`due_days`/`term_of_payment_id` are present at a matching ~49% rate on both sides — payable and receivable are the same schema in practice (aside from pre-existing, unevidenced `dunning_date1/2/3`).
+  - **`OpenItem`**: expanded from ~9 fields to real 19 always-present + several evidenced-optional fields (`amount_credit`/`amount_debit`/`balancing_type`/`contra_account_number`/`document_field2`/`due_date`/`due_days`/`kost1_cost_center_id`/`term_of_payment_id`, all `Optional`, matching real presence rates 49%-99% depending on field). `posting_record_number` confirmed real `int` (unquoted in both capture files). Pre-existing unevidenced fields (`amount_entered`, `currency_code`, `assessment_year`, `assigned_due_date`, `balance_type`, `dunning_date1/2/3`) kept untouched, not contradicted by evidence (same precedent as W2's `function_description`). Added `OPEN_ITEM_FIELD_ORDER` (alphabetical PascalCase, inferred convention).
+  - **`accounting_sequences_processed`**: added `date_committed` (required), promoted `inspection_status`/`mark_of_origin` optional→required (100% real presence); `initials` (~94% real presence) kept optional; `application_information` (0 real evidence) kept untouched.
+  - **`accounting_transaction_keys`**: added `additional_function`, `cases_related_to_goods_and_services`, `date_from`, `date_to`, `group`; promoted `caption` optional→required. All 10 real fields are 100%-present — no optionality for this endpoint.
+  - **XML negotiation, all 5**: same `_negotiate_format` mechanism as W2, reused (not duplicated). All 5 endpoints are **inferred by pattern** — no direct real XML evidence exists for any of them (both `condense.xml` variants and the `accounting-sequences-processed.xml`/`accounting-transaction-keys.xml` captures are JSON content despite their `.xml` filenames, same quirk already flagged for `fiscal_years` in W2). `accounts_payable`/`accounts_payable_condense`/`accounts_receivable_condense` all render via one shared `serialize_open_items` (`ArrayOfOpenItem`/`OpenItem`), matching the pre-existing "one shared contract" design of the override ambiguous group.
+  - **`app/overrides.py` fingerprint fix**: the open-item ambiguous-group fingerprint required `{amount_debit, amount_credit, evidence_type, debit_credit_identifier}` together — since real evidence now shows `amount_debit`/`amount_credit` are mutually exclusive per record, this fingerprint could never match any real payload (a genuine break, not hypothetical). Replaced with `{evidence_type, debit_credit_identifier, open_balance_of_item, is_condensed}`, 4 fields confirmed present on 100% of records on both sides. Updated `tests/test_overrides.py::test_detect_open_item_fingerprint_is_ambiguous` and `tests/test_overrides_integration.py::test_accounting_accounts_payable_ambiguous_group_resolved_and_served` accordingly; also fixed a bare (no-`Accept`-header) GET in the latter test that broke once `accounts_payable` gained content negotiation defaulting to XML (same fix pattern W2 used for creditors/debitors). `accounting_sequences_processed`/`accounting_transaction_keys` fingerprints needed no changes.
+  - Self-check: grepped all 9 changed files for real values observed while reading `examples/condense.xml`/`examples/accounts-receivable-condense.xml`/`examples/examples-summary.txt` directly (real amounts, a real street/name, a real accounting-sequence-id) — zero matches in any committed file. Enum-vocabulary strings used (`mark_of_origin` codes, `group` category labels, `additional_function`/`balancing_type`/`payment_method` values) are DATEV's own closed business vocabulary, not user-specific data — same precedent as the project's existing `_ACCOUNTING_REASON_VALUES`/`_EVIDENCE_TYPE_VALUES` lists.
+  - Live check (port 58462): started `uvicorn`, curled all 5 endpoints with both `Accept: application/xml` and `Accept: application/json` plus a default (no-`Accept`) check on `accounts_payable` — all 5 returned correct root tags/namespaces (`ArrayOfOpenItem` x3, `ArrayOfAccountingSequenceProcessed`, `ArrayOfAccountingTransactionKey`) and correct field sets per format; default confirmed XML. Stopped via `taskkill //F //PID 7668`; verified port 58462 had no LISTENING socket afterward. `.gitignore` confirmed untouched (`git diff .gitignore` empty).
+  - Final: `257 passed, 2 warnings in 3.15s` (pytest tests/ -q).

@@ -635,72 +635,232 @@ class OpenItem:
     """Accounting `accounts-payable` (endpoint #6) / `accounts-payable/condense`
     (#2) / `accounts-receivable/condense` (#3) — the three share a single
     schema per the compiled spec doc; condense is a server-side aggregation,
-    not a different shape. `dunning_date1/2/3` are receivable-only fields
-    (absent from `accounts-payable`). `has_dunning_block` is real (per
+    not a different shape. `has_dunning_block` is real (per
     `examples/accounts-receivable-condense.xml` and `examples/condense.xml`,
     both JSON content) and present on **both** payable and receivable
     records — replaces this project's earlier invented `dunning_level`
-    field, which real evidence confirmed does not exist."""
+    field, which real evidence confirmed does not exist (epic
+    `datev-mock-real-data-reconciliation`, W1).
 
+    Expanded to the real ~19-field shared shape confirmed directly against
+    both real capture files (W3) — every field below except the
+    `amount_debit`/`amount_credit`/optional group was observed on **100%**
+    of records in **both** `examples/condense.xml` (accounts-payable/
+    condense, 3642 records) and `examples/accounts-receivable-condense.xml`
+    (3455 records), counted directly (`grep -o` occurrence counts against
+    the real capture files, never printed/copied as values).
+
+    **W3 correction to the epic doc's field table**: the epic doc (and the
+    W3 task brief derived from it) claimed `amount_credit` is payable-only
+    and `amount_debit`/`due_date`/`due_days`/`term_of_payment_id` are
+    receivable-only. Direct evidence contradicts this — verified by
+    counting occurrences, not reading the single first-record summary the
+    epic doc's table was apparently based on:
+      - `amount_debit`/`amount_credit` are **mutually exclusive per record**
+        (driven by `debit_credit_identifier` S/H), on **both** payable and
+        receivable alike — counts sum to exactly the total record count on
+        both sides (e.g. payable: 1788 + 1854 = 3642 = total records).
+      - `due_date`/`due_days`/`term_of_payment_id` are present on ~49% of
+        records on **both** payable and receivable (payable: 1781/3642;
+        receivable: 1706/3455) — genuinely optional, not receivable-only.
+      - `balancing_type` (~88-89%), `contra_account_number` (~98.7-98.9%),
+        `document_field2` (~51%), `kost1_cost_center_id` (~95-97%) are all
+        optional at matching rates on both sides too.
+    So payable and receivable are (contrary to the epic doc) effectively
+    the **same** schema in practice, aside from `dunning_date1/2/3`
+    (receivable-only per this project's pre-existing design; W1 found zero
+    real evidence either confirming or contradicting them, and this batch's
+    direct field-presence count confirms 0 occurrences of any of the three
+    in either capture file — left untouched, per W1/W3 instructions).
+
+    `amount_entered`/`currency_code`/`assessment_year`/`assigned_due_date`/
+    `balance_type` are this project's own pre-existing, unconfirmed fields
+    (not part of the real field set above) — kept as-is, not contradicted
+    by real evidence, matching the W2 `function_description` precedent for
+    handling pre-existing unevidenced fields. Note `balance_type` is a
+    distinct, separate field from the newly-added real `balancing_type` —
+    the similar names are coincidental, not a rename."""
+
+    # --- real, always-present fields (100% on both capture files) ---
     id: str
     account_number: int
-    amount_debit: float
-    amount_credit: float
+    accounting_sequence_id: str
+    date: str
+    debit_credit_identifier: str
+    document_field1: str
+    evidence_type: str
+    has_interest_block: bool
+    is_cleared: bool
+    is_condensed: bool
+    open_balance_of_item: float
+    open_item_number: str
+    payment_method: str
+    posting_description: str
+    posting_record_number: int
+    tax_rate: float
+    # --- pre-existing, unconfirmed fields (kept, not contradicted) ---
     amount_entered: float
     currency_code: str
-    evidence_type: str
-    debit_credit_identifier: str
-    is_cleared: bool
-    open_balance_of_item: float
-    accounting_sequence_id: Optional[str] = None
-    assessment_year: Optional[int] = None
-    assigned_due_date: Optional[str] = None
-    balance_type: Optional[str] = None
+    # --- real, genuinely optional fields (same presence rate both sides) ---
+    amount_credit: Optional[float] = None
+    amount_debit: Optional[float] = None
+    balancing_type: Optional[str] = None
     contra_account_number: Optional[int] = None
-    date: Optional[str] = None
+    document_field2: Optional[str] = None
     due_date: Optional[str] = None
     due_days: Optional[int] = None
     has_dunning_block: bool = False
-    is_condensed: Optional[bool] = None
-    posting_description: Optional[str] = None
-    tax_rate: Optional[float] = None
+    kost1_cost_center_id: Optional[str] = None
     term_of_payment_id: Optional[int] = None
-    # receivable-only (see class docstring)
+    # --- pre-existing, unconfirmed optional fields (kept, not contradicted) ---
+    assessment_year: Optional[int] = None
+    assigned_due_date: Optional[str] = None
+    balance_type: Optional[str] = None
+    # --- receivable-only, pre-existing (W1: zero real evidence either way) ---
     dunning_date1: Optional[str] = None
     dunning_date2: Optional[str] = None
     dunning_date3: Optional[str] = None
 
 
+# Declaration order for the inferred-by-pattern XML shape (no direct real
+# XML evidence for any of the 3 endpoints this model backs — both real
+# captures were JSON content despite their `.xml` filenames, same quirk
+# already noted for `fiscal_years`). `Id`/`Parent`/`membersToSerialize`
+# preamble, then the remaining scalar fields in alphabetical PascalCase
+# order, matching every confirmed real sample's convention.
+OPEN_ITEM_FIELD_ORDER = [
+    "id",
+    "parent",
+    "members_to_serialize",
+    "account_number",
+    "accounting_sequence_id",
+    "amount_credit",
+    "amount_debit",
+    "amount_entered",
+    "assessment_year",
+    "assigned_due_date",
+    "balance_type",
+    "balancing_type",
+    "contra_account_number",
+    "currency_code",
+    "date",
+    "debit_credit_identifier",
+    "document_field1",
+    "document_field2",
+    "due_date",
+    "due_days",
+    "dunning_date1",
+    "dunning_date2",
+    "dunning_date3",
+    "evidence_type",
+    "has_dunning_block",
+    "has_interest_block",
+    "is_cleared",
+    "is_condensed",
+    "kost1_cost_center_id",
+    "open_balance_of_item",
+    "open_item_number",
+    "payment_method",
+    "posting_description",
+    "posting_record_number",
+    "tax_rate",
+    "term_of_payment_id",
+]
+
+
 @dataclass
 class AccountingSequenceProcessed:
-    """Accounting `accounting-sequence-read` (endpoint #4)."""
+    """Accounting `accounting-sequence-read` (endpoint #4).
+
+    Expanded to the real shape confirmed directly against
+    `examples/accounting-sequences-processed.xml` (JSON content, 53
+    records): `date_committed`/`inspection_status`/`mark_of_origin` are new
+    real fields, all present on 100% of records — promoted to required
+    along with `accounting_reason`/`accounting_sequence_id`/`date_from`/
+    `date_to`/`description`/`is_committed`/`record_type` (all also 100%).
+    `initials` stays optional (50/53 records, ~94%, genuinely sparse).
+    `application_information` is a pre-existing, unconfirmed field (0
+    occurrences in the real capture) — kept as-is, not contradicted."""
 
     id: str
+    accounting_reason: str
     accounting_sequence_id: str
-    description: str
+    date_committed: str
     date_from: str
     date_to: str
+    description: str
+    inspection_status: str
     is_committed: bool
+    mark_of_origin: str
     record_type: str
-    accounting_reason: str
     application_information: Optional[str] = None
     initials: Optional[str] = None
-    inspection_status: Optional[str] = None
-    mark_of_origin: Optional[str] = None
+
+
+# Declaration order, inferred by pattern (no direct real XML evidence for
+# this endpoint — same JSON-content-despite-`.xml`-filename quirk as
+# `OpenItem`). `Id`/`Parent`/`membersToSerialize` preamble, then the
+# remaining scalar fields in alphabetical PascalCase order.
+ACCOUNTING_SEQUENCE_PROCESSED_FIELD_ORDER = [
+    "id",
+    "parent",
+    "members_to_serialize",
+    "accounting_reason",
+    "accounting_sequence_id",
+    "application_information",
+    "date_committed",
+    "date_from",
+    "date_to",
+    "description",
+    "initials",
+    "inspection_status",
+    "is_committed",
+    "mark_of_origin",
+    "record_type",
+]
 
 
 @dataclass
 class AccountingTransactionKey:
-    """Accounting `accounting-transaction-keys` (endpoint #5)."""
+    """Accounting `accounting-transaction-keys` (endpoint #5).
+
+    Expanded to the real shape confirmed directly against
+    `examples/accounting-transaction-keys.xml` (JSON content, 465 records):
+    `additional_function`/`caption`/`cases_related_to_goods_and_services`/
+    `date_from`/`date_to`/`group` are new/promoted real fields, all present
+    on **100%** of records (no optionality at all for this endpoint) —
+    promoted alongside the pre-existing `id`/`is_tax_rate_selectable`/
+    `number`/`tax_rate` (also 100%)."""
 
     id: str
+    additional_function: str
+    caption: str
+    cases_related_to_goods_and_services: int
+    date_from: str
+    date_to: str
+    group: str
+    is_tax_rate_selectable: bool
     number: int
     tax_rate: float
-    is_tax_rate_selectable: bool
-    caption: Optional[str] = None
-    additional_function: Optional[str] = None
-    date_from: Optional[str] = None
-    date_to: Optional[str] = None
+
+
+# Declaration order, inferred by pattern (no direct real XML evidence for
+# this endpoint). `Id`/`Parent`/`membersToSerialize` preamble, then the
+# remaining scalar fields in alphabetical PascalCase order.
+ACCOUNTING_TRANSACTION_KEY_FIELD_ORDER = [
+    "id",
+    "parent",
+    "members_to_serialize",
+    "additional_function",
+    "caption",
+    "cases_related_to_goods_and_services",
+    "date_from",
+    "date_to",
+    "group",
+    "is_tax_rate_selectable",
+    "number",
+    "tax_rate",
+]
 
 
 @dataclass

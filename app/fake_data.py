@@ -696,14 +696,31 @@ _EVIDENCE_TYPE_VALUES = [
 _DEBIT_CREDIT_IDENTIFIER_VALUES = ["S", "H"]
 
 
+_BALANCING_TYPE_VALUES = ["balancing_by_means_of_payments_or_bank_posting", "manual_clearing"]
+_PAYMENT_METHOD_VALUES = ["not_specified"]
+
+
 def _generate_open_items(count: int = 4, receivable: bool = False) -> list[OpenItem]:
     """Shared generator for `accounts-payable` (#6), `accounts-payable/condense`
     (#2) and `accounts-receivable/condense` (#3) — all three share the
-    `OpenItem` schema per the compiled spec doc. `has_dunning_block` is
-    populated on every record regardless of `receivable`, per real evidence
-    (`examples/accounts-receivable-condense.xml` and `examples/condense.xml`)
-    showing it present on both payable and receivable records — replaces the
-    earlier receivable-only, invented `dunning_level` field."""
+    `OpenItem` schema per the compiled spec doc.
+
+    Sparsity pattern verified directly (W3, `datev-mock-real-data-
+    reconciliation`) by counting field occurrences in both
+    `examples/condense.xml` and `examples/accounts-receivable-condense.xml`
+    — every optional field below is genuinely optional **on both payable
+    and receivable alike** (contrary to the epic doc's "receivable-only"
+    framing for `due_date`/`due_days`/`term_of_payment_id`, corrected per
+    direct evidence — see `OpenItem`'s docstring in `app/models.py`).
+    `amount_debit`/`amount_credit` are mutually exclusive per record,
+    driven by `debit_credit_identifier` (S -> debit, H -> credit), never
+    both/neither set — confirmed by real occurrence counts summing exactly
+    to the total record count on both sides.
+
+    `has_dunning_block` is populated on every record regardless of
+    `receivable`, per real evidence showing it present on both payable and
+    receivable records — replaces the earlier receivable-only, invented
+    `dunning_level` field (W1)."""
     records: list[OpenItem] = []
     base_account = 10000 if receivable else 70000
     for index in range(count):
@@ -712,24 +729,49 @@ def _generate_open_items(count: int = 4, receivable: bool = False) -> list[OpenI
         record = OpenItem(
             id=_fresh_guid(),
             account_number=base_account + index,
-            amount_debit=amount if debit_credit == "S" else 0.0,
-            amount_credit=amount if debit_credit == "H" else 0.0,
+            accounting_sequence_id=str(1000 + index),
+            date=f"2024-{(index % 9) + 1:02d}-15T00:00:00.000+01:00",
+            debit_credit_identifier=debit_credit,
+            document_field1=str(500000 + index),
+            evidence_type=_EVIDENCE_TYPE_VALUES[index % len(_EVIDENCE_TYPE_VALUES)],
+            has_interest_block=index % 3 == 0,
+            is_cleared=index % 3 == 0,
+            is_condensed=index % 2 == 0,
+            open_balance_of_item=round(amount * 0.5, 2),
+            open_item_number=str(7000 + index),
+            payment_method=_PAYMENT_METHOD_VALUES[index % len(_PAYMENT_METHOD_VALUES)],
+            posting_description=f"Beleg {index + 1}",
+            posting_record_number=300 + index * 7,
+            tax_rate=19.0,
             amount_entered=amount,
             currency_code="EUR",
-            evidence_type=_EVIDENCE_TYPE_VALUES[index % len(_EVIDENCE_TYPE_VALUES)],
-            debit_credit_identifier=debit_credit,
-            is_cleared=index % 3 == 0,
-            open_balance_of_item=round(amount * 0.5, 2),
-            accounting_sequence_id=str(1000 + index),
-            date=f"2024-{(index % 9) + 1:02d}-15T00:00:00.000",
-            due_date=f"2024-{((index % 2) + 10):02d}-15T00:00:00.000",
-            due_days=30,
             has_dunning_block=index % 4 == 0,
-            posting_description=f"Beleg {index + 1}",
-            tax_rate=19.0,
         )
+        # amount_debit/amount_credit: mutually exclusive, matching the real
+        # S/H-driven pattern (see docstring above) — never both/neither set.
+        if debit_credit == "S":
+            record.amount_debit = amount
+        else:
+            record.amount_credit = amount
+        # Genuinely sparse optional fields — absent on at least one record,
+        # present on at least one other, same rate on both payable/receivable
+        # (real rates are ~88-99%, but this mock's small default dataset uses
+        # "absent on the last generated record" to guarantee both cases show
+        # up regardless of `count`).
+        if index != count - 1:
+            record.balancing_type = _BALANCING_TYPE_VALUES[index % len(_BALANCING_TYPE_VALUES)]
+        if index != count - 1:
+            record.contra_account_number = base_account + 900 + index
+        if index % 2 == 0:
+            record.document_field2 = str(90 + index)
+        if index != count - 1:
+            record.kost1_cost_center_id = str(1 + index % 3)
+        if index % 2 == 0:
+            record.due_date = f"2024-{((index % 2) + 10):02d}-15T00:00:00.000+01:00"
+            record.due_days = 30
+            record.term_of_payment_id = 1000 + index
         if receivable and index % 2 == 0:
-            record.dunning_date1 = "2024-02-01T00:00:00.000"
+            record.dunning_date1 = "2024-02-01T00:00:00.000+01:00"
         records.append(record)
     return records
 
@@ -744,42 +786,78 @@ _ACCOUNTING_REASON_VALUES = [
     "for_calculation",
 ]
 _ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES = ["financial_accounting", "annual_financial_statements"]
+_INSPECTION_STATUS_VALUES = ["not_specified"]
+_MARK_OF_ORIGIN_VALUES = ["RE", "SV"]
 
 
 def _generate_accounting_sequences_processed(count: int = 4) -> list[AccountingSequenceProcessed]:
+    """`date_committed`/`inspection_status`/`mark_of_origin` are real fields
+    confirmed by `examples/accounting-sequences-processed.xml` (W3, epic
+    `datev-mock-real-data-reconciliation`) — all present on 100% of the 53
+    real sampled records. `initials` stays genuinely sparse (~94% real
+    presence rate) — absent on the last generated record here, matching the
+    same "absent on the last record" convention used elsewhere in this
+    module for small default datasets."""
     records: list[AccountingSequenceProcessed] = []
     for index in range(count):
-        records.append(
-            AccountingSequenceProcessed(
-                id=str(2000 + index),
-                accounting_sequence_id=str(3000 + index),
-                description=f"Buchungsstapel {index + 1}",
-                date_from=f"2024-{(index % 9) + 1:02d}-01T00:00:00.000",
-                date_to=f"2024-{(index % 9) + 1:02d}-28T23:59:59.000",
-                is_committed=index % 2 == 0,
-                record_type=_ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES[
-                    index % len(_ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES)
-                ],
-                accounting_reason=_ACCOUNTING_REASON_VALUES[index % len(_ACCOUNTING_REASON_VALUES)],
-                initials="ABC",
-            )
+        record = AccountingSequenceProcessed(
+            id=str(2000 + index),
+            accounting_reason=_ACCOUNTING_REASON_VALUES[index % len(_ACCOUNTING_REASON_VALUES)],
+            accounting_sequence_id=str(3000 + index),
+            date_committed=f"2024-{(index % 9) + 1:02d}-05T00:00:00.000+01:00",
+            date_from=f"2024-{(index % 9) + 1:02d}-01T00:00:00.000+01:00",
+            date_to=f"2024-{(index % 9) + 1:02d}-28T23:59:59.000+01:00",
+            description=f"Buchungsstapel {index + 1}",
+            inspection_status=_INSPECTION_STATUS_VALUES[index % len(_INSPECTION_STATUS_VALUES)],
+            is_committed=index % 2 == 0,
+            mark_of_origin=_MARK_OF_ORIGIN_VALUES[index % len(_MARK_OF_ORIGIN_VALUES)],
+            record_type=_ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES[
+                index % len(_ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES)
+            ],
         )
+        if index != count - 1:
+            record.initials = "ABC"
+        records.append(record)
     return records
 
 
 _TRANSACTION_KEY_TAX_RATE_VALUES = [19.0, 7.0, 0.0, 16.0]
+_TRANSACTION_KEY_ADDITIONAL_FUNCTION_VALUES = ["input_tax", "not_specified", "vat"]
+_TRANSACTION_KEY_GROUP_VALUES = [
+    "Lieferungen und sonstige Leistungen",
+    "innergem. Erwerb",
+    "Sonstige",
+    "steuerfreie Umsätze",
+]
+_TRANSACTION_KEY_CASES_RELATED_VALUES = [0, 1, 2, 5, 9]
 
 
 def _generate_accounting_transaction_keys(count: int = 4) -> list[AccountingTransactionKey]:
+    """Expanded to the real 10-field shape (W3, epic
+    `datev-mock-real-data-reconciliation`) — `additional_function`/
+    `caption`/`cases_related_to_goods_and_services`/`date_from`/`date_to`/
+    `group` are real fields confirmed by
+    `examples/accounting-transaction-keys.xml` (465 real records), all
+    present on **100%** of records — no optionality for this endpoint at
+    all, so every generated record populates every field."""
     records: list[AccountingTransactionKey] = []
     for index in range(count):
         records.append(
             AccountingTransactionKey(
                 id=str(4000 + index),
+                additional_function=_TRANSACTION_KEY_ADDITIONAL_FUNCTION_VALUES[
+                    index % len(_TRANSACTION_KEY_ADDITIONAL_FUNCTION_VALUES)
+                ],
+                caption=f"Steuerschlüssel {index + 1}",
+                cases_related_to_goods_and_services=_TRANSACTION_KEY_CASES_RELATED_VALUES[
+                    index % len(_TRANSACTION_KEY_CASES_RELATED_VALUES)
+                ],
+                date_from=f"2024-01-{(index % 9) + 1:02d}T00:00:00.000+01:00",
+                date_to=f"2024-12-{(index % 9) + 20:02d}T23:59:59.000+01:00",
+                group=_TRANSACTION_KEY_GROUP_VALUES[index % len(_TRANSACTION_KEY_GROUP_VALUES)],
                 number=(index + 1) * 100,
                 tax_rate=_TRANSACTION_KEY_TAX_RATE_VALUES[index % len(_TRANSACTION_KEY_TAX_RATE_VALUES)],
                 is_tax_rate_selectable=index % 2 == 0,
-                caption=f"Steuerschlüssel {index + 1}",
             )
         )
     return records

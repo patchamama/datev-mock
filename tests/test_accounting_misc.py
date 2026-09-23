@@ -21,7 +21,14 @@ Ground truth: the compiled OpenAPI reference written to the session
 scratchpad's `datev-endpoint-specs.md`, plus the cross-phase decisions in
 `odd/tasks/datev-mock-extended-endpoints.md`:
 
-- JSON-only bare arrays, no pagination wrapper.
+- JSON-only bare arrays, no pagination wrapper — except
+  `accounting_sequences_processed`/`accounting_transaction_keys`, which
+  gained XML/JSON content negotiation in epic
+  `datev-mock-real-data-reconciliation`, W3 (same mechanism as
+  `general_ledger_accounts`, W2 — ambiguous/missing Accept now defaults to
+  XML for those two, so the shared `_get`/`_assert_ignores_path_params`
+  helpers below now send an explicit `Accept: application/json` header,
+  harmless no-op for the 5 endpoints that stay JSON-only).
 - `{client-id}` / `{fiscal-year-id}` path params never filter the dataset —
   tested explicitly below for every endpoint, not just documented.
 - `general-ledger-account.main_function` / `main_function_number` /
@@ -54,6 +61,10 @@ from app.routers.accounting import (
     POSTING_PROPOSAL_RULES_INCOMING_INVOICES_ENDPOINT,
     POSTING_PROPOSAL_RULES_OUTGOING_INVOICES_ENDPOINT,
     TERMS_OF_PAYMENT_ENDPOINT,
+)
+from app.xml_serializers import (
+    ACCOUNTING_SEQUENCE_PROCESSED_NS,
+    ACCOUNTING_TRANSACTION_KEY_NS,
 )
 
 # Content negotiation (epic `datev-mock-real-data-reconciliation`, W2):
@@ -132,7 +143,8 @@ def _get(client, endpoint_template: str, client_id: str | None = None, fiscal_ye
     response = client.get(
         endpoint_template.format(
             client_id=client_id or _fresh_id(), fiscal_year_id=fiscal_year_id or _fresh_id()
-        )
+        ),
+        headers={"accept": "application/json"},
     )
     return response.json()
 
@@ -146,9 +158,15 @@ def _assert_ignores_path_params(client, endpoint_template: str) -> None:
 # --- GET .../fiscal-years/{fiscal-year-id}/accounting-sequences-processed ---
 
 
+_INSPECTION_STATUS_VALUES = {"not_specified"}
+_MARK_OF_ORIGIN_VALUES = {"RE", "SV"}
+ACCOUNTING_SEQUENCE_PROCESSED_XML_ACCEPT_HEADERS = {"accept": "application/xml"}
+
+
 def test_accounting_sequences_processed_returns_200_json_array_with_minimum_records(client):
     response = client.get(
-        ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+        ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers={"accept": "application/json"},
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
@@ -162,6 +180,10 @@ def test_accounting_sequences_processed_returns_200_json_array_with_minimum_reco
 
 
 def test_accounting_sequence_record_has_core_fields(client):
+    """Expanded (W3, epic `datev-mock-real-data-reconciliation`):
+    `date_committed`/`inspection_status`/`mark_of_origin` are real fields,
+    confirmed present on 100% of `examples/accounting-sequences-processed.xml`'s
+    53 real records — promoted from optional/absent to required."""
     records = _get(client, ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT)
     assert records, "no accounting-sequence records returned"
 
@@ -169,23 +191,67 @@ def test_accounting_sequence_record_has_core_fields(client):
         assert isinstance(record.get("id"), str) and record["id"].strip()
         assert isinstance(record.get("accounting_sequence_id"), str) and record["accounting_sequence_id"].strip()
         assert isinstance(record.get("description"), str) and record["description"].strip()
+        assert isinstance(record.get("date_committed"), str) and record["date_committed"].strip()
         assert isinstance(record.get("date_from"), str) and record["date_from"].strip()
         assert isinstance(record.get("date_to"), str) and record["date_to"].strip()
         assert isinstance(record.get("is_committed"), bool)
         assert record.get("record_type") in _RECORD_TYPE_VALUES
         assert record.get("accounting_reason") in _ACCOUNTING_REASON_VALUES
+        assert record.get("inspection_status") in _INSPECTION_STATUS_VALUES
+        assert record.get("mark_of_origin") in _MARK_OF_ORIGIN_VALUES
 
 
 def test_accounting_sequences_processed_ignores_path_param_values(client):
     _assert_ignores_path_params(client, ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT)
 
 
+def test_accounting_sequences_processed_xml_root_tag_and_namespace(client):
+    """Inferred by pattern (no direct real XML evidence for this endpoint —
+    epic `datev-mock-real-data-reconciliation`, W3)."""
+    response = client.get(
+        ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=ACCOUNTING_SEQUENCE_PROCESSED_XML_ACCEPT_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{ACCOUNTING_SEQUENCE_PROCESSED_NS}}}ArrayOfAccountingSequenceProcessed"
+
+    records = [child for child in root if _local_name(child.tag) == "AccountingSequenceProcessed"]
+    assert len(records) >= MIN_ACCOUNTING_SEQUENCES_PROCESSED
+
+    first = records[0]
+    assert _xml_field(first, "DateCommitted").text is not None
+    assert _xml_field(first, "InspectionStatus").text is not None
+    assert _xml_field(first, "MarkOfOrigin").text is not None
+
+
+def test_accounting_sequences_processed_xml_optional_field_uses_nil_when_absent(client):
+    response = client.get(
+        ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=ACCOUNTING_SEQUENCE_PROCESSED_XML_ACCEPT_HEADERS,
+    )
+    root = ET.fromstring(response.content)
+    records = [child for child in root if _local_name(child.tag) == "AccountingSequenceProcessed"]
+
+    nil_seen = any(_is_nil(_xml_field(record, "Initials")) for record in records)
+    assert nil_seen, (
+        "expected at least one AccountingSequenceProcessed record with Initials i:nil='true'"
+    )
+
+
 # --- GET .../fiscal-years/{fiscal-year-id}/accounting-transaction-keys ---
+
+
+_TRANSACTION_KEY_ADDITIONAL_FUNCTION_VALUES = {"input_tax", "not_specified", "vat"}
+ACCOUNTING_TRANSACTION_KEY_XML_ACCEPT_HEADERS = {"accept": "application/xml"}
 
 
 def test_accounting_transaction_keys_returns_200_json_array_with_minimum_records(client):
     response = client.get(
-        ACCOUNTING_TRANSACTION_KEYS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+        ACCOUNTING_TRANSACTION_KEYS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers={"accept": "application/json"},
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
@@ -199,19 +265,61 @@ def test_accounting_transaction_keys_returns_200_json_array_with_minimum_records
 
 
 def test_accounting_transaction_key_record_has_core_fields(client):
+    """Expanded (W3, epic `datev-mock-real-data-reconciliation`):
+    `additional_function`/`caption`/`cases_related_to_goods_and_services`/
+    `date_from`/`date_to`/`group` are real fields, confirmed present on
+    **100%** of `examples/accounting-transaction-keys.xml`'s 465 real
+    records — no optionality at all for this endpoint."""
     records = _get(client, ACCOUNTING_TRANSACTION_KEYS_ENDPOINT)
     assert records, "no accounting-transaction-key records returned"
 
     for record in records:
         assert isinstance(record.get("id"), str) and record["id"].strip()
-        assert isinstance(record.get("caption"), str)
+        assert isinstance(record.get("caption"), str) and record["caption"].strip()
         assert isinstance(record.get("number"), int) and 1 <= record["number"] <= 9999
         assert isinstance(record.get("tax_rate"), (int, float)) and 0 <= record["tax_rate"] <= 99.99
         assert isinstance(record.get("is_tax_rate_selectable"), bool)
+        assert record.get("additional_function") in _TRANSACTION_KEY_ADDITIONAL_FUNCTION_VALUES
+        assert isinstance(record.get("cases_related_to_goods_and_services"), int)
+        assert isinstance(record.get("date_from"), str) and record["date_from"].strip()
+        assert isinstance(record.get("date_to"), str) and record["date_to"].strip()
+        assert isinstance(record.get("group"), str) and record["group"].strip()
 
 
 def test_accounting_transaction_keys_ignores_path_param_values(client):
     _assert_ignores_path_params(client, ACCOUNTING_TRANSACTION_KEYS_ENDPOINT)
+
+
+def test_accounting_transaction_keys_xml_root_tag_and_namespace(client):
+    """Inferred by pattern (no direct real XML evidence for this endpoint —
+    epic `datev-mock-real-data-reconciliation`, W3)."""
+    response = client.get(
+        ACCOUNTING_TRANSACTION_KEYS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=ACCOUNTING_TRANSACTION_KEY_XML_ACCEPT_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{ACCOUNTING_TRANSACTION_KEY_NS}}}ArrayOfAccountingTransactionKey"
+
+    records = [child for child in root if _local_name(child.tag) == "AccountingTransactionKey"]
+    assert len(records) >= MIN_ACCOUNTING_TRANSACTION_KEYS
+
+    first = records[0]
+    assert _xml_field(first, "AdditionalFunction").text is not None
+    assert _xml_field(first, "Group").text is not None
+    assert _xml_field(first, "CasesRelatedToGoodsAndServices").text is not None
+
+
+def test_accounting_transaction_keys_default_format_is_xml(client):
+    """Ambiguous/missing Accept defaults to the live `default_accounting_format`
+    setting (`"xml"`), same as every other content-negotiated endpoint."""
+    response = client.get(
+        ACCOUNTING_TRANSACTION_KEYS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
 
 
 # --- GET .../fiscal-years/{fiscal-year-id}/assets/stocktakings ---
