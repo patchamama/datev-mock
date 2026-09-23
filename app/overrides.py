@@ -15,6 +15,7 @@ separate, later task (V3), not implemented here.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -95,9 +96,46 @@ def _strip_namespace(tag: str) -> str:
     return tag
 
 
+# Real-world captured DATEV XML (unlike this mock's own serializer output)
+# has been observed with bare, unescaped "&" in text content — e.g. a company
+# name like "GSBW Koop & Sch" instead of the well-formed "GSBW Koop &amp;
+# Sch". That makes the document technically invalid XML, which the strict
+# stdlib parser rejects outright. Repairing just the ampersands (leaving
+# already-valid entity references like &amp;/&lt;/&#39; alone) is a narrow,
+# well-understood fix for this specific, common real-world quirk — not a
+# general "accept broken XML" allowance.
+_BARE_AMPERSAND_RE = re.compile(r"&(?!(?:amp|lt|gt|quot|apos|#[0-9]+|#x[0-9a-fA-F]+);)")
+
+
+def _repair_bare_ampersands(content: str) -> str:
+    return _BARE_AMPERSAND_RE.sub("&amp;", content)
+
+
+def sanitize_xml(content: str) -> str:
+    """Return XML that parses cleanly, repairing bare ampersands if needed.
+
+    Returns `content` unchanged if it's already well-formed, or if repairing
+    ampersands still doesn't produce valid XML (i.e. some other, unhandled
+    problem) — callers that need to know whether the result actually parses
+    should still attempt `ET.fromstring` themselves.
+    """
+    try:
+        ET.fromstring(content)
+        return content
+    except ET.ParseError:
+        pass
+
+    repaired = _repair_bare_ampersands(content)
+    try:
+        ET.fromstring(repaired)
+    except ET.ParseError:
+        return content
+    return repaired
+
+
 def _try_parse_xml_root(content: str) -> str | None:
     try:
-        root = ET.fromstring(content)
+        root = ET.fromstring(sanitize_xml(content))
     except ET.ParseError:
         return None
     return _strip_namespace(root.tag)

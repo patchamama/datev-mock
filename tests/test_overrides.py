@@ -37,6 +37,7 @@ target anywhere below — it is excluded from the override feature entirely
 from __future__ import annotations
 
 import json
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -345,3 +346,50 @@ def test_delete_override_removes_it_from_list_entirely():
     overrides.delete_override("master_data.banks")
 
     assert "master_data.banks" not in overrides.list_overrides()
+
+
+# --- sanitize_xml: bare-ampersand repair ---
+#
+# Regression coverage for a real bug: real-world captured DATEV XML (unlike
+# this mock's own serializer output) has been observed with a bare,
+# unescaped "&" in text content -- e.g. a company name like
+# "GSBW Koop & Sch" -- which is technically invalid XML that the strict
+# stdlib parser rejects outright, so detection silently failed with "no
+# candidates" for otherwise-perfectly-recognizable real DATEV files.
+
+
+def test_sanitize_xml_repairs_a_bare_ampersand():
+    broken = "<ArrayOfClient><Client><Name>GSBW Koop & Sch</Name></Client></ArrayOfClient>"
+
+    repaired = overrides.sanitize_xml(broken)
+
+    assert "GSBW Koop &amp; Sch" in repaired
+    ET.fromstring(repaired)  # must now parse cleanly
+
+
+def test_sanitize_xml_leaves_already_valid_xml_unchanged():
+    valid = "<Echo><echo_message>hi &amp; bye</echo_message></Echo>"
+
+    assert overrides.sanitize_xml(valid) == valid
+
+
+def test_sanitize_xml_does_not_double_escape_existing_entities():
+    valid_with_entities = (
+        "<Echo><echo_message>a &amp; b &lt;tag&gt; &#39;q&#39;</echo_message></Echo>"
+    )
+
+    result = overrides.sanitize_xml(valid_with_entities)
+
+    assert result == valid_with_entities
+    assert "&amp;amp;" not in result
+
+
+def test_detect_candidates_recognizes_xml_with_a_bare_ampersand():
+    broken = (
+        '<ArrayOfClientResource xmlns="http://schemas.datacontract.org/2004/07/'
+        'Datev.Sdd.Connect.PlugIn.Contracts.Resources">'
+        "<ClientResource><Name>GSBW Koop & Sch</Name></ClientResource>"
+        "</ArrayOfClientResource>"
+    )
+
+    assert overrides.detect_candidates(broken) == ["master_data.clients"]

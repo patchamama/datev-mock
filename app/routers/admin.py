@@ -153,6 +153,13 @@ async def post_override(file: UploadFile = File(...)) -> Any:
     except UnicodeDecodeError:
         return JSONResponse(status_code=422, content={"status": "unrecognized"})
 
+    # Real-world captured DATEV XML has been observed with bare, unescaped
+    # "&" in text content (e.g. a company name with "&" in it) -- technically
+    # invalid XML that the strict parser would otherwise reject outright.
+    # Repair it before detecting/storing so both detection and whatever this
+    # mock later serves are well-formed. No-op for JSON or already-valid XML.
+    content = overrides.sanitize_xml(content)
+
     candidates = overrides.detect_candidates(content)
     if not candidates:
         return JSONResponse(status_code=422, content={"status": "unrecognized"})
