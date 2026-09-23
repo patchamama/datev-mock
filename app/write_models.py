@@ -315,3 +315,196 @@ class AddresseeWrite(BaseModel):
     bank_accounts: Optional[list[dict]] = None
     tax_offices: Optional[list[dict]] = None
     contact_persons: Optional[list[dict]] = None
+
+
+# --- P3 Group B (new resources, no prior GET model) ---
+#
+# Field shapes per Appendix A's "Group B" subsection. 5 of these 11 (see
+# the feature doc's per-resource breakdown) have a matching dataclass in
+# `app/models.py` for a GET round-trip; the remaining 5 operations below
+# (`InternalCostServiceWrite`, `AccountingSequenceCreateWrite`,
+# `IncomingInvoicePostingWrite`, `OutgoingInvoicePostingWrite`,
+# `CashRegisterPostingWrite`) are create-only per the spec -- no GET route,
+# no dataclass, just persisted via `db.upsert_record` from
+# `model_dump()` directly for admin-UI visibility (architecture decision #5).
+
+
+class CostCenterPropertyWrite(BaseModel):
+    id: Optional[str] = None
+    characteristics: Optional[list[dict]] = None
+    description: Optional[str] = None
+
+
+class CostSequenceWrite(BaseModel):
+    id: str
+    accounting_reason: Optional[str] = None
+    description: Optional[str] = None
+    month: int
+
+
+class CostAccountingRecordWrite(BaseModel):
+    id: Optional[str] = None
+    amount: Optional[float] = None
+    account_number: int
+    alternative_cost_center: Optional[str] = None
+    contra_account_number: Optional[int] = None
+    cost_center: Optional[str] = None
+    date: str
+    debit_credit_identifier: Optional[str] = None
+    document_field1: Optional[str] = None
+    document_field2: Optional[str] = None
+    kost_date: Optional[str] = None
+    kost_quantity: Optional[float] = None
+    text: Optional[str] = None
+
+
+class VariousAddressWrite(BaseModel):
+    id: Optional[str] = None
+    account_number: Optional[int] = None
+    addresses: Optional[list[dict]] = None
+    business_partner_number: Optional[str] = None
+    banks: Optional[list[dict]] = None
+    caption: Optional[str] = None
+    communications: Optional[list[dict]] = None
+    correspondence_information: Optional[dict] = None
+    correspondence_title: Optional[str] = None
+    date_last_modification: Optional[str] = None
+    individual_fields: Optional[list[dict]] = None
+    legal_entity_type: Optional[str] = None
+    legal_person: Optional[LegalPersonWrite] = None
+    natural_person: Optional[NaturalPersonWrite] = None
+    not_specified_person: Optional[NotSpecifiedPersonWrite] = None
+    number: Optional[str] = None
+    short_name: Optional[str] = None
+
+
+class EmployeeWrite(BaseModel):
+    id: Optional[str] = None
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    entry_date: Optional[str] = None
+    fax: Optional[str] = None
+    initials: Optional[str] = None
+    name: str
+    natural_person_id: str
+    note: Optional[str] = None
+    number: Optional[int] = None
+    phone_extension: Optional[str] = None
+    separation_date: Optional[str] = None
+    status: Optional[str] = None
+    timestamp: Optional[str] = None
+    organization_id: Optional[str] = None
+    organization_name: Optional[str] = None
+    organization_number: Optional[str] = None
+    establishment_id: Optional[str] = None
+    establishment_name: Optional[str] = None
+    establishment_number: Optional[str] = None
+    establishment_short_name: Optional[str] = None
+    functional_area_id: Optional[str] = None
+    functional_area_name: Optional[str] = None
+    functional_area_short_name: Optional[str] = None
+
+
+class InternalCostServiceWrite(BaseModel):
+    """`cost-systems/{cost_system_id}/internal-cost-services` -- POST,
+    create-only, no GET documented in the spec. `IBLZ_number` keeps the
+    spec's own literal (non-snake_case) field spelling per Appendix A,
+    same "match the real field name exactly" precedent as
+    `ClientResource`'s PascalCase fields elsewhere in this project."""
+
+    amount: Optional[float] = None
+    cost_center_from: str
+    cost_center_to: str
+    document_field1: Optional[str] = None
+    document_field2: Optional[str] = None
+    IBLZ_number: Optional[int] = None
+    date: Optional[str] = None
+    kost_quantity: Optional[float] = None
+    month: str
+    text: Optional[str] = None
+
+
+class AccountingSequenceCreateWrite(BaseModel):
+    """`fiscal-years/{fy}/accounting-sequences` -- POST, create-only, no GET
+    documented. Deliberately named distinct from the existing read-only
+    `AccountingSequenceProcessed` dataclass (`app/models.py`) to avoid
+    confusing the two -- this is a brand-new write-only creation body, not
+    an alternate shape for the already-modeled processed view."""
+
+    accounting_reason: Optional[str] = None
+    application_information: Optional[str] = None
+    date_from: str
+    date_to: str
+    description: Optional[str] = None
+    initials: Optional[str] = None
+    is_committed: Optional[bool] = None
+    record_type: Optional[str] = None
+    accounting_records: Optional[list[dict]] = None
+
+
+class IncomingInvoicePostingWrite(BaseModel):
+    """`fiscal-years/{fy}/posting-proposals-incoming-invoices/batch` -- POST,
+    array body, create-only, no GET documented."""
+
+    accounting_transaction_key: Optional[int] = None
+    account_number: Optional[int] = None
+    amount: float
+    creditor_account_number: Optional[int] = None
+    currency_code: Optional[str] = None
+    date: str
+    delivery_date: Optional[str] = None
+    document_field1: Optional[str] = None
+    document_field2: Optional[str] = None
+    document_link: Optional[str] = None
+    document_system: Optional[str] = None
+    goods_and_services: Optional[str] = None
+    kost1_cost_center_id: Optional[str] = None
+    kost2_cost_center_id: Optional[str] = None
+    name: Optional[str] = None
+    posting_description: Optional[str] = None
+    tax_rate: Optional[float] = None
+
+
+class OutgoingInvoicePostingWrite(BaseModel):
+    """`fiscal-years/{fy}/posting-proposals-outgoing-invoices/batch` --
+    POST, array body, create-only, no GET documented. Same shape as
+    `IncomingInvoicePostingWrite` but `debitor_account_number` in place of
+    `creditor_account_number` (per Appendix A)."""
+
+    accounting_transaction_key: Optional[int] = None
+    account_number: Optional[int] = None
+    amount: float
+    debitor_account_number: Optional[int] = None
+    currency_code: Optional[str] = None
+    date: str
+    delivery_date: Optional[str] = None
+    document_field1: Optional[str] = None
+    document_field2: Optional[str] = None
+    document_link: Optional[str] = None
+    document_system: Optional[str] = None
+    goods_and_services: Optional[str] = None
+    kost1_cost_center_id: Optional[str] = None
+    kost2_cost_center_id: Optional[str] = None
+    name: Optional[str] = None
+    posting_description: Optional[str] = None
+    tax_rate: Optional[float] = None
+
+
+class CashRegisterPostingWrite(BaseModel):
+    """`fiscal-years/{fy}/posting-proposals-cash-register/batch` -- POST,
+    array body, create-only, no GET documented."""
+
+    accounting_transaction_key: Optional[int] = None
+    amount: float
+    cash_account_number: int
+    contra_account_number: Optional[int] = None
+    currency_code: Optional[str] = None
+    date: str
+    document_field1: Optional[str] = None
+    document_field2: Optional[str] = None
+    document_link: Optional[str] = None
+    document_system: Optional[str] = None
+    kost1_cost_center_id: Optional[str] = None
+    kost2_cost_center_id: Optional[str] = None
+    posting_description: Optional[str] = None
+    tax_rate: Optional[float] = None

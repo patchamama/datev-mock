@@ -1149,3 +1149,133 @@ class Document:
     domain_id: str
     created_at: str
     modified_at: str
+
+
+# --- P3 Group B new resources
+# (datev-mock-write-endpoints-and-observability.md) ---
+#
+# These 5 resource families have no prior GET modeling anywhere in this
+# project -- the spec documents a write ("POST"/"PUT") operation *and* a
+# matching GET for each (Appendix A: "Group B"), so this is a fresh vertical
+# slice per resource: dataclass here (GET/JSON shape), Pydantic write model
+# in `app/write_models.py`, SQLite storage via `app/db.py`'s existing
+# generic functions, GET handler in the relevant router. JSON-only per the
+# feature doc's explicit instruction (genuinely new resources, no real XML
+# capture evidence to justify inventing an XML shape) -- no
+# `xml_serializers.py` entries needed.
+#
+# The 5 create-only Group B operations (internal-cost-services,
+# accounting-sequences, the 3 posting-proposals batches) have **no**
+# documented GET at all and therefore get no dataclass here -- they're
+# persisted via `db.upsert_record` directly from their Pydantic write model
+# (`model_dump()`), same "no invented public GET route" decision the feature
+# doc calls for.
+
+
+@dataclass
+class CostCenterProperty:
+    """`cost-systems/{cost_system_id}/cost-center-properties/{id}` -- small
+    resource, PUT + (list) GET both documented."""
+
+    id: str
+    characteristics: list[dict] = field(default_factory=list)
+    description: Optional[str] = None
+
+
+@dataclass
+class CostSequence:
+    """`cost-systems/{cost_system_id}/cost-sequences/{id}` -- PUT + (list)
+    GET both documented. `id`/`month` are the spec's own required fields."""
+
+    id: str
+    month: int
+    accounting_reason: Optional[str] = None
+    description: Optional[str] = None
+
+
+@dataclass
+class CostAccountingRecord:
+    """`cost-systems/{cost_system_id}/cost-sequences/{cost_sequence_id}/
+    cost-accounting-records` -- POST + (list) GET both documented. Same
+    "ignore path-param ids for filtering" convention as every other
+    accounting sub-resource in this router (see `app/routers/accounting.py`
+    module docstring) -- the generic `stored_records` table has no
+    `cost_sequence_id` column, and architecture decision #2 says not to add
+    one just for this resource."""
+
+    id: str
+    account_number: int
+    date: str
+    amount: Optional[float] = None
+    alternative_cost_center: Optional[str] = None
+    contra_account_number: Optional[int] = None
+    cost_center: Optional[str] = None
+    debit_credit_identifier: Optional[str] = None
+    document_field1: Optional[str] = None
+    document_field2: Optional[str] = None
+    kost_date: Optional[str] = None
+    kost_quantity: Optional[float] = None
+    text: Optional[str] = None
+
+
+@dataclass
+class VariousAddress:
+    """`fiscal-years/{fy}/various-addresses` -- POST + (list) GET both
+    documented. Nested `legal_person`/`natural_person`/`not_specified_person`
+    reuse the same shape family as `Creditor`/`Debitor`, but kept as plain
+    `dict` here (not the `NaturalPerson`/`LegalPerson`/`NotSpecifiedPerson`
+    dataclasses) since this resource is JSON-only -- no XML sub-rendering
+    concern the way `Creditor`/`Debitor` have (see that nil_fields
+    precedent), so a raw dict round-trips through JSON with full fidelity
+    directly, no special-casing needed."""
+
+    id: str
+    account_number: Optional[int] = None
+    addresses: Optional[list[dict]] = None
+    business_partner_number: Optional[str] = None
+    banks: Optional[list[dict]] = None
+    caption: Optional[str] = None
+    communications: Optional[list[dict]] = None
+    correspondence_information: Optional[dict] = None
+    correspondence_title: Optional[str] = None
+    date_last_modification: Optional[str] = None
+    individual_fields: Optional[list[dict]] = None
+    legal_entity_type: Optional[str] = None
+    legal_person: Optional[dict] = None
+    natural_person: Optional[dict] = None
+    not_specified_person: Optional[dict] = None
+    number: Optional[str] = None
+    short_name: Optional[str] = None
+
+
+@dataclass
+class Employee:
+    """`master-data/v1/employees` (+ `/{id}`) -- POST/PUT + (list + by-id)
+    GET all documented. Shares the `organization_*`/`establishment_*`/
+    `functional_area_*` field family with `ClientResource`'s new write-side
+    fields (same Client Master Data spec convention, per Appendix A)."""
+
+    id: str
+    name: str
+    natural_person_id: str
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    entry_date: Optional[str] = None
+    fax: Optional[str] = None
+    initials: Optional[str] = None
+    note: Optional[str] = None
+    number: Optional[int] = None
+    phone_extension: Optional[str] = None
+    separation_date: Optional[str] = None
+    status: Optional[str] = None
+    timestamp: Optional[str] = None
+    organization_id: Optional[str] = None
+    organization_name: Optional[str] = None
+    organization_number: Optional[str] = None
+    establishment_id: Optional[str] = None
+    establishment_name: Optional[str] = None
+    establishment_number: Optional[str] = None
+    establishment_short_name: Optional[str] = None
+    functional_area_id: Optional[str] = None
+    functional_area_name: Optional[str] = None
+    functional_area_short_name: Optional[str] = None

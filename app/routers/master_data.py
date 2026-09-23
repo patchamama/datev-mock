@@ -17,8 +17,8 @@ from fastapi import APIRouter, HTTPException, Request, Response
 
 from app import config, data_store, db, overrides
 from app.json_serializers import serialize_master_data_clients_json
-from app.models import Addressee, ClientResource
-from app.write_models import AddresseeWrite, ClientResponsibility, ClientWrite
+from app.models import Addressee, ClientResource, Employee
+from app.write_models import AddresseeWrite, ClientResponsibility, ClientWrite, EmployeeWrite
 from app.xml_serializers import serialize_client_resources
 
 router = APIRouter(tags=["master-data"])
@@ -26,6 +26,10 @@ router = APIRouter(tags=["master-data"])
 ENDPOINT = "/datev/api/master-data/v1/clients"
 ADDRESSEES_ENDPOINT = "/datev/api/master-data/v1/addressees"
 BANKS_ENDPOINT = "/datev/api/master-data/v1/banks"
+# P3 (datev-mock-write-endpoints-and-observability.md, "Group B") -- new in
+# this phase, no prior GET modeling. JSON-only, same "bare array" precedent
+# as ADDRESSEES_ENDPOINT/BANKS_ENDPOINT above.
+EMPLOYEES_ENDPOINT = "/datev/api/master-data/v1/employees"
 
 # --- P2 write endpoints (datev-mock-write-endpoints-and-observability.md,
 # "Group A") -- `ClientResource`'s fields are PascalCase (matching the real
@@ -186,6 +190,37 @@ def get_banks() -> list[dict[str, Any]]:
     return [_to_json(record) for record in data_store.list_banks()]
 
 
+@router.get(
+    EMPLOYEES_ENDPOINT,
+    summary="List master-data employees",
+    description=(
+        "New in P3 (Group B) -- JSON-only bare array of Employee. No fake "
+        "dataset exists for this brand-new resource (no `fake_data.py` "
+        "generator); returns whatever's been POSTed/PUT so far, straight "
+        "from app.db (same 'no merge needed, nothing to merge with' "
+        "convention as the other new Group B GET handlers in "
+        "app/routers/accounting.py)."
+    ),
+)
+def get_employees() -> list[dict[str, Any]]:
+    records = [
+        db.record_to_dataclass(Employee, row) for row in db.list_records("master_data.employees")
+    ]
+    return [_to_json(record) for record in records]
+
+
+@router.get(
+    EMPLOYEES_ENDPOINT + "/{employee_id}",
+    summary="Get a master-data employee by id",
+    description="Real lookup-by-id; 404 for an unknown employee id.",
+)
+def get_employee(employee_id: str) -> dict[str, Any]:
+    stored = db.get_record("master_data.employees", employee_id)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="employee not found")
+    return _to_json(db.record_to_dataclass(Employee, stored))
+
+
 # --- P2 write endpoints (datev-mock-write-endpoints-and-observability.md,
 # "Group A") --- same "validate via Pydantic, generate an id if absent,
 # upsert, echo the stored record back" convention as
@@ -242,3 +277,17 @@ def post_addressee(body: AddresseeWrite) -> dict[str, Any]:
 @router.put(ADDRESSEES_ENDPOINT + "/{addressee_id}", summary="Update a master-data addressee by id")
 def put_addressee(addressee_id: str, body: AddresseeWrite) -> dict[str, Any]:
     return _write_record("master_data.addressees", body, record_id=addressee_id)
+
+
+# --- P3 write endpoints (datev-mock-write-endpoints-and-observability.md,
+# "Group B") --- same convention as every write endpoint above.
+
+
+@router.post(EMPLOYEES_ENDPOINT, status_code=201, summary="Create a master-data employee")
+def post_employee(body: EmployeeWrite) -> dict[str, Any]:
+    return _write_record("master_data.employees", body)
+
+
+@router.put(EMPLOYEES_ENDPOINT + "/{employee_id}", summary="Update a master-data employee by id")
+def put_employee(employee_id: str, body: EmployeeWrite) -> dict[str, Any]:
+    return _write_record("master_data.employees", body, record_id=employee_id)

@@ -153,7 +153,7 @@ re-open the JAR.
       master-data.clients (+ responsibilities), master-data.addressees.
       GET responses updated to merge SQLite-stored records. Admin UI shows
       stored records per resource.
-- [ ] P3 — Group B new resources (7 families, no prior GET modeling):
+- [x] P3 — Group B new resources (7 families, no prior GET modeling):
       cost-center-properties, cost-sequences (+ cost-accounting-records),
       various-addresses, employees, internal-cost-services,
       accounting-sequences (create), posting-proposals batch (incoming/
@@ -254,6 +254,43 @@ epic in this project.
     report (not duplicated here) — orchestrator independently re-ran the
     full suite (324/324), re-verified `.gitignore`, and live-tested the
     round-trip + restart-persistence behavior directly before committing.
+- 2026-09-23: P3 done (RED+GREEN, delegated direct). All 7 Group B
+  resources implemented, reusing `app/db.py`'s existing generic
+  persistence (zero schema/CRUD changes needed): `cost-center-properties`,
+  `cost-sequences` (+`cost-accounting-records`), `various-addresses`,
+  `employees` all got a full GET+write vertical slice (new `app/models.py`
+  dataclasses, JSON-only — no XML, correct default for a brand-new
+  resource with zero real capture evidence); `internal-cost-services`,
+  `accounting-sequences` (create — kept deliberately distinct from the
+  existing read-only `accounting_sequences_processed`), and the 3
+  `posting-proposals-*/batch` endpoints are POST-only, matching the
+  spec's own lack of a GET for those 5 operations — no route invented
+  where none exists. 344/344 tests passing (324 + 20 new).
+  - **`.gitignore` and `app/db.py`/`app/routers/admin.py` untouched** —
+    the generic `stored_records` table and the P2 "Stored records" admin
+    card needed zero changes to support 7 brand-new resource types,
+    confirming architecture decision #2's bet on one generic table over
+    bespoke per-resource schemas.
+  - **405 vs. unmatched, verified live**: a `GET` on a POST-only path
+    (e.g. `internal-cost-services`) correctly returns `405 Method Not
+    Allowed` (a real, matched route, just the wrong verb) and P1's
+    middleware correctly logs it with `unmatched: false` — distinct from
+    both a genuinely unregistered path (`unmatched: true`) and a
+    legitimate business-logic 404. Re-verified independently (not just
+    trusting the delegated agent's report): `POST` an
+    `internal-cost-service`, confirmed `GET` on the same path returns
+    `405`, confirmed `/admin/api/logs` shows `unmatched: false` for it.
+  - **Round-trip re-verified independently** for `employees` (POST →
+    appears in `GET` list and `GET .../{id}`; unknown id still correctly
+    404s) and confirmed both new create-only resource types
+    (`accounting.internal_cost_services`, `master_data.employees`) appear
+    automatically in `/admin/api/stored-records` with no admin-UI code
+    changes needed.
+  - No fake seed data added for any of the 7 — deliberately kept
+    lightweight per the task's own guidance; every one of these resources
+    only shows what a caller has actually written, which is arguably more
+    honest for write-first resources than inventing fake defaults nobody
+    asked for.
 
 ---
 

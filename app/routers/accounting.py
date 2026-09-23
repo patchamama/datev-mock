@@ -23,13 +23,32 @@ from fastapi import APIRouter, Request, Response
 
 from app import config, data_store, db, overrides
 from app.json_serializers import serialize_clients_json
-from app.models import AssetStocktaking, CostCenter, Creditor, Debitor, TermOfPayment
+from app.models import (
+    AssetStocktaking,
+    CostAccountingRecord,
+    CostCenter,
+    CostCenterProperty,
+    CostSequence,
+    Creditor,
+    Debitor,
+    TermOfPayment,
+    VariousAddress,
+)
 from app.write_models import (
+    AccountingSequenceCreateWrite,
     AssetStocktakingWrite,
+    CashRegisterPostingWrite,
+    CostAccountingRecordWrite,
+    CostCenterPropertyWrite,
     CostCenterWrite,
+    CostSequenceWrite,
     CreditorWrite,
     DebitorWrite,
+    IncomingInvoicePostingWrite,
+    InternalCostServiceWrite,
+    OutgoingInvoicePostingWrite,
     TermOfPaymentWrite,
+    VariousAddressWrite,
 )
 from app.xml_serializers import (
     serialize_accounting_sequences_processed,
@@ -123,6 +142,34 @@ TERMS_OF_PAYMENT_ENDPOINT = f"{_FISCAL_YEAR_PREFIX}/terms-of-payment"
 # doesn't require one, and Starlette would otherwise 307-redirect a
 # no-slash request to it).
 ASSET_STOCKTAKING_ENDPOINT = f"{_FISCAL_YEAR_PREFIX}/assets/{{asset_id}}/stocktaking"
+
+# --- P3 write-endpoint path constants (Group B, no prior GET modeling) ---
+#
+# Same `_FISCAL_YEAR_PREFIX`/snake_case-path-param/no-path-filtering
+# conventions as every constant above. `COST_CENTER_PROPERTIES_ENDPOINT`/
+# `COST_SEQUENCES_ENDPOINT`/`INTERNAL_COST_SERVICES_ENDPOINT` nest under the
+# same `cost-systems/{cost_system_id}` segment as `COST_CENTERS_ENDPOINT`.
+COST_CENTER_PROPERTIES_ENDPOINT = (
+    f"{_FISCAL_YEAR_PREFIX}/cost-systems/{{cost_system_id}}/cost-center-properties"
+)
+COST_SEQUENCES_ENDPOINT = f"{_FISCAL_YEAR_PREFIX}/cost-systems/{{cost_system_id}}/cost-sequences"
+INTERNAL_COST_SERVICES_ENDPOINT = (
+    f"{_FISCAL_YEAR_PREFIX}/cost-systems/{{cost_system_id}}/internal-cost-services"
+)
+VARIOUS_ADDRESSES_ENDPOINT = f"{_FISCAL_YEAR_PREFIX}/various-addresses"
+# Deliberately distinct from ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT above --
+# that's the existing read-only "processed" view; this is the create-only
+# write operation the spec documents separately (Appendix A, Group B).
+ACCOUNTING_SEQUENCES_ENDPOINT = f"{_FISCAL_YEAR_PREFIX}/accounting-sequences"
+POSTING_PROPOSALS_INCOMING_INVOICES_BATCH_ENDPOINT = (
+    f"{_FISCAL_YEAR_PREFIX}/posting-proposals-incoming-invoices/batch"
+)
+POSTING_PROPOSALS_OUTGOING_INVOICES_BATCH_ENDPOINT = (
+    f"{_FISCAL_YEAR_PREFIX}/posting-proposals-outgoing-invoices/batch"
+)
+POSTING_PROPOSALS_CASH_REGISTER_BATCH_ENDPOINT = (
+    f"{_FISCAL_YEAR_PREFIX}/posting-proposals-cash-register/batch"
+)
 
 
 def _strip_none(value: Any) -> Any:
@@ -595,6 +642,97 @@ def get_terms_of_payment(client_id: str, fiscal_year_id: str, request: Request) 
     return Response(content=serialize_terms_of_payment(records), media_type="application/xml")
 
 
+# --- P3 GET endpoints (datev-mock-write-endpoints-and-observability.md,
+# "Group B") ---
+#
+# These 4 resources are brand new to this mock -- no fake dataset exists for
+# any of them (architecture decision #5's "no fake_data.py generator" call),
+# so unlike every Group A GET handler above there's nothing to merge with:
+# each handler lists straight from `app.db`, converts each stored row back
+# to its dataclass via `db.record_to_dataclass`, and serializes to JSON.
+# JSON-only (no XML) per the feature doc's explicit instruction for
+# genuinely new Group B resources -- no real capture evidence exists to
+# justify inventing an XML shape, and none of the accompanying write models
+# are validated against any XML contract either.
+
+
+@router.get(
+    COST_CENTER_PROPERTIES_ENDPOINT,
+    summary="List a cost system's cost-center properties",
+    description=(
+        "New in P3 (Group B) -- JSON-only bare array (no fake dataset "
+        "exists for this new resource; returns whatever's been PUT so "
+        "far). Ignores client_id/fiscal_year_id/cost_system_id, same "
+        "no-path-filtering convention as every other accounting "
+        "sub-resource in this router."
+    ),
+)
+def get_cost_center_properties(
+    client_id: str, fiscal_year_id: str, cost_system_id: str
+) -> list[dict[str, Any]]:
+    records = [
+        db.record_to_dataclass(CostCenterProperty, row)
+        for row in db.list_records("accounting.cost_center_properties")
+    ]
+    return [_to_json(record) for record in records]
+
+
+@router.get(
+    COST_SEQUENCES_ENDPOINT,
+    summary="List a cost system's cost sequences",
+    description=(
+        "New in P3 (Group B) -- JSON-only bare array, no fake dataset. "
+        "Ignores client_id/fiscal_year_id/cost_system_id."
+    ),
+)
+def get_cost_sequences(
+    client_id: str, fiscal_year_id: str, cost_system_id: str
+) -> list[dict[str, Any]]:
+    records = [
+        db.record_to_dataclass(CostSequence, row)
+        for row in db.list_records("accounting.cost_sequences")
+    ]
+    return [_to_json(record) for record in records]
+
+
+@router.get(
+    COST_SEQUENCES_ENDPOINT + "/{cost_sequence_id}/cost-accounting-records",
+    summary="List a cost sequence's cost accounting records",
+    description=(
+        "New in P3 (Group B) -- JSON-only bare array, no fake dataset. "
+        "Ignores cost_sequence_id along with the rest of the path -- the "
+        "generic stored_records table has no cost_sequence_id column "
+        "(architecture decision #2 says not to add one just for this "
+        "resource), same 'ignore path-param ids' convention as every "
+        "other accounting sub-resource."
+    ),
+)
+def get_cost_accounting_records(
+    client_id: str, fiscal_year_id: str, cost_system_id: str, cost_sequence_id: str
+) -> list[dict[str, Any]]:
+    records = [
+        db.record_to_dataclass(CostAccountingRecord, row)
+        for row in db.list_records("accounting.cost_accounting_records")
+    ]
+    return [_to_json(record) for record in records]
+
+
+@router.get(
+    VARIOUS_ADDRESSES_ENDPOINT,
+    summary="List a fiscal year's various addresses",
+    description=(
+        "New in P3 (Group B) -- JSON-only bare array, no fake dataset. "
+        "Ignores client_id/fiscal_year_id."
+    ),
+)
+def get_various_addresses(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+    records = [
+        db.record_to_dataclass(VariousAddress, row)
+        for row in db.list_records("accounting.various_addresses")
+    ]
+    return [_to_json(record) for record in records]
+
+
 # --- P2 write endpoints (datev-mock-write-endpoints-and-observability.md,
 # "Group A") ---
 #
@@ -764,3 +902,187 @@ def put_cost_center(
         client_id=client_id,
         fiscal_year_id=fiscal_year_id,
     )
+
+
+# --- P3 write endpoints (datev-mock-write-endpoints-and-observability.md,
+# "Group B") ---
+#
+# Same `_write_record` helper as every P2 Group A endpoint above. 11 of
+# these 16 operations have a matching GET handler (added above); the
+# remaining 5 (internal-cost-services, accounting-sequences, the 3
+# posting-proposals batches) are create-only per the spec (no GET
+# documented) -- still persisted via `_write_record`/`app.db` for admin-UI
+# visibility/audit (architecture decision #5), just with no public GET
+# route the real API doesn't have.
+
+
+@router.put(
+    COST_CENTER_PROPERTIES_ENDPOINT + "/{cost_center_property_id}",
+    summary="Update a cost-center property by id",
+)
+def put_cost_center_property(
+    client_id: str,
+    fiscal_year_id: str,
+    cost_system_id: str,
+    cost_center_property_id: str,
+    body: CostCenterPropertyWrite,
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.cost_center_properties",
+        body,
+        record_id=cost_center_property_id,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+@router.put(
+    COST_SEQUENCES_ENDPOINT + "/{cost_sequence_id}",
+    summary="Update a cost sequence by id",
+)
+def put_cost_sequence(
+    client_id: str,
+    fiscal_year_id: str,
+    cost_system_id: str,
+    cost_sequence_id: str,
+    body: CostSequenceWrite,
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.cost_sequences",
+        body,
+        record_id=cost_sequence_id,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+@router.post(
+    COST_SEQUENCES_ENDPOINT + "/{cost_sequence_id}/cost-accounting-records",
+    status_code=201,
+    summary="Create a cost sequence's cost accounting record",
+)
+def post_cost_accounting_record(
+    client_id: str,
+    fiscal_year_id: str,
+    cost_system_id: str,
+    cost_sequence_id: str,
+    body: CostAccountingRecordWrite,
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.cost_accounting_records",
+        body,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+@router.post(
+    VARIOUS_ADDRESSES_ENDPOINT, status_code=201, summary="Create a various-address record"
+)
+def post_various_address(
+    client_id: str, fiscal_year_id: str, body: VariousAddressWrite
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.various_addresses", body, client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+
+
+@router.post(
+    INTERNAL_COST_SERVICES_ENDPOINT,
+    status_code=201,
+    summary="Create an internal cost service",
+    description=(
+        "Create-only -- no GET documented in the spec (Appendix A). Still "
+        "persisted via app.db for admin-UI visibility/audit (architecture "
+        "decision #5); only the admin 'Stored records' card surfaces it, "
+        "no public GET route."
+    ),
+)
+def post_internal_cost_service(
+    client_id: str, fiscal_year_id: str, cost_system_id: str, body: InternalCostServiceWrite
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.internal_cost_services",
+        body,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+@router.post(
+    ACCOUNTING_SEQUENCES_ENDPOINT,
+    status_code=201,
+    summary="Create an accounting sequence",
+    description=(
+        "Create-only -- no GET documented (distinct from the existing "
+        "read-only accounting-sequences-processed endpoint above -- see "
+        "ACCOUNTING_SEQUENCES_ENDPOINT's own comment). Same admin-only "
+        "visibility as internal-cost-services above."
+    ),
+)
+def post_accounting_sequence(
+    client_id: str, fiscal_year_id: str, body: AccountingSequenceCreateWrite
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.accounting_sequences", body, client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+
+
+@router.post(
+    POSTING_PROPOSALS_INCOMING_INVOICES_BATCH_ENDPOINT,
+    status_code=201,
+    summary="Batch-submit posting proposals for incoming invoices",
+    description="Create-only, array body -- no GET documented.",
+)
+def post_posting_proposals_incoming_invoices_batch(
+    client_id: str, fiscal_year_id: str, body: list[IncomingInvoicePostingWrite]
+) -> list[dict[str, Any]]:
+    return [
+        _write_record(
+            "accounting.posting_proposals_incoming_invoices",
+            item,
+            client_id=client_id,
+            fiscal_year_id=fiscal_year_id,
+        )
+        for item in body
+    ]
+
+
+@router.post(
+    POSTING_PROPOSALS_OUTGOING_INVOICES_BATCH_ENDPOINT,
+    status_code=201,
+    summary="Batch-submit posting proposals for outgoing invoices",
+    description="Create-only, array body -- no GET documented.",
+)
+def post_posting_proposals_outgoing_invoices_batch(
+    client_id: str, fiscal_year_id: str, body: list[OutgoingInvoicePostingWrite]
+) -> list[dict[str, Any]]:
+    return [
+        _write_record(
+            "accounting.posting_proposals_outgoing_invoices",
+            item,
+            client_id=client_id,
+            fiscal_year_id=fiscal_year_id,
+        )
+        for item in body
+    ]
+
+
+@router.post(
+    POSTING_PROPOSALS_CASH_REGISTER_BATCH_ENDPOINT,
+    status_code=201,
+    summary="Batch-submit posting proposals for the cash register",
+    description="Create-only, array body -- no GET documented.",
+)
+def post_posting_proposals_cash_register_batch(
+    client_id: str, fiscal_year_id: str, body: list[CashRegisterPostingWrite]
+) -> list[dict[str, Any]]:
+    return [
+        _write_record(
+            "accounting.posting_proposals_cash_register",
+            item,
+            client_id=client_id,
+            fiscal_year_id=fiscal_year_id,
+        )
+        for item in body
+    ]
