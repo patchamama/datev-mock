@@ -126,14 +126,14 @@ active). If no active override, behave exactly as today.
       router file confirming an enabled override is served verbatim and
       a disabled/absent one falls through to normal behavior, then wire
       the actual override-check into all 4 router files' handlers.
-- [ ] V4 — Frontend: an "Custom Examples" card in `/admin` — file picker +
+- [x] V4 — Frontend: an "Custom Examples" card in `/admin` — file picker +
       upload button, ambiguous-match resolution UI (radio/select among
       candidates + confirm), a table of current overrides with an
       enable/disable toggle and delete button per row, and a clear
       "matched to: `<endpoint>`" confirmation message after a successful
       single-match upload. Proportional smoke-test coverage, same
       rationale as [[datev-mock-admin-ui-polish]]'s U1.
-- [ ] V5 — README update (new admin feature section) + commit/push.
+- [x] V5 — README update (new admin feature section) + commit/push.
 
 ## Route
 V0: delegated direct (one writer, comprehensive test suite). V1/V2:
@@ -305,3 +305,56 @@ as every prior epic in this project.
   the new `tests/test_overrides_integration.py`. No git operations
   performed, per instructions. V4 (frontend UI) and V5 (README + commit)
   remain unchecked, out of scope for this pass.
+
+- 2026-09-23: V4 implemented (delegated direct, one writer, frontend only).
+
+  Added a new "Custom Examples (Overrides)" Bootstrap card to
+  `app/routers/admin.py`'s `/admin` page, placed before the existing "API
+  Catalog" card, matching the page's established vanilla-JS/Bootstrap-5
+  style (no new dependency): a file input (`accept=".xml,.json"`) + "Upload
+  & Detect" button posting `FormData` via `fetch` to `POST
+  /admin/api/overrides`; result handling for all 3 backend outcomes —
+  `matched` shows an `alert-success` "Matched to endpoint: `<key>`. Override
+  is now active." and refreshes the table; `ambiguous` renders a radio-button
+  choice form among `candidates` with a "Confirm" button that `POST`s
+  `{"pending_id", "endpoint"}` to `/admin/api/overrides/resolve`, then shows
+  the same success message and refreshes the table; `unrecognized` (422)
+  shows an `alert-danger` explaining no matching shape was detected. A table
+  (`GET /admin/api/overrides`) lists every stored override (endpoint key,
+  filename, content-type badge, uploaded_at, a Bootstrap switch calling `PUT
+  .../overrides/{key}` `{"enabled": bool}` to toggle, and a delete button
+  calling `DELETE .../overrides/{key}`), with a "No custom overrides
+  uploaded yet." empty state, refreshed after every upload/resolve/
+  toggle/delete without a full page reload.
+
+  Tests: 3 smoke tests appended to `tests/test_admin_api.py` (matching its
+  existing style, after the "follow-on" section) confirming the `/admin`
+  page contains the new card heading/id, references the upload endpoint,
+  and references the resolve/toggle/delete patterns — reasonable substring
+  checks, no brittle exact-markup assertions. No existing test file
+  modified (only `app/routers/admin.py` and `tests/test_admin_api.py`
+  touched, confirmed via `git status --porcelain`).
+
+  Test results: `pytest tests/ -v` — **212 passed** (209 base + 3 new), same
+  2 pre-existing deprecation warnings only.
+
+  Live check (real HTTPS server, port 58452): started uvicorn, confirmed
+  `GET /admin` (200) contains `Custom Examples (Overrides)`,
+  `id="overrides-card"`, and references to `/admin/api/overrides` and
+  `/admin/api/overrides/resolve`. Exercised the real API surface end-to-end
+  via curl: uploaded a banks JSON file (`{"status":"matched","endpoint":
+  "master_data.banks"}`), confirmed `GET /admin/api/overrides` reflected it
+  (enabled, filename, content_type, uploaded_at) and the public
+  `GET /datev/api/master-data/v1/banks` served the uploaded content
+  verbatim; toggled it off via `PUT` and confirmed the public endpoint fell
+  back to normal generated data; deleted it via `DELETE` and confirmed the
+  listing returned to `{}`. Server stopped via `taskkill //F //PID 24540`
+  (the actual reported PID from the uvicorn startup log, not the shell job
+  id); confirmed port 58452 free afterward.
+
+  Files modified: `app/routers/admin.py` (new card + JS) and
+  `tests/test_admin_api.py` (3 new smoke tests). No git operations
+  performed, per instructions. V5 (README + commit) remains unchecked, out
+  of scope for this pass.
+
+- 2026-09-23: **V5 — README updated, epic complete.** Independently re-verified 212/212 passing. README changes: bumped badges/counts, added "Five epics complete" summary with a link to this task doc, a new "Custom overrides" section (linked from Contents and from the "Settings & admin UI" section) explaining detection, the 3 honest-ambiguity groups, and the always-wins-over-content-negotiation behavior, updated project structure (added `app/overrides.py`, both missing task docs from the prior two epics that had never been added to the structure listing), added `python-multipart` to the Technology table, and a new roadmap entry for this epic. Also caught and fixed a pre-existing gap while in there: the admin-ui-polish epic's U5–U7 follow-on (auto-open browser, `/docs` link, DATEV doc links — already shipped in commit `0caded5`) had never been reflected in the README roadmap section; added it now. Epic complete — committed and pushed per the standing "commit+push when an epic/phase finishes" instruction.

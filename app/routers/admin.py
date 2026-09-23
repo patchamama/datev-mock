@@ -400,6 +400,37 @@ _PAGE = """<!DOCTYPE html>
   </div>
 </div>
 
+<div class="card mb-4" id="overrides-card">
+  <div class="card-header">Custom Examples (Overrides)</div>
+  <div class="card-body">
+    <p class="text-muted small">
+      Upload an XML or JSON file to temporarily override a mocked endpoint's
+      response with your own example data. The endpoint is detected
+      automatically from the file's structure &mdash; nothing is persisted to
+      disk, and overrides are lost on restart.
+    </p>
+    <form id="override-upload-form" class="row gy-2 gx-3 align-items-end">
+      <div class="col-auto">
+        <label for="override-file" class="form-label">XML or JSON file</label>
+        <input id="override-file" type="file" accept=".xml,.json" class="form-control form-control-sm">
+      </div>
+      <div class="col-auto">
+        <button id="override-upload-btn" type="button" class="btn btn-sm btn-primary">Upload &amp; Detect</button>
+      </div>
+    </form>
+    <div id="override-upload-result" class="mt-3"></div>
+    <div class="table-responsive scroll-table mt-3">
+      <table class="table table-sm table-striped align-middle" id="overrides-table">
+        <thead class="table-light">
+          <tr><th>Endpoint</th><th>Filename</th><th>Type</th><th>Uploaded</th><th>Enabled</th><th>Actions</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div id="overrides-empty" class="text-muted small d-none">No custom overrides uploaded yet.</div>
+  </div>
+</div>
+
 <div class="card mb-4">
   <div class="card-header">API Catalog</div>
   <div class="card-body">
@@ -423,6 +454,8 @@ const SETTINGS_URL = "/admin/api/settings";
 const MASTER_DATA_URL = "/admin/api/clients/master-data";
 const ACCOUNTING_URL = "/admin/api/clients/accounting";
 const RESET_URL = "/admin/api/reset";
+const OVERRIDES_URL = "/admin/api/overrides";
+const OVERRIDES_RESOLVE_URL = "/admin/api/overrides/resolve";
 const CATALOG = __CATALOG_JSON__;
 
 // Confirmed DATEV documentation URLs, per catalog area (see
@@ -579,6 +612,133 @@ document.getElementById("reset-btn").addEventListener("click", async () => {
   loadAccounting();
 });
 
+// --- custom overrides ---
+
+function overrideEscapeHtml(value) {
+  const div = document.createElement("div");
+  div.textContent = value;
+  return div.innerHTML;
+}
+
+function showOverrideUploadResult(html) {
+  document.getElementById("override-upload-result").innerHTML = html;
+}
+
+function renderOverrideRow(key, meta) {
+  const tr = document.createElement("tr");
+  const badgeClass = meta.content_type === "xml" ? "text-bg-info" : "text-bg-secondary";
+  tr.innerHTML = `
+    <td><code>${overrideEscapeHtml(key)}</code></td>
+    <td>${overrideEscapeHtml(meta.filename)}</td>
+    <td><span class="badge ${badgeClass}">${overrideEscapeHtml(meta.content_type)}</span></td>
+    <td class="small text-muted">${overrideEscapeHtml(meta.uploaded_at)}</td>
+    <td>
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" role="switch" data-action="toggle" ${meta.enabled ? "checked" : ""}>
+      </div>
+    </td>
+    <td>
+      <button class="btn btn-sm btn-outline-danger" data-action="delete">Delete</button>
+    </td>`;
+  tr.querySelector('[data-action="toggle"]').addEventListener("change", async (ev) => {
+    await fetch(`${OVERRIDES_URL}/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: ev.target.checked }),
+    });
+    loadOverrides();
+  });
+  tr.querySelector('[data-action="delete"]').addEventListener("click", async () => {
+    await fetch(`${OVERRIDES_URL}/${encodeURIComponent(key)}`, { method: "DELETE" });
+    loadOverrides();
+  });
+  return tr;
+}
+
+async function loadOverrides() {
+  const res = await fetch(OVERRIDES_URL);
+  const data = await res.json();
+  const tbody = document.querySelector("#overrides-table tbody");
+  const empty = document.getElementById("overrides-empty");
+  tbody.innerHTML = "";
+  const keys = Object.keys(data);
+  keys.forEach((key) => tbody.appendChild(renderOverrideRow(key, data[key])));
+  empty.classList.toggle("d-none", keys.length > 0);
+}
+
+function renderAmbiguousChoiceForm(candidates, pendingId) {
+  const options = candidates
+    .map(
+      (candidate, idx) => `
+      <div class="form-check">
+        <input class="form-check-input" type="radio" name="override-candidate" id="override-candidate-${idx}" value="${overrideEscapeHtml(candidate)}" ${idx === 0 ? "checked" : ""}>
+        <label class="form-check-label" for="override-candidate-${idx}"><code>${overrideEscapeHtml(candidate)}</code></label>
+      </div>`
+    )
+    .join("");
+  showOverrideUploadResult(`
+    <div class="alert alert-warning">
+      <p class="mb-2">This data matches multiple endpoints with an identical shape &mdash; pick which one you mean:</p>
+      <form id="override-resolve-form">
+        ${options}
+        <button type="button" id="override-resolve-btn" class="btn btn-sm btn-primary mt-2">Confirm</button>
+      </form>
+    </div>`);
+  document.getElementById("override-resolve-btn").addEventListener("click", async () => {
+    const selected = document.querySelector('input[name="override-candidate"]:checked');
+    if (!selected) return;
+    const res = await fetch(OVERRIDES_RESOLVE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pending_id: pendingId, endpoint: selected.value }),
+    });
+    if (!res.ok) {
+      showOverrideUploadResult(
+        '<div class="alert alert-danger">Failed to resolve override selection.</div>'
+      );
+      return;
+    }
+    showOverrideUploadResult(
+      `<div class="alert alert-success">Matched to endpoint: <code>${overrideEscapeHtml(selected.value)}</code>. Override is now active.</div>`
+    );
+    loadOverrides();
+  });
+}
+
+async function uploadOverrideFile() {
+  const input = document.getElementById("override-file");
+  const file = input.files && input.files[0];
+  if (!file) {
+    showOverrideUploadResult('<div class="alert alert-warning">Choose a file first.</div>');
+    return;
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(OVERRIDES_URL, { method: "POST", body: formData });
+  const body = await res.json();
+
+  if (body.status === "matched") {
+    showOverrideUploadResult(
+      `<div class="alert alert-success">Matched to endpoint: <code>${overrideEscapeHtml(body.endpoint)}</code>. Override is now active.</div>`
+    );
+    input.value = "";
+    loadOverrides();
+    return;
+  }
+
+  if (body.status === "ambiguous") {
+    renderAmbiguousChoiceForm(body.candidates, body.pending_id);
+    input.value = "";
+    return;
+  }
+
+  showOverrideUploadResult(
+    '<div class="alert alert-danger">Couldn\'t detect a matching endpoint for this file &mdash; check it matches one of the mock\'s known response shapes.</div>'
+  );
+}
+
+document.getElementById("override-upload-btn").addEventListener("click", uploadOverrideFile);
+
 // --- API catalog ---
 
 function escapeHtml(value) {
@@ -705,6 +865,7 @@ function renderCatalog() {
 loadSettings();
 loadMasterData();
 loadAccounting();
+loadOverrides();
 renderCatalog();
 </script>
 </body>

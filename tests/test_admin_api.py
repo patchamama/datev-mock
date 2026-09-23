@@ -329,3 +329,29 @@ def test_admin_page_shows_real_endpoint_on_master_data_and_accounting_cards(clie
     body = client.get(ADMIN_PAGE).text
     assert "master-data/v1/clients" in body
     assert "accounting/v1/clients" in body
+
+
+# --- follow-on: V4 "Custom Examples (Overrides)" card ---
+# Proportional smoke tests confirming the new upload/resolve/toggle/delete UI
+# section actually landed in the rendered page and wires up against the
+# `/admin/api/overrides*` contract (see
+# odd/tasks/datev-mock-custom-overrides.md V4) — reasonable substring checks,
+# not brittle exact-markup assertions.
+
+
+def test_admin_page_contains_overrides_card_heading(client):
+    body = client.get(ADMIN_PAGE).text
+    assert "Custom Examples" in body
+    assert 'id="overrides-card"' in body
+
+
+def test_admin_page_references_overrides_upload_endpoint(client):
+    body = client.get(ADMIN_PAGE).text
+    assert "/admin/api/overrides" in body
+
+
+def test_admin_page_references_overrides_resolve_toggle_delete_patterns(client):
+    body = client.get(ADMIN_PAGE).text
+    assert "/admin/api/overrides/resolve" in body
+    assert "method: \"PUT\"" in body
+    assert "method: \"DELETE\"" in body

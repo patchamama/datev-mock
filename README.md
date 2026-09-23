@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Pytest](https://img.shields.io/badge/tests-167%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
+[![Pytest](https://img.shields.io/badge/tests-212%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5-7952B3?logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
 [![Status](https://img.shields.io/badge/status-active-success)](#tasks--roadmap)
 
@@ -22,6 +22,7 @@ official developer portal where the two disagree (see
 - [Quick start](#quick-start)
 - [Endpoints mocked](#endpoints-mocked)
 - [Key decisions](#key-decisions)
+- [Custom overrides](#custom-overrides)
 - [Project structure](#project-structure)
 - [Setup](#setup)
 - [Running the tests](#running-the-tests)
@@ -31,20 +32,23 @@ official developer portal where the two disagree (see
 
 ## Status
 
-**GREEN — implemented and passing.** All 167 tests pass
+**GREEN — implemented and passing.** All 212 tests pass
 (`.venv\Scripts\python -m pytest tests/ -v`), and the server has been
 verified live over real HTTPS on port 58452 (all 23 mocked endpoints, the
-Bootstrap admin UI with its full endpoint catalog, and Swagger UI). Four
-epics complete:
+Bootstrap admin UI with its full endpoint catalog and custom-override
+uploads, and Swagger UI). Five epics complete:
 [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (base API),
 [`odd/tasks/datev-mock-settings.md`](odd/tasks/datev-mock-settings.md)
 (settings/admin UI),
 [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mock-extended-endpoints.md)
 (20 additional endpoints: Master Data addressees/banks, 15 Accounting
-sub-resources, DMS), and
+sub-resources, DMS),
 [`odd/tasks/datev-mock-admin-ui-polish.md`](odd/tasks/datev-mock-admin-ui-polish.md)
-(Bootstrap admin UI + full endpoint catalog). See each task doc for full
-breakdowns, decisions, and progress logs.
+(Bootstrap admin UI + full endpoint catalog), and
+[`odd/tasks/datev-mock-custom-overrides.md`](odd/tasks/datev-mock-custom-overrides.md)
+(upload a custom XML/JSON example to temporarily override any endpoint's
+response). See each task doc for full breakdowns, decisions, and progress
+logs.
 
 ## Quick start
 
@@ -176,11 +180,47 @@ Full write-up: [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mo
   `<pre>` block for the single-object `echo` diagnostic), and a "Copy curl"
   button that builds a ready-to-run example using the live-configured port.
   Nothing in the catalog fetches automatically on page load.
+- **Custom Examples (Overrides)** — upload your own XML or JSON file and
+  the mock automatically detects which endpoint it matches, then serves it
+  verbatim for that endpoint until you disable or delete it. See
+  [Custom overrides](#custom-overrides) below for the full detail.
 
 Same JSON API backing the two editable tables is also usable directly
 (`GET`/`PUT /admin/api/settings`,
 `GET/POST/PUT/DELETE /admin/api/clients/{master-data,accounting}[/{id}]`,
 `POST /admin/api/reset`) if you want to script dataset setup for a test run.
+
+### Custom overrides
+
+Upload a file in the admin page's "Custom Examples" card and the mock
+inspects its structure to figure out which of the 22 override-eligible
+endpoints it belongs to — no manual endpoint selection needed in the
+common case:
+
+- **XML**: matched by root element (`Echo`, `ArrayOfClientResource`,
+  `ArrayOfClient` — the only 3 XML shapes this mock has).
+- **JSON**: matched by a field-name fingerprint (e.g. a record with
+  `bic`+`country_code` is recognized as `banks`; `account_number`+
+  `caption`+`main_function` as `general-ledger-accounts`, etc.).
+
+Three groups of endpoints are **genuinely structurally identical** to each
+other (confirmed against DATEV's own OpenAPI specs) and can't be told
+apart from shape alone: creditors/debitors, accounts-payable/
+accounts-payable-condense/accounts-receivable-condense, and
+posting-proposal-rules-incoming/outgoing-invoices. Uploading a file
+matching one of these shows all the matching candidates and asks you to
+pick — deliberately, rather than guessing wrong.
+
+Once matched (automatically or by your pick), the override is **active
+immediately** — a badge confirms which endpoint it's serving. Toggle it
+off any time to fall back to the mock's normal generated data without
+losing the uploaded file, or delete it outright. Everything is in-memory
+only (never written to disk) and resets on restart, same as the editable
+datasets above. An active override always wins over `accounting/v1/clients`'s
+usual `Accept`-header negotiation — it serves exactly what you uploaded,
+in the format you uploaded it in.
+
+Full write-up: [`odd/tasks/datev-mock-custom-overrides.md`](odd/tasks/datev-mock-custom-overrides.md).
 
 ### Switching between mock and real DATEV
 
@@ -202,20 +242,23 @@ DATEV-Mock/
 │   │   ├── master_data.py   # clients (XML) + addressees/banks (JSON)
 │   │   ├── accounting.py    # clients (XML/JSON) + 15 sub-resources (JSON)
 │   │   ├── dms.py           # domains/documents (JSON, self-designed schema)
-│   │   └── admin.py         # settings + dataset CRUD + the /admin page
+│   │   └── admin.py         # settings + dataset CRUD + overrides + the /admin page
 │   ├── models.py
 │   ├── xml_serializers.py
 │   ├── json_serializers.py  # accounting JSON path only
 │   ├── fake_data.py         # seeded generators for every resource
 │   ├── data_store.py        # mutable in-memory store the routers read from
-│   └── config.py            # Settings (port, default format), settings.json persistence
+│   ├── config.py            # Settings (port, default format), settings.json persistence
+│   └── overrides.py         # custom XML/JSON upload detection + in-memory override store
 ├── certs/                   # self-signed cert generation (generate_cert.py; *.pem is git-ignored)
 ├── examples/                 # local-only, git-ignored — sensitive real captured samples + the internal-mock reference doc
 ├── odd/tasks/
-│   ├── datev-mock.md                     # base API: epic/task tracking, decisions, progress log
-│   ├── datev-mock-settings.md            # settings/admin UI: same, for that epic
-│   └── datev-mock-extended-endpoints.md  # 20 extended endpoints: same, for that epic
-├── tests/                     # full test suite — 167/167 passing
+│   ├── datev-mock.md                       # base API: epic/task tracking, decisions, progress log
+│   ├── datev-mock-settings.md              # settings/admin UI: same, for that epic
+│   ├── datev-mock-extended-endpoints.md    # 20 extended endpoints: same, for that epic
+│   ├── datev-mock-admin-ui-polish.md       # Bootstrap redesign + full catalog: same, for that epic
+│   └── datev-mock-custom-overrides.md      # upload/override system: same, for that epic
+├── tests/                     # full test suite — 212/212 passing
 ├── start.bat / start.sh       # bootstrap Python (portable if needed) + deps + run, one step
 ├── settings.json              # git-ignored, created on first settings change
 └── requirements.txt
@@ -236,7 +279,7 @@ python -m venv .venv
 .venv\Scripts\python -m pytest tests/ -v
 ```
 
-All 167 tests pass.
+All 212 tests pass.
 
 ## Running the server
 
@@ -261,13 +304,14 @@ including the accounting endpoint's XML/JSON content negotiation.
 | **Testing** | [pytest](https://pytest.org/) + FastAPI's `TestClient` (Starlette/httpx) |
 | **Frontend (admin UI)** | [Bootstrap 5](https://getbootstrap.com/) (CDN) + vanilla JS — no build step, no framework dependency |
 | **TLS** | Self-signed cert generated with the [`cryptography`](https://cryptography.io/) package |
+| **File uploads** | [`python-multipart`](https://pypi.org/project/python-multipart/) (FastAPI's multipart/form-data parsing, used by the custom-overrides upload) |
 | **Serialization** | Hand-built XML (stdlib string templates, matching .NET `DataContractSerializer` conventions) + native JSON |
 | **Persistence** | In-memory data store (per-process, reset on restart) + a small git-ignored `settings.json` for port/format preferences |
 | **Bootstrap scripts** | Batch (`start.bat`) / POSIX shell (`start.sh`) — provision a project-local Python (system if available, else a portable download) with no admin rights |
 
 ## Tasks / Roadmap
 
-All four epics complete (167/167 tests). See each task doc for full
+All five epics complete (212/212 tests). See each task doc for full
 detail, decisions, and progress logs:
 
 **Base API** — [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (32 tests):
@@ -292,8 +336,27 @@ detail, decisions, and progress logs:
       covering all 23 mocked endpoints (not just the 2 CRUD-editable
       tables) — each entry shows its HTTP method, resolved example path,
       a "view sample data" action, and a copyable `curl` example.
-- [x] This README's polish pass (badges, technology table, table of
-      contents, this roadmap section).
+- [x] README polish pass (badges, technology table, table of contents,
+      this roadmap section).
+- [x] Follow-on: `start.bat`/`start.sh` auto-open the browser at `/admin`
+      on launch; `/docs` link and real-endpoint labels added to the admin
+      page; official DATEV documentation links added where a confirmed
+      URL exists (Master Data, Accounting — Diagnostics/DMS intentionally
+      left unlinked, no confirmed docs found for either).
+
+**Custom example overrides** — [`odd/tasks/datev-mock-custom-overrides.md`](odd/tasks/datev-mock-custom-overrides.md):
+- [x] `app/overrides.py` — structural detection (XML root tag / JSON field
+      fingerprint) matching an uploaded file to one of 22 override-eligible
+      endpoints, with honest multi-candidate handling for the 3 endpoint
+      groups that share an identical schema.
+- [x] `/admin/api/overrides*` — upload, ambiguity resolution, list,
+      enable/disable, delete.
+- [x] Wired into all 22 real endpoint handlers — an active override is
+      served verbatim, bypassing normal generation and (for
+      `accounting/v1/clients`) `Accept`-header negotiation.
+- [x] Admin UI: upload form, candidate-picker for ambiguous matches, and
+      an overrides table with per-row enable/disable and delete.
+- [x] This README update.
 
 ### Planned / not started
 
