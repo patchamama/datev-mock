@@ -11,4 +11,8 @@ settings.json
 examples/
 
 # Local tooling cache
-.atl/
+.atl
+
+.env
+.env.py
+

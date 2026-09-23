@@ -489,8 +489,16 @@ _PAGE = """<!DOCTYPE html>
       <div class="col-auto">
         <button id="override-upload-btn" type="button" class="btn btn-sm btn-primary">Upload &amp; Detect</button>
       </div>
+      <div class="col-auto">
+        <label for="override-folder-input" class="form-label">Folder (XML/JSON files)</label>
+        <input id="override-folder-input" type="file" webkitdirectory multiple class="form-control form-control-sm">
+      </div>
+      <div class="col-auto">
+        <button id="override-folder-import-btn" type="button" class="btn btn-sm btn-primary">Import Folder</button>
+      </div>
     </form>
     <div id="override-upload-result" class="mt-3"></div>
+    <div id="override-folder-import-result" class="mt-3"></div>
     <div class="table-responsive scroll-table mt-3">
       <table class="table table-sm table-striped align-middle" id="overrides-table">
         <thead class="table-light">
@@ -545,6 +553,7 @@ const AREA_DOCS = {
 const state = { port: 58452 };
 let masterDataRecords = [];
 let accountingRecords = [];
+let ambiguousQueue = [];
 
 function showNote(message, kind) {
   const note = document.getElementById("settings-note");
@@ -986,7 +995,13 @@ async function loadOverrides() {
   empty.classList.toggle("d-none", keys.length > 0);
 }
 
-function renderAmbiguousChoiceForm(candidates, pendingId) {
+// `onResolved` runs after a successful individual resolution, defaulting to
+// a plain `loadOverrides()` refresh (the single-upload flow). The folder
+// import flow below passes its own callback that also advances to the next
+// queued ambiguous file, reusing this exact same resolution UI rather than
+// building a second one.
+function renderAmbiguousChoiceForm(candidates, pendingId, filename, onResolved) {
+  const resolve = onResolved || loadOverrides;
   const options = candidates
     .map(
       (candidate, idx) => `
@@ -996,8 +1011,12 @@ function renderAmbiguousChoiceForm(candidates, pendingId) {
       </div>`
     )
     .join("");
+  const filenameNote = filename
+    ? `<p class="mb-1 small text-muted">File: <code>${overrideEscapeHtml(filename)}</code></p>`
+    : "";
   showOverrideUploadResult(`
     <div class="alert alert-warning">
+      ${filenameNote}
       <p class="mb-2">This data matches multiple endpoints with an identical shape &mdash; pick which one you mean:</p>
       <form id="override-resolve-form">
         ${options}
@@ -1019,8 +1038,17 @@ function renderAmbiguousChoiceForm(candidates, pendingId) {
       return;
     }
     showOverrideUploadResult(overrideMatchedResultHtml(selected.value));
-    loadOverrides();
+    resolve();
   });
+}
+
+// Shared by both the single-file "Upload & Detect" button and the "Import
+// Folder" loop below, so both call exactly the same POST-and-handle logic.
+async function postOverrideFile(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(OVERRIDES_URL, { method: "POST", body: formData });
+  return res.json();
 }
 
 async function uploadOverrideFile() {
@@ -1030,10 +1058,7 @@ async function uploadOverrideFile() {
     showOverrideUploadResult('<div class="alert alert-warning">Choose a file first.</div>');
     return;
   }
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(OVERRIDES_URL, { method: "POST", body: formData });
-  const body = await res.json();
+  const body = await postOverrideFile(file);
 
   if (body.status === "matched") {
     showOverrideUploadResult(overrideMatchedResultHtml(body.endpoint));
@@ -1054,6 +1079,92 @@ async function uploadOverrideFile() {
 }
 
 document.getElementById("override-upload-btn").addEventListener("click", uploadOverrideFile);
+
+// --- bulk folder import ---
+
+function isXmlOrJsonFilename(name) {
+  const lower = name.toLowerCase();
+  return lower.endsWith(".xml") || lower.endsWith(".json");
+}
+
+// Pops the next queued ambiguous file (populated by importOverrideFolder)
+// and shows it in the same resolution UI a single ambiguous upload uses,
+// one at a time; resolving it advances to the following queued file, if any.
+function showNextAmbiguousFromQueue() {
+  if (!ambiguousQueue.length) return;
+  const next = ambiguousQueue.shift();
+  renderAmbiguousChoiceForm(next.candidates, next.pending_id, next.filename, () => {
+    loadOverrides();
+    showNextAmbiguousFromQueue();
+  });
+}
+
+async function importOverrideFolder() {
+  const input = document.getElementById("override-folder-input");
+  const allFiles = input.files ? Array.from(input.files) : [];
+  const resultEl = document.getElementById("override-folder-import-result");
+  const files = allFiles.filter((file) => isXmlOrJsonFilename(file.name));
+
+  if (!files.length) {
+    resultEl.innerHTML =
+      '<div class="alert alert-warning">Choose a folder containing .xml or .json files first.</div>';
+    return;
+  }
+
+  const matched = [];
+  const ambiguous = [];
+  const unrecognized = [];
+
+  // Sequential, not parallel: mirrors how CSV import already processes rows
+  // one at a time, and avoids overwhelming the backend for a large folder.
+  for (const file of files) {
+    let body;
+    try {
+      body = await postOverrideFile(file);
+    } catch (err) {
+      unrecognized.push(file.name);
+      continue;
+    }
+    if (body.status === "matched") {
+      matched.push({ filename: file.name, endpoint: body.endpoint });
+    } else if (body.status === "ambiguous") {
+      ambiguous.push({ filename: file.name, candidates: body.candidates, pending_id: body.pending_id });
+    } else {
+      unrecognized.push(file.name);
+    }
+  }
+
+  const parts = [];
+  if (matched.length) {
+    const matchedEndpoints = Array.from(new Set(matched.map((m) => m.endpoint)));
+    parts.push(`${matched.length} matched (${matchedEndpoints.map(overrideEscapeHtml).join(", ")})`);
+  } else {
+    parts.push("0 matched");
+  }
+  if (ambiguous.length) {
+    parts.push(`${ambiguous.length} needs manual resolution`);
+  }
+  if (unrecognized.length) {
+    parts.push(`${unrecognized.length} unrecognized (${unrecognized.map(overrideEscapeHtml).join(", ")})`);
+  }
+  const skipped = allFiles.length - files.length;
+  const skippedNote = skipped > 0 ? ` (${skipped} other file${skipped === 1 ? "" : "s"} skipped)` : "";
+  const kind = unrecognized.length || ambiguous.length ? "alert-warning" : "alert-success";
+  const plural = files.length === 1 ? "" : "s";
+  resultEl.innerHTML = `<div class="alert ${kind}">Imported ${files.length} file${plural}: ${parts.join(", ")}.${skippedNote}</div>`;
+
+  input.value = "";
+  loadOverrides();
+
+  ambiguousQueue = ambiguous.map((item) => ({
+    candidates: item.candidates,
+    pending_id: item.pending_id,
+    filename: item.filename,
+  }));
+  showNextAmbiguousFromQueue();
+}
+
+document.getElementById("override-folder-import-btn").addEventListener("click", importOverrideFolder);
 
 // --- API catalog ---
 
@@ -1103,6 +1214,68 @@ function renderJsonSample(data) {
   return html;
 }
 
+// Strips any namespace prefix off an XML tag/attribute name (e.g.
+// "i:nil" -> "nil", "ns0:ClientResource" -> "ClientResource") -- conceptually
+// the same namespace-stripping app/overrides.py's Python-side detection
+// already does, kept here purely for building the Table tab's display data.
+function xmlStripNamespace(name) {
+  const idx = name.indexOf(":");
+  return idx === -1 ? name : name.slice(idx + 1);
+}
+
+// DATEV XML marks an absent field as `i:nil="true"` (the XMLSchema-instance
+// nil convention) -- checked here regardless of the exact namespace prefix
+// bound to that attribute, since it is always that same convention.
+function xmlElementIsNil(el) {
+  for (let i = 0; i < el.attributes.length; i += 1) {
+    const attr = el.attributes[i];
+    if (xmlStripNamespace(attr.name) === "nil" && attr.value === "true") {
+      return true;
+    }
+  }
+  return false;
+}
+
+function xmlElementToObject(el) {
+  const obj = {};
+  Array.from(el.children).forEach((child) => {
+    const key = xmlStripNamespace(child.tagName);
+    obj[key] = xmlElementIsNil(child) ? null : child.textContent;
+  });
+  return obj;
+}
+
+// Converts a parsed XML document into an array-of-objects, JSON-like shape
+// so the Table tab can reuse the exact same renderJsonSample() builder JSON
+// responses already use, instead of a separate XML table renderer.
+//   - Repeated root children sharing one tag (e.g. ArrayOfClientResource >
+//     ClientResource, ArrayOfClient > Client) each become one row.
+//   - Otherwise (e.g. the single-object Echo diagnostic) the root element
+//     itself becomes one row, same as renderJsonSample's own single-object
+//     fallback already does for a JSON object.
+function xmlToRecords(xmlDoc) {
+  const root = xmlDoc.documentElement;
+  const children = Array.from(root.children);
+  if (children.length > 1) {
+    const firstTag = xmlStripNamespace(children[0].tagName);
+    const allSameTag = children.every((child) => xmlStripNamespace(child.tagName) === firstTag);
+    if (allSameTag) {
+      return children.map(xmlElementToObject);
+    }
+  }
+  return [xmlElementToObject(root)];
+}
+
+// Returns array-of-objects records for the Table tab, or null when `text`
+// does not parse as XML at all (DOMParser never throws -- a failed parse
+// surfaces as a <parsererror> element instead).
+function parseXmlForTable(text) {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  const parserError = doc.getElementsByTagName("parsererror")[0];
+  if (parserError || !doc.documentElement) return null;
+  return xmlToRecords(doc);
+}
+
 async function fetchSample(path, containerId) {
   const container = document.getElementById(containerId);
   container.innerHTML = '<div class="text-muted small">Loading&hellip;</div>';
@@ -1120,7 +1293,12 @@ async function fetchSample(path, containerId) {
         tableHtml = '<div class="text-muted small">Could not parse JSON response &mdash; see the Raw tab.</div>';
       }
     } else {
-      tableHtml = '<div class="text-muted small">No tabular view for this content type &mdash; see the Raw tab.</div>';
+      const records = parseXmlForTable(text);
+      if (records) {
+        tableHtml = renderJsonSample(records);
+      } else {
+        tableHtml = '<div class="text-muted small">No tabular view for this content type &mdash; see the Raw tab.</div>';
+      }
     }
     const rawLang = isJson ? "json" : "xml";
 

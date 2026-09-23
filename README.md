@@ -184,13 +184,19 @@ Full write-up: [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mo
   its HTTP method, the real path with illustrative path-parameter values
   resolved (this mock ignores their actual values by design — any value
   works), an on-demand "View sample data" fetch with two tabs — **Table**
-  (rows/columns for JSON responses) and **Raw** (the full response body,
-  syntax-highlighted via [highlight.js](https://highlightjs.org/) — CDN,
-  XML and JSON both supported) — and a "Copy curl" button that builds a
-  ready-to-run example using the live-configured port. Nothing in the
-  catalog fetches automatically on page load.
-- **Custom Examples (Overrides)** — upload your own XML or JSON file and
-  the mock automatically detects which endpoint it matches, then serves it
+  (rows/columns, for both JSON and XML responses — XML is parsed
+  client-side into the same row/column view, not just shown as raw text)
+  and **Raw** (the full response body, syntax-highlighted via
+  [highlight.js](https://highlightjs.org/) — CDN, XML and JSON both
+  supported) — and a "Copy curl" button that builds a ready-to-run example
+  using the live-configured port. Nothing in the catalog fetches
+  automatically on page load.
+- **Custom Examples (Overrides)** — upload your own XML or JSON file (one
+  at a time, or **an entire folder at once** via the folder-picker "Import
+  Folder" button — every `.xml`/`.json` file in it is uploaded and matched
+  the same way, with a summary of how many matched, need manual
+  disambiguation, or weren't recognized) and the mock automatically detects
+  which endpoint each one matches, then serves it
   verbatim for that endpoint until you disable or delete it. See
   [Custom overrides](#custom-overrides) below for the full detail.
 

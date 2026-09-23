@@ -421,3 +421,25 @@ def test_admin_page_embeds_override_endpoint_paths_mapping(client):
     # occurrence of the same path (banks has no dedicated CATALOG-only
     # wording, so also assert the JS constant name is actually present).
     assert "/datev/api/master-data/v1/banks" in body
+
+
+# --- follow-on: XML Table tab support + bulk folder import for overrides ---
+# Proportional smoke tests confirming both additions actually landed in the
+# rendered page (presentational/client-side work — same rationale as the
+# smoke tests above): the XML-to-table conversion function is present (proof
+# it was actually added, not just that the page still loads), and the folder
+# import control/label are present.
+
+
+def test_admin_page_contains_xml_table_conversion_function(client):
+    body = client.get(ADMIN_PAGE).text
+    assert "function xmlToRecords(" in body
+    assert "function parseXmlForTable(" in body
+
+
+def test_admin_page_has_folder_import_control(client):
+    body = client.get(ADMIN_PAGE).text
+    assert 'id="override-folder-input"' in body
+    assert "webkitdirectory" in body
+    assert 'id="override-folder-import-btn"' in body
+    assert "Import Folder" in body
