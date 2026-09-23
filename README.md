@@ -222,6 +222,48 @@ in the format you uploaded it in.
 
 Full write-up: [`odd/tasks/datev-mock-custom-overrides.md`](odd/tasks/datev-mock-custom-overrides.md).
 
+#### Using real DATEV data as an override
+
+For maximum realism you can capture a genuine response from a real DATEV
+installation and upload that instead of a hand-written example.
+
+**A clarification before you do**: there is no single public "test" or
+"production" URL to document for this — unlike DATEV's cloud *Online APIs*
+(which do have hosted OAuth endpoints), the *local Desktop API* this mock
+replicates is a service that only runs on-prem, wherever your
+organization's DATEV Arbeitsplatz software is installed, reachable only
+from that local network. The only real address in this project is the one
+already noted in [Switching between mock and real
+DATEV](#switching-between-mock-and-real-datev) below —
+`https://192.168.0.13:58452` — which is *this specific project's* real
+workstation, not a general DATEV URL. In your own environment, substitute
+your own DATEV workstation's actual host/IP and port.
+
+1. From a machine with network access to that real DATEV installation,
+   request the endpoint whose response you want to capture (browser,
+   `curl`, or Postman all work) — for this project's own real workstation,
+   those three base endpoints were:
+   `https://192.168.0.13:58452/datev/api/master-data/v1/clients`,
+   `https://192.168.0.13:58452/datev/api/diagnostics/v1/echo`, and
+   `https://192.168.0.13:58452/datev/api/accounting/v1/clients` — replace
+   `192.168.0.13` with your own DATEV workstation's actual host/IP.
+2. Authenticate when prompted. Per DATEV's own documentation for this API
+   family, the local Desktop API accepts **Basic**, **Windows**, or
+   **OpenID Connect** authentication — whichever your installation is
+   configured for; use your normal DATEV Arbeitsplatz credentials.
+3. Save the response body to a local `.xml` or `.json` file (browser:
+   "Save as"; `curl`: `curl -k -o clients.xml -u <user> https://...`,
+   adapting the auth flag to your environment's method).
+4. Open this mock's `/admin` page → **Custom Examples (Overrides)** →
+   upload that saved file. It's auto-detected and activated immediately —
+   see [Custom overrides](#custom-overrides) above.
+
+⚠️ Real captured DATEV data is sensitive, same as
+[`examples/`](examples/) in this repo — never commit it, and handle it per
+your organization's data policy. This mock keeps overrides in-memory only
+and never writes them to disk, but the saved file itself lives on your
+machine until you delete it.
+
 ### Switching between mock and real DATEV
 
 The mock runs on the exact same port and path structure as the real local
