@@ -733,7 +733,7 @@ async function uploadOverrideFile() {
   }
 
   showOverrideUploadResult(
-    '<div class="alert alert-danger">Couldn\'t detect a matching endpoint for this file &mdash; check it matches one of the mock\'s known response shapes.</div>'
+    '<div class="alert alert-danger">Could not detect a matching endpoint for this file &mdash; check it matches a response shape this mock recognizes.</div>'
   );
 }
 
