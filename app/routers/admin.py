@@ -226,8 +226,9 @@ _PAGE = """<!DOCTYPE html>
 </head>
 <body>
 <nav class="navbar navbar-dark bg-dark mb-4">
-  <div class="container-fluid" style="max-width: 64rem; margin: 0 auto;">
+  <div class="container-fluid d-flex justify-content-between align-items-center" style="max-width: 64rem; margin: 0 auto;">
     <span class="navbar-brand mb-0 h1">DATEV Mock &mdash; Admin</span>
+    <a href="/docs" target="_blank" rel="noopener" class="btn btn-outline-light btn-sm">API Docs (Swagger)</a>
   </div>
 </nav>
 
@@ -257,7 +258,15 @@ _PAGE = """<!DOCTYPE html>
 </div>
 
 <div class="card mb-4">
-  <div class="card-header">Master-data clients</div>
+  <div class="card-header">
+    Master-data clients
+    <div class="small text-muted mt-1">
+      Real endpoint: <code>GET /datev/api/master-data/v1/clients</code> (XML). This table
+      edits via the JSON admin endpoint <code>/admin/api/clients/master-data</code> instead
+      &mdash; two different things.
+      <a href="https://developer.datev.de/de/product-detail/client-master-data/1.7.0/reference/reference-overview/client-master-data" target="_blank" rel="noopener">DATEV docs</a>
+    </div>
+  </div>
   <div class="card-body">
     <div class="table-responsive scroll-table">
       <table class="table table-sm table-striped align-middle" id="master-data-table">
@@ -289,7 +298,15 @@ _PAGE = """<!DOCTYPE html>
 </div>
 
 <div class="card mb-4">
-  <div class="card-header">Accounting clients</div>
+  <div class="card-header">
+    Accounting clients
+    <div class="small text-muted mt-1">
+      Real endpoint: <code>GET /datev/api/accounting/v1/clients</code> (XML by default, JSON
+      with <code>Accept: application/json</code>). This table edits via the JSON admin
+      endpoint <code>/admin/api/clients/accounting</code> instead &mdash; two different things.
+      <a href="https://developer.datev.de/de/product-detail/accounting/1.7.4/reference/reference-overview/accounting" target="_blank" rel="noopener">DATEV docs</a>
+    </div>
+  </div>
   <div class="card-body">
     <div class="table-responsive scroll-table">
       <table class="table table-sm table-striped align-middle" id="accounting-table">
@@ -339,6 +356,14 @@ const MASTER_DATA_URL = "/admin/api/clients/master-data";
 const ACCOUNTING_URL = "/admin/api/clients/accounting";
 const RESET_URL = "/admin/api/reset";
 const CATALOG = __CATALOG_JSON__;
+
+// Confirmed DATEV documentation URLs, per catalog area (see
+// odd/tasks/datev-mock-admin-ui-polish.md "Follow-on" section). Diagnostics
+// and DMS intentionally have no confirmed URL and are omitted here.
+const AREA_DOCS = {
+  "Master data": "https://developer.datev.de/de/product-detail/client-master-data/1.7.0/reference/reference-overview/client-master-data",
+  "Accounting": "https://developer.datev.de/de/product-detail/accounting/1.7.4/reference/reference-overview/accounting",
+};
 
 const state = { port: 58452 };
 
@@ -591,6 +616,9 @@ function renderCatalog() {
       const entriesHtml = byArea[area]
         .map((entry) => buildCatalogEntry(entry, `${areaIdx}-${byArea[area].indexOf(entry)}`))
         .join("");
+      const docNote = AREA_DOCS[area]
+        ? `<p class="small mb-2"><a href="${AREA_DOCS[area]}" target="_blank" rel="noopener">Official DATEV documentation for ${escapeHtml(area)} &#x2197;</a></p>`
+        : "";
       return `
         <div class="accordion-item">
           <h2 class="accordion-header" id="${headingId}">
@@ -599,7 +627,7 @@ function renderCatalog() {
             </button>
           </h2>
           <div id="${collapseId}" class="accordion-collapse collapse ${areaIdx === 0 ? "show" : ""}" aria-labelledby="${headingId}" data-bs-parent="#catalog-accordion">
-            <div class="accordion-body">${entriesHtml}</div>
+            <div class="accordion-body">${docNote}${entriesHtml}</div>
           </div>
         </div>`;
     })

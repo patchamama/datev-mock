@@ -14,6 +14,7 @@ set -e
 cd "$(dirname "${BASH_SOURCE[0]:-$0}")"
 
 PYTHON_EXE=""
+PORT=58452
 
 version_ge_39() {
     # $1 is a version string like "3.11.4"
@@ -180,6 +181,18 @@ else
     "$PYTHON_EXE" certs/generate_cert.py
 fi
 
-echo "[5/5] Starting the DATEV mock server on https://127.0.0.1:58452 ..."
-exec "$PYTHON_EXE" -m uvicorn app.main:app --host 127.0.0.1 --port 58452 \
+echo "[5/5] Starting the DATEV mock server on https://127.0.0.1:$PORT ..."
+
+# Auto-open the default browser at /admin a couple seconds after uvicorn
+# launches, in parallel — uvicorn needs a moment to actually bind the port.
+# Backgrounded and non-fatal: never blocks or fails server startup, and
+# falls back to a plain message in headless environments with neither
+# xdg-open (Linux) nor open (macOS) available.
+(
+    sleep 2
+    ADMIN_URL="https://127.0.0.1:$PORT/admin"
+    xdg-open "$ADMIN_URL" >/dev/null 2>&1 || open "$ADMIN_URL" >/dev/null 2>&1 || echo "Open $ADMIN_URL in your browser."
+) &
+
+exec "$PYTHON_EXE" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" \
     --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem

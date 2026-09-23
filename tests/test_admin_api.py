@@ -299,3 +299,33 @@ def test_reset_restores_both_datasets_to_original_cardinality(client):
 
     assert len(client.get(MASTER_DATA_ENDPOINT).json()) == MASTER_DATA_COUNT
     assert len(client.get(ACCOUNTING_ENDPOINT).json()) == ACCOUNTING_COUNT
+
+
+# --- follow-on: /docs link, per-card endpoint display, DATEV doc links ---
+# Smoke tests for the datev-mock-admin-ui-polish.md "Follow-on" section
+# (U5/U6) — proportional, presentational-only additions, same rationale as
+# the U1 smoke tests above: prove the additions actually landed in the
+# rendered page, without asserting exact HTML structure.
+
+
+def test_admin_page_links_to_swagger_docs(client):
+    body = client.get(ADMIN_PAGE).text
+    assert '/docs"' in body
+
+
+def test_admin_page_contains_confirmed_datev_documentation_urls(client):
+    body = client.get(ADMIN_PAGE).text
+    assert (
+        "https://developer.datev.de/de/product-detail/client-master-data/1.7.0/"
+        "reference/reference-overview/client-master-data"
+    ) in body
+    assert (
+        "https://developer.datev.de/de/product-detail/accounting/1.7.4/"
+        "reference/reference-overview/accounting"
+    ) in body
+
+
+def test_admin_page_shows_real_endpoint_on_master_data_and_accounting_cards(client):
+    body = client.get(ADMIN_PAGE).text
+    assert "master-data/v1/clients" in body
+    assert "accounting/v1/clients" in body

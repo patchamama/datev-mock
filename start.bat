@@ -151,8 +151,17 @@ if errorlevel 1 (
 
 rem ---------------------------------------------------------------------
 :start_server
-echo [5/5] Starting the DATEV mock server on https://127.0.0.1:58452 ...
-"%PYTHON_EXE%" -m uvicorn app.main:app --host 127.0.0.1 --port 58452 --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem
+set "PORT=58452"
+echo [5/5] Starting the DATEV mock server on https://127.0.0.1:%PORT% ...
+
+rem Auto-open the default browser at /admin a couple seconds after uvicorn
+rem launches, in parallel via a detached PowerShell helper -- uvicorn needs
+rem a moment to actually bind the port. Non-blocking: this "start" call
+rem returns immediately and uvicorn below still runs as the normal
+rem foreground/blocking final command, exactly as before.
+start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process 'https://127.0.0.1:%PORT%/admin'"
+
+"%PYTHON_EXE%" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem
 exit /b %errorlevel%
 
 rem ---------------------------------------------------------------------
