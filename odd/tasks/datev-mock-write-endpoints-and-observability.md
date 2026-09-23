@@ -35,7 +35,12 @@ deliberately required by a consumer... not registered by this active
 server scenario") — this mock will be the first implementation of any of
 them.
 
-**20 write operations across 12 resource paths.** Cross-referenced against
+**26 write operations across 14 resource families** (this section's own
+original count of "20" was wrong — it undercounted creditors/debitors as 2
+operations each instead of 3, POST + PUT-list + PUT-by-id; caught during
+P4's independent route-count verification against the actual running
+app, not just this doc's table — the table below was always correct, only
+this summary line was off). Cross-referenced against
 which paths also have a documented `GET` (i.e. can round-trip: write then
 read back) — all but 5 do:
 
@@ -160,12 +165,12 @@ re-open the JAR.
       outgoing/cash-register). New Pydantic + dataclass models per
       resource from Appendix A's field tables, SQLite-backed, GET routes
       where the spec documents one, admin UI visibility for all.
-- [ ] P4 — Full regression + README/task-doc updates (new SQLite
+- [x] P4 — Full regression + README/task-doc updates (new SQLite
       persistence behavior — a real deviation from this project's
       previously-universal "everything in-memory, reset on restart"
       philosophy, must be documented clearly; live log + unmatched-route
-      detection; the 20 new write endpoints).
-- [ ] P5 — Commit + push per phase (established workflow).
+      detection; the 26 new write endpoints).
+- [x] P5 — Commit + push per phase (established workflow).
 
 ## Route
 
@@ -291,6 +296,52 @@ epic in this project.
     only shows what a caller has actually written, which is arguably more
     honest for write-first resources than inventing fake defaults nobody
     asked for.
+- 2026-09-23: P4/P5 done (full regression + README updates + this epic's
+  final commit). `pytest tests/ -v` → 344/344, unchanged from the P3
+  count (no code changes this phase, docs only).
+  - **Precise route inventory, independently verified twice** (once by
+    the delegated P4 agent, once again directly by the orchestrator via a
+    fresh `app.routes` introspection script — this FastAPI version wraps
+    included routers in `_IncludedRouter`, requiring an `original_router`
+    unwrap to enumerate correctly, a real gotcha worth remembering for any
+    future route-counting): **79 total routes** — 4 framework
+    (`/docs`/`/redoc`/`/openapi.json`), 20 admin (17 pre-existing + 3 new:
+    `/admin/api/logs`, `/admin/api/logs/stream`,
+    `/admin/api/stored-records`), 55 under `/datev/api` (29 `GET` = 23
+    original + 6 new Group B list/detail routes, plus 26 write routes = 13
+    `POST` + 13 `PUT` = 15 Group A + 11 Group B). All numbers reconcile
+    exactly (23+15+11+6+3+4=79 was NOT the check — the correct check is
+    29+26=55 datev routes, +20 admin +4 framework =79 — both counts
+    confirmed against the live app object, not estimated).
+  - **Corrected this doc's own research-section summary line** ("20 write
+    operations" → "26") — the per-endpoint table underneath it was always
+    right; only the header count was wrong (miscounted creditors/debitors
+    as 2 ops each instead of 3). Same class of self-correction this
+    project has now made a habit of (W3/W4 in the real-data-reconciliation
+    epic did the same for their own doc's claims) — caught by verifying
+    against the running system rather than trusting a hand count.
+  - **README.md updated**: test badge/count (276→344), a 7th epic entry
+    in Status, a new "Write endpoints and persistence" Key Decisions
+    subsection (spec provenance, the one-generic-table SQLite rationale,
+    the live log's 3-way unmatched/404/405 distinction), and — most
+    importantly — every place README previously made a blanket "everything
+    resets on restart" claim now explicitly scopes that claim to what it
+    still applies to (the 2 admin-editable datasets, custom overrides)
+    versus the 26 new write endpoints, which now genuinely persist via
+    SQLite. Verified no application code changed this phase (`git status`
+    showed only `README.md`).
+  - **Live re-verification independently repeated** (not just trusting
+    the delegated report): Group A round-trip (creditor), Group B
+    round-trip (various-address), a create-only Group B resource's 405 (not
+    404) on `GET`, and — the behavior this whole feature was requested
+    for — a full server-process kill-and-restart with the same
+    `datev_mock.db`, confirming every previously-written record across all
+    three resources was still retrievable afterward.
+  - This closes the feature: 20→26 write operations (corrected count)
+    across 14 resource families, SQLite persistence for them, a live
+    browser+CLI request/response log, and unregistered-route/wrong-method
+    detection — all implemented, tested (344/344), documented, and
+    committed across 4 phases (P1-P4, one commit each).
 
 ---
 

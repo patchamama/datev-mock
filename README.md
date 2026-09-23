@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Pytest](https://img.shields.io/badge/tests-276%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
+[![Pytest](https://img.shields.io/badge/tests-344%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5-7952B3?logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
 [![Status](https://img.shields.io/badge/status-active-success)](#status)
 
@@ -31,11 +31,12 @@ official developer portal where the two disagree (see
 
 ## Status
 
-**GREEN — implemented and passing.** All 276 tests pass
+**GREEN — implemented and passing.** All 344 tests pass
 (`.venv\Scripts\python -m pytest tests/ -v`), and the server has been
-verified live over real HTTPS on port 58452 (all 23 mocked endpoints, the
-Bootstrap admin UI with its full endpoint catalog and custom-override
-uploads, and Swagger UI). Six epics complete:
+verified live over real HTTPS (the 23 original read-only endpoints, the 26
+new SQLite-backed write endpoints, the live request log, the Bootstrap admin
+UI with its full endpoint catalog and custom-override uploads, and Swagger
+UI). Seven epics complete:
 [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (base API),
 [`odd/tasks/datev-mock-settings.md`](odd/tasks/datev-mock-settings.md)
 (settings/admin UI),
@@ -46,11 +47,18 @@ sub-resources, DMS),
 (Bootstrap admin UI + full endpoint catalog),
 [`odd/tasks/datev-mock-custom-overrides.md`](odd/tasks/datev-mock-custom-overrides.md)
 (upload a custom XML/JSON example to temporarily override any endpoint's
-response), and
+response),
 [`odd/tasks/datev-mock-real-data-reconciliation.md`](odd/tasks/datev-mock-real-data-reconciliation.md)
 (reconciled every endpoint's field set and response format against data
 captured from a real DATEV installation — see [Content
-negotiation](#content-negotiation-xml-and-json) below for what changed).
+negotiation](#content-negotiation-xml-and-json) below for what changed), and
+[`odd/tasks/datev-mock-write-endpoints-and-observability.md`](odd/tasks/datev-mock-write-endpoints-and-observability.md)
+(26 new SQLite-backed `POST`/`PUT` write endpoints across 14 DATEV resource
+families — 7 already GET-modeled, 7 brand new, the latter also adding 6 new
+GET endpoints — plus a live browser/CLI request log with
+unregistered-route and wrong-method detection; see [Write endpoints and
+persistence](#write-endpoints-and-persistence) below for the resulting,
+now only partial, in-memory-by-default philosophy).
 See each task doc for full breakdowns, decisions, and progress logs.
 
 ## Quick start
@@ -101,6 +109,22 @@ returns the same fake dataset) except the one noted 404 lookup, which
 mirrors observed real behavior. Query params (`select`/`filter`/`skip`/
 `top`/`expand`) are documented by DATEV but not implemented anywhere in this
 mock — out of scope until an actual consumer needs them.
+
+**Write endpoints** (new, SQLite-backed — see [Write endpoints and
+persistence](#write-endpoints-and-persistence) below): 26 `POST`/`PUT`
+operations across 14 resource families, on top of the 23 read-only
+endpoints above — 15 operations across the 7 Group A families already
+listed above (debitors, creditors, terms-of-payment, asset stocktakings,
+cost-centers, master-data clients, addressees — each gets a matching
+`GET` round-trip), and 11 operations across 7 brand-new Group B families
+(`cost-center-properties`, `cost-sequences` + `cost-accounting-records`,
+`various-addresses`, `employees`, `internal-cost-services`,
+`accounting-sequences`, and the three `posting-proposals-*/batch`
+endpoints) — the latter also add 6 new `GET` endpoints (Group B resources
+that have a documented list/detail view; 5 of the 7 are create-only per
+DATEV's own spec, no `GET` invented where none exists). Full per-resource
+route list and request-body field tables:
+[`odd/tasks/datev-mock-write-endpoints-and-observability.md`](odd/tasks/datev-mock-write-endpoints-and-observability.md).
 
 ## Key decisions
 
@@ -202,6 +226,81 @@ Two different evidence qualities apply:
 
 Full write-up: [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mock-extended-endpoints.md).
 
+### Write endpoints and persistence
+
+This mock started **read-only by design** — see [Editable
+datasets](#settings--admin-ui) and [Custom
+overrides](#custom-overrides) below, both still true, unchanged, for the
+things they cover. This epic added genuine `POST`/`PUT` write endpoints on
+top of that, which changes the persistence story for the resources they
+touch:
+
+- **Where the write operations came from**: the same two official DATEV
+  OpenAPI 3.0.1 specs already used as ground truth for the 20 extended
+  read endpoints above (Accounting v1.5.0, Client Master Data v1.6.0),
+  cross-referenced against which paths also document a `GET` — i.e. which
+  ones can round-trip (write, then read back). **Group A** is the 7
+  resource families this mock already modeled for reading (debitors,
+  creditors, terms-of-payment, asset stocktakings, cost-centers,
+  master-data clients, addressees) — writing one now makes it appear in
+  that same resource's existing `GET`, JSON or XML. **Group B** is 7
+  brand-new resource families with no prior `GET` model at all
+  (`cost-center-properties`, `cost-sequences` + `cost-accounting-records`,
+  `various-addresses`, `employees`, `internal-cost-services`,
+  `accounting-sequences`, and the three `posting-proposals-*/batch`
+  endpoints) — a matching `GET` route was added wherever the spec
+  documents one; the 5 operations the spec itself defines as create-only
+  (no `GET` in the spec) stay `POST`-only rather than inventing a read
+  endpoint the real API doesn't have. Full per-operation field tables:
+  [`odd/tasks/datev-mock-write-endpoints-and-observability.md` →
+  "Appendix A"](odd/tasks/datev-mock-write-endpoints-and-observability.md#appendix-a--resolved-request-body-field-tables-spec-derived-structural-only).
+- **SQLite, one generic table** (`app/db.py`, stdlib `sqlite3`, no new
+  dependency): every one of the 26 write operations, across all 14
+  resource families, is backed by a single `stored_records` table
+  (`resource_type`, `record_id`, the record as `data_json`, timestamps)
+  rather than 14 bespoke per-resource schemas. This matches how the rest
+  of the mock already treats every `GET` response — a dataclass projected
+  to JSON/XML — so a new resource family needs a new Pydantic model and
+  router wiring, not a database migration. `datev_mock.db` is created on
+  first write, at the project root, **git-ignored** (same precedent as
+  `settings.json`).
+- **This is a deliberate exception to the rest of the mock's "everything
+  resets on restart" philosophy.** The 2 admin-editable datasets
+  (master-data/accounting clients, under [Editable
+  datasets](#settings--admin-ui)) and [custom
+  overrides](#custom-overrides) remain in-memory only, unchanged — still
+  gone on restart, by design, exactly as before. Records written through
+  any of the 26 new `POST`/`PUT` endpoints are different: they persist in
+  `datev_mock.db` and **do survive a restart** — verified live by writing
+  a record, killing the server process, starting a fresh one against the
+  same `datev_mock.db` file, and confirming the record was still there.
+  That was the explicit point of choosing SQLite for this one part of the
+  mock instead of extending the existing in-memory pattern — if you were
+  relying on this mock's blanket "everything resets" behavior for a
+  resource that now has a write endpoint, that no longer holds; every
+  other resource in the mock is unaffected.
+- **Live request/response log and unregistered-route detection**: a small
+  ASGI middleware (`app/request_log.py`) captures every request into (a) a
+  bounded in-memory ring buffer, (b) a line printed to the CLI/terminal on
+  every request, and (c) a Server-Sent-Events stream for the browser. It
+  shows up in the admin UI as the **Live Request Log** card (expandable
+  rows for full request/response detail, color-coded by HTTP method and
+  status-code range) and is also queryable directly at `GET
+  /admin/api/logs` (snapshot) and `GET /admin/api/logs/stream` (SSE).
+  Because the same middleware sees every request regardless of whether a
+  route matched, it distinguishes three cases in each log entry:
+  `unmatched: true` for a genuinely unregistered path (no route matches
+  at all — a real gap in mock coverage, logged at `WARNING` on the CLI
+  with an `[UNMATCHED]` marker and highlighted in the UI), versus
+  `unmatched: false` both for a legitimate business-logic 404 (e.g. an
+  addressee lookup by an unknown id — a real route, correct 404) and for
+  a `405 Method Not Allowed` on a real but wrong-verb request (e.g. `GET`
+  on one of the create-only `posting-proposals-*/batch` endpoints) — both
+  of the latter are matched routes behaving correctly, not coverage gaps.
+  Stored records written through the new write endpoints are visible in
+  the admin UI's **Stored records** card and at `GET
+  /admin/api/stored-records`.
+
 ### Settings & admin UI
 
 `https://127.0.0.1:58452/admin` — a Bootstrap 5 in-browser page with:
@@ -218,7 +317,13 @@ Full write-up: [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mo
   master-data (18 records) and accounting (100 records) client records
   directly, plus reset both lists back to their generated defaults. Edits
   are in-memory for the life of the process — gone on restart (by design;
-  only settings persist to disk, in a git-ignored `settings.json`).
+  only settings persist to disk, in a git-ignored `settings.json`). This
+  applies to these two admin-editable tables specifically, not to the mock
+  as a whole any more — the newer write endpoints (`POST`/`PUT` on
+  debitors, creditors, and the other resources listed under [Write
+  endpoints and persistence](#write-endpoints-and-persistence)) are
+  SQLite-backed and **do** survive a restart, by design; see that section
+  for the distinction.
   Each table also has **Export CSV** (downloads the current records —
   useful as a template, since it shows exactly which columns a re-import
   understands) and **Import CSV** (adds many records in one upload instead
@@ -228,8 +333,10 @@ Full write-up: [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mo
   `Id` or `company_data.*` column, is ignored; failed rows are skipped and
   counted rather than aborting the whole import).
 - **API Catalog** — a browsable, accordion-grouped reference covering
-  **all 23 mocked endpoints** (Diagnostics, Base clients, Master Data,
-  Accounting, DMS), not just the 2 editable tables above. Each entry shows
+  **all 23 mocked read-only endpoints** (Diagnostics, Base clients, Master
+  Data, Accounting, DMS), not just the 2 editable tables above — the 26
+  newer write endpoints aren't in this catalog yet, out of scope for that
+  epic. Each entry shows
   its HTTP method, the real path with illustrative path-parameter values
   resolved (this mock ignores their actual values by design — any value
   works), an on-demand "View sample data" fetch with two tabs — **Table**
@@ -283,9 +390,12 @@ right away. Toggle it off any time to fall back to the mock's normal
 generated data without losing the uploaded file, or delete it outright.
 Everything is in-memory
 only (never written to disk) and resets on restart, same as the editable
-datasets above. An active override always wins over `accounting/v1/clients`'s
-usual `Accept`-header negotiation — it serves exactly what you uploaded,
-in the format you uploaded it in.
+datasets above (this in-memory-only behavior is specific to overrides and
+the 2 editable datasets — it does not extend to the newer, SQLite-backed
+write endpoints; see [Write endpoints and
+persistence](#write-endpoints-and-persistence)). An active override always
+wins over `accounting/v1/clients`'s usual `Accept`-header negotiation — it
+serves exactly what you uploaded, in the format you uploaded it in.
 
 Full write-up: [`odd/tasks/datev-mock-custom-overrides.md`](odd/tasks/datev-mock-custom-overrides.md).
 
@@ -348,11 +458,14 @@ DATEV-Mock/
 │   ├── main.py
 │   ├── routers/
 │   │   ├── diagnostics.py
-│   │   ├── master_data.py   # clients (XML/JSON) + addressees/banks (JSON)
-│   │   ├── accounting.py    # clients + 15 sub-resources, all XML/JSON
+│   │   ├── master_data.py   # clients/addressees/employees (read + write) + banks
+│   │   ├── accounting.py    # 15 sub-resources (read) + 26 write endpoints, all XML/JSON where modeled
 │   │   ├── dms.py           # domains/documents (JSON, self-designed schema)
-│   │   └── admin.py         # settings + dataset CRUD + overrides + the /admin page
+│   │   └── admin.py         # settings + dataset CRUD + overrides + logs + stored-records + the /admin page
 │   ├── models.py
+│   ├── write_models.py      # Pydantic request-body models for the 26 write endpoints
+│   ├── db.py                # SQLite persistence (one generic `stored_records` table)
+│   ├── request_log.py       # live request/response log: ring buffer, SSE, CLI logging, unmatched-route detection
 │   ├── xml_serializers.py
 │   ├── json_serializers.py  # accounting.clients + master_data.clients JSON projections
 │   ├── fake_data.py         # seeded generators for every resource
@@ -367,10 +480,12 @@ DATEV-Mock/
 │   ├── datev-mock-extended-endpoints.md    # 20 extended endpoints: same, for that epic
 │   ├── datev-mock-admin-ui-polish.md       # Bootstrap redesign + full catalog: same, for that epic
 │   ├── datev-mock-custom-overrides.md      # upload/override system: same, for that epic
-│   └── datev-mock-real-data-reconciliation.md  # reconciled every endpoint against real DATEV data: same, for that epic
-├── tests/                     # full test suite — 276/276 passing
+│   ├── datev-mock-real-data-reconciliation.md  # reconciled every endpoint against real DATEV data: same, for that epic
+│   └── datev-mock-write-endpoints-and-observability.md  # 26 write endpoints + SQLite + live log: same, for that epic
+├── tests/                     # full test suite — 344/344 passing
 ├── start.bat / start.sh       # bootstrap Python (portable if needed) + deps + run, one step
 ├── settings.json              # git-ignored, created on first settings change
+├── datev_mock.db              # git-ignored, created on first write to any of the 26 new write endpoints
 └── requirements.txt
 ```
 
@@ -389,7 +504,7 @@ python -m venv .venv
 .venv\Scripts\python -m pytest tests/ -v
 ```
 
-All 276 tests pass.
+All 344 tests pass.
 
 ## Running the server
 
@@ -417,6 +532,6 @@ including the accounting endpoint's XML/JSON content negotiation.
 | **TLS** | Self-signed cert generated with the [`cryptography`](https://cryptography.io/) package |
 | **File uploads** | [`python-multipart`](https://pypi.org/project/python-multipart/) (FastAPI's multipart/form-data parsing, used by the custom-overrides upload) |
 | **Serialization** | Hand-built XML (stdlib string templates, matching .NET `DataContractSerializer` conventions) + native JSON |
-| **Persistence** | In-memory data store (per-process, reset on restart) + a small git-ignored `settings.json` for port/format preferences |
+| **Persistence** | In-memory data store for the 2 editable datasets and overrides (per-process, reset on restart) + stdlib `sqlite3` (no ORM) for the 26 write endpoints, in a git-ignored `datev_mock.db` that survives a restart + a small git-ignored `settings.json` for port/format preferences |
 | **Bootstrap scripts** | Batch (`start.bat`) / POSIX shell (`start.sh`) — provision a project-local Python (system if available, else a portable download) with no admin rights |
 
