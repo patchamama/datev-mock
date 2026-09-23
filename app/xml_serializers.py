@@ -25,6 +25,8 @@ from app.models import (
     FISCAL_YEAR_FIELD_ORDER,
     GENERAL_LEDGER_ACCOUNT_FIELD_ORDER,
     OPEN_ITEM_FIELD_ORDER,
+    POSTING_PROPOSAL_RULE_FIELD_ORDER,
+    TERM_OF_PAYMENT_FIELD_ORDER,
     AccountingSequenceProcessed,
     AccountingTransactionKey,
     Client,
@@ -37,6 +39,8 @@ from app.models import (
     FiscalYear,
     GeneralLedgerAccount,
     OpenItem,
+    PostingProposalRule,
+    TermOfPayment,
 )
 
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
@@ -108,6 +112,25 @@ ACCOUNTING_SEQUENCE_PROCESSED_NS = (
 ACCOUNTING_TRANSACTION_KEY_NS = (
     "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
     "AccountingTransactionKey"
+)
+
+# --- Real-data reconciliation epic, W4 batch C ---
+#
+# Inferred by pattern (no direct real XML evidence for either endpoint —
+# both real captures returned empty `[]` for `posting_proposal_rules_
+# incoming`/`outgoing`, and `terms-of-payment.xml`'s real capture is JSON
+# content, same quirk already flagged for `fiscal_years` in W2).
+# `POSTING_PROPOSAL_RULE_NS` covers both the incoming and outgoing endpoints
+# identically, since they share one real underlying `PostingProposalRule`
+# contract type per the compiled spec doc (same "one shared contract"
+# precedent as `OPEN_ITEM_NS` above).
+POSTING_PROPOSAL_RULE_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
+    "PostingProposalRule"
+)
+TERM_OF_PAYMENT_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
+    "TermOfPayment"
 )
 
 XML_DECLARATION = '<?xml version="1.0" encoding="utf-8"?>'
@@ -375,4 +398,44 @@ def serialize_accounting_transaction_keys(records: list[AccountingTransactionKey
         f'<ArrayOfAccountingTransactionKey xmlns:i="{XSI_NS}" xmlns="{ACCOUNTING_TRANSACTION_KEY_NS}">'
         f"{body}"
         "</ArrayOfAccountingTransactionKey>"
+    )
+
+
+# --- Real-data reconciliation epic, W4 batch C: posting_proposal_rules_
+# incoming/outgoing, terms_of_payment XML negotiation. See the namespace
+# constants' comments above — both inferred by pattern, no direct real XML
+# evidence for either. Nested/list-typed fields (`assignment_criteria`/
+# `posting_proposal_information` on PostingProposalRule, `due_in_days`/
+# `due_as_period` on TermOfPayment) are excluded from the rendered shape,
+# same precedent as `CostCenter`'s `cost_rates`/`properties` in W2 — they
+# stay JSON-only.
+
+
+def serialize_posting_proposal_rules(records: list[PostingProposalRule]) -> str:
+    """Shared serializer for both `posting_proposal_rules_incoming` and
+    `posting_proposal_rules_outgoing` — they share the exact same
+    `PostingProposalRule` shape, so the root/element tag and namespace are
+    identical across both call sites (same precedent as
+    `serialize_open_items`)."""
+    body = "".join(
+        _render_generic_record(r, POSTING_PROPOSAL_RULE_FIELD_ORDER, "PostingProposalRule")
+        for r in records
+    )
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfPostingProposalRule xmlns:i="{XSI_NS}" xmlns="{POSTING_PROPOSAL_RULE_NS}">'
+        f"{body}"
+        "</ArrayOfPostingProposalRule>"
+    )
+
+
+def serialize_terms_of_payment(records: list[TermOfPayment]) -> str:
+    body = "".join(
+        _render_generic_record(r, TERM_OF_PAYMENT_FIELD_ORDER, "TermOfPayment") for r in records
+    )
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfTermOfPayment xmlns:i="{XSI_NS}" xmlns="{TERM_OF_PAYMENT_NS}">'
+        f"{body}"
+        "</ArrayOfTermOfPayment>"
     )

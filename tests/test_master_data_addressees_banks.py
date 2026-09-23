@@ -131,6 +131,119 @@ def test_legal_person_addressees_have_representative_legal_person_fields(client)
         )
 
 
+# --- real-data reconciliation epic, W4: historical-array fields ---
+#
+# Real evidence (`examples/addressees.xml`, 111-record sample): the
+# `current_X` (scalar) + `X` (array of `{value[, valid_from]}`) pattern
+# confirmed by direct field-occurrence counting (not a single-record
+# summary). `company_names`/`legal_form_ids` are legal_person-only,
+# `surnames` is natural_person-only, `short_names` is shared by both types.
+
+
+def _assert_historical_value_shape(entries) -> None:
+    assert isinstance(entries, list) and entries, "expected a non-empty historical-value array"
+    for entry in entries:
+        assert isinstance(entry, dict)
+        assert set(entry.keys()) <= {"value", "valid_from"}
+        assert isinstance(entry.get("value"), str) and entry["value"].strip()
+        if "valid_from" in entry:
+            assert isinstance(entry["valid_from"], str) and entry["valid_from"].strip()
+
+
+def test_natural_person_addressees_have_surnames_historical_array(client):
+    """`surnames` real evidence: 8/8 natural_person records in the sample
+    carry it, 0/103 legal_person records do."""
+    records = _get_addressees(client)
+    natural_person_records = [r for r in records if r.get("type") == "natural_person"]
+    assert natural_person_records, "no natural_person addressee records returned"
+
+    for record in natural_person_records:
+        _assert_historical_value_shape(record.get("surnames"))
+        assert "company_names" not in record
+        assert "legal_form_ids" not in record
+
+
+def test_legal_person_addressees_have_company_names_historical_array(client):
+    """`company_names` real evidence: 103/103 legal_person records in the
+    sample carry it, 0/8 natural_person records do."""
+    records = _get_addressees(client)
+    legal_person_records = [r for r in records if r.get("type") == "legal_person"]
+    assert legal_person_records, "no legal_person addressee records returned"
+
+    for record in legal_person_records:
+        _assert_historical_value_shape(record.get("company_names"))
+        assert "surnames" not in record
+
+
+def test_legal_person_addressees_legal_form_ids_is_genuinely_optional():
+    """`legal_form_ids` real evidence: only 75/103 (~73%) legal_person
+    records carry it — genuinely sparse, not a schema-only optional."""
+    from app.fake_data import _generate_addressees
+
+    records = _generate_addressees(count=20)
+    legal_person_records = [r for r in records if r.type == "legal_person"]
+    assert legal_person_records, "no legal_person addressee records generated"
+
+    with_legal_form_ids = [r for r in legal_person_records if r.legal_form_ids is not None]
+    without_legal_form_ids = [r for r in legal_person_records if r.legal_form_ids is None]
+    assert with_legal_form_ids, "expected at least one legal_person with legal_form_ids"
+    assert without_legal_form_ids, (
+        "expected at least one legal_person without legal_form_ids "
+        "(real presence rate is ~73%, not 100%)"
+    )
+    for record in with_legal_form_ids:
+        for entry in record.legal_form_ids:
+            assert isinstance(entry.value, str) and entry.value.strip()
+
+
+def test_short_names_historical_array_is_genuinely_optional_for_both_types():
+    """`short_names` real evidence: shared by both types, but not always
+    present (105/111 overall) — a genuinely sparse field, not always-on."""
+    from app.fake_data import _generate_addressees
+
+    records = _generate_addressees(count=20)
+    with_short_names = [r for r in records if r.short_names is not None]
+    without_short_names = [r for r in records if r.short_names is None]
+    assert with_short_names, "expected at least one record with short_names"
+    assert without_short_names, (
+        "expected at least one record without short_names (real presence is ~95%, not 100%)"
+    )
+    for record in with_short_names:
+        # real evidence: current_short_name and short_names are present/absent together
+        assert record.current_short_name is not None
+        for entry in record.short_names:
+            assert isinstance(entry.value, str) and entry.value.strip()
+    for record in without_short_names:
+        assert record.current_short_name is None
+
+
+def test_addressee_date_of_foundation_is_legal_person_only(client):
+    """`date_of_foundation` real evidence: present only on legal_person
+    records (2/103 observed, absent on all 8 natural_person records)."""
+    records = _get_addressees(client)
+    legal_person_records = [r for r in records if r.get("type") == "legal_person"]
+    natural_person_records = [r for r in records if r.get("type") == "natural_person"]
+    assert legal_person_records and natural_person_records
+
+    assert any(
+        isinstance(r.get("date_of_foundation"), str) and r["date_of_foundation"].strip()
+        for r in legal_person_records
+    )
+    assert not any("date_of_foundation" in r for r in natural_person_records)
+
+
+def test_addressee_sex_is_natural_person_only(client):
+    """`sex` real evidence: present only on natural_person records (4/8
+    observed in the sample, 0/103 legal_person)."""
+    records = _get_addressees(client)
+    legal_person_records = [r for r in records if r.get("type") == "legal_person"]
+    natural_person_records = [r for r in records if r.get("type") == "natural_person"]
+    assert legal_person_records and natural_person_records
+
+    assert any(isinstance(r.get("sex"), str) and r["sex"].strip() for r in natural_person_records)
+    assert not any("sex" in r for r in legal_person_records)
+
+
 # --- GET /datev/api/master-data/v1/addressees/{addressee-id} ---
 
 

@@ -33,6 +33,8 @@ from app.xml_serializers import (
     serialize_fiscal_years,
     serialize_general_ledger_accounts,
     serialize_open_items,
+    serialize_posting_proposal_rules,
+    serialize_terms_of_payment,
 )
 
 router = APIRouter(tags=["accounting"])
@@ -449,48 +451,77 @@ def get_assets_stocktakings(
 @router.get(
     POSTING_PROPOSAL_RULES_INCOMING_INVOICES_ENDPOINT,
     summary="List a fiscal year's posting proposal rules for incoming invoices",
-    description="Bare JSON array of posting-proposal-rule-incoming-invoices. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Returns ArrayOfPostingProposalRule XML by default (inferred by "
+        "pattern - both real captures returned empty [] arrays, no field-"
+        "shape evidence beyond endpoint existence), or a bare JSON array "
+        "when Accept: application/json is sent. Ignores "
+        "client_id/fiscal_year_id."
+    ),
 )
 def get_posting_proposal_rules_incoming_invoices(
-    client_id: str, fiscal_year_id: str
-) -> list[dict[str, Any]]:
+    client_id: str, fiscal_year_id: str, request: Request
+) -> Response:
     override = overrides.get_active_override("accounting.posting_proposal_rules_incoming")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [
-        _to_json(record) for record in data_store.list_posting_proposal_rules_incoming_invoices()
-    ]
+    records = data_store.list_posting_proposal_rules_incoming_invoices()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_posting_proposal_rules(records), media_type="application/xml")
 
 
 @router.get(
     POSTING_PROPOSAL_RULES_OUTGOING_INVOICES_ENDPOINT,
     summary="List a fiscal year's posting proposal rules for outgoing invoices",
-    description="Bare JSON array of posting-proposal-rule-outgoing-invoices. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Returns ArrayOfPostingProposalRule XML by default (inferred by "
+        "pattern - both real captures returned empty [] arrays, no field-"
+        "shape evidence beyond endpoint existence; shares the same "
+        "PostingProposalRule contract as the incoming variant), or a bare "
+        "JSON array when Accept: application/json is sent. Ignores "
+        "client_id/fiscal_year_id."
+    ),
 )
 def get_posting_proposal_rules_outgoing_invoices(
-    client_id: str, fiscal_year_id: str
-) -> list[dict[str, Any]]:
+    client_id: str, fiscal_year_id: str, request: Request
+) -> Response:
     override = overrides.get_active_override("accounting.posting_proposal_rules_outgoing")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [
-        _to_json(record) for record in data_store.list_posting_proposal_rules_outgoing_invoices()
-    ]
+    records = data_store.list_posting_proposal_rules_outgoing_invoices()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_posting_proposal_rules(records), media_type="application/xml")
 
 
 @router.get(
     TERMS_OF_PAYMENT_ENDPOINT,
     summary="List a fiscal year's terms of payment",
-    description="Bare JSON array of term-of-payment. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Returns ArrayOfTermOfPayment XML by default (inferred by pattern - "
+        "no direct real XML evidence for this endpoint), or a bare JSON "
+        "array when Accept: application/json is sent. Ignores "
+        "client_id/fiscal_year_id."
+    ),
 )
-def get_terms_of_payment(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+def get_terms_of_payment(client_id: str, fiscal_year_id: str, request: Request) -> Response:
     override = overrides.get_active_override("accounting.terms_of_payment")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_terms_of_payment()]
+    records = data_store.list_terms_of_payment()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_terms_of_payment(records), media_type="application/xml")

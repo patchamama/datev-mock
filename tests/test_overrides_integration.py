@@ -289,7 +289,12 @@ def test_accounting_posting_proposal_rules_incoming_ambiguous_group_resolved_and
 
     _disable(client, "accounting.posting_proposal_rules_incoming")
 
-    response = client.get(endpoint)
+    # posting_proposal_rules_incoming also gained XML/JSON content
+    # negotiation in epic `datev-mock-real-data-reconciliation` (W4);
+    # ambiguous/missing Accept now defaults to XML, same as every other
+    # negotiated endpoint (same fix pattern W2/W3 already applied for
+    # creditors/debitors and accounts_payable above).
+    response = client.get(endpoint, headers={"Accept": "application/json"})
     assert response.json() != json.loads(override_json)
 
 

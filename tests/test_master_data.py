@@ -199,3 +199,74 @@ def test_at_least_one_unpopulated_field_uses_xsi_nil(client):
     assert found_nil, (
         f"expected at least one record with i:nil='true' on one of {nil_candidates}"
     )
+
+
+# --- real-data reconciliation epic, W4: JSON content negotiation ---
+#
+# Real evidence (`examples/master-data-clients.xml`, JSON content despite
+# the `.xml` filename, 100 records): a simplified JSON projection exists
+# alongside the already-modeled 42-field XML. The epic doc's own field table
+# (from a compiled first-record summary) listed 7 always-present fields; W4
+# found 2 more real, genuinely optional fields (`client_since`/`client_to`)
+# by counting occurrences across the full file — both included here.
+
+# `legal_person_id` was 100%-present in the real 100-record sample, but that
+# sample happened to be 100% `legal_person`-typed (a single-client-type
+# sample artifact). This mock's pre-existing (unmodified by this task)
+# `ClientResource` fake-data generator legitimately leaves `legal_person_id`
+# unset on some records independent of `type` — genuinely optional for this
+# mock's mixed dataset, so it's asserted as optional here, not required.
+_ALWAYS_PRESENT_JSON_FIELDS = {"id", "name", "number", "status", "timestamp", "type"}
+_OPTIONAL_JSON_FIELDS = {"legal_person_id", "client_since", "client_to"}
+
+
+def test_master_data_clients_json_content_type_when_accept_json(client):
+    response = client.get(ENDPOINT, headers={"accept": "application/json"})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+
+
+def test_master_data_clients_json_records_have_core_fields(client):
+    response = client.get(ENDPOINT, headers={"accept": "application/json"})
+    records = response.json()
+    assert isinstance(records, list) and records
+
+    for record in records:
+        missing = _ALWAYS_PRESENT_JSON_FIELDS - set(record.keys())
+        assert not missing, f"master-data client JSON record missing fields: {sorted(missing)}"
+        # Only the 6 always-present fields plus the confirmed-optional ones
+        # may appear — never an untracked/leaked field.
+        assert set(record.keys()) <= _ALWAYS_PRESENT_JSON_FIELDS | _OPTIONAL_JSON_FIELDS
+
+
+def test_master_data_clients_json_legal_person_id_present_on_at_least_one_record(client):
+    """Real evidence confirms the field exists and is populated (100/100 in
+    the sample) — not asserted as unconditionally required here (see the
+    module-level note), but the fake dataset must exercise it at least
+    once."""
+    response = client.get(ENDPOINT, headers={"accept": "application/json"})
+    records = response.json()
+    assert any("legal_person_id" in record for record in records), (
+        "expected at least one master-data client JSON record with legal_person_id"
+    )
+
+
+def test_master_data_clients_json_number_is_a_real_int_not_a_string(client):
+    """Real evidence confirms `number` is an unquoted JSON int on every
+    sampled record (same precedent as accounting.clients' W1 fix)."""
+    response = client.get(ENDPOINT, headers={"accept": "application/json"})
+    records = response.json()
+    assert records, "no master-data client records returned"
+
+    for record in records:
+        assert isinstance(record["number"], int)
+        assert not isinstance(record["number"], bool)
+
+
+def test_master_data_clients_default_format_is_still_xml(client):
+    """Ambiguous/missing Accept keeps the pre-existing XML default (same
+    live default_accounting_format mechanism every other negotiated
+    endpoint uses)."""
+    response = client.get(ENDPOINT)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")

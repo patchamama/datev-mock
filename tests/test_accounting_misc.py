@@ -65,6 +65,8 @@ from app.routers.accounting import (
 from app.xml_serializers import (
     ACCOUNTING_SEQUENCE_PROCESSED_NS,
     ACCOUNTING_TRANSACTION_KEY_NS,
+    POSTING_PROPOSAL_RULE_NS,
+    TERM_OF_PAYMENT_NS,
 )
 
 # Content negotiation (epic `datev-mock-real-data-reconciliation`, W2):
@@ -473,12 +475,21 @@ def test_general_ledger_accounts_xml_optional_field_uses_nil_when_absent(client)
 
 # --- GET .../fiscal-years/{fiscal-year-id}/posting-proposal-rules-incoming-invoices ---
 
+POSTING_PROPOSAL_RULES_JSON_ACCEPT_HEADERS = {"accept": "application/json"}
+POSTING_PROPOSAL_RULES_XML_ACCEPT_HEADERS = {"accept": "application/xml"}
+
 
 def test_posting_proposal_rules_incoming_invoices_returns_200_json_array_with_minimum_records(client):
+    # Content negotiation (epic `datev-mock-real-data-reconciliation`, W4):
+    # this endpoint now defaults to XML when the Accept header doesn't
+    # unambiguously request JSON — same fix pattern W2/W3 already applied
+    # for every other endpoint gaining negotiation (creditors/debitors,
+    # accounts_payable, etc.).
     response = client.get(
         POSTING_PROPOSAL_RULES_INCOMING_INVOICES_ENDPOINT.format(
             client_id=_fresh_id(), fiscal_year_id=_fresh_id()
-        )
+        ),
+        headers=POSTING_PROPOSAL_RULES_JSON_ACCEPT_HEADERS,
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
@@ -519,6 +530,40 @@ def test_posting_proposal_rules_incoming_invoices_ignores_path_param_values(clie
     _assert_ignores_path_params(client, POSTING_PROPOSAL_RULES_INCOMING_INVOICES_ENDPOINT)
 
 
+def test_posting_proposal_rules_incoming_invoices_xml_root_tag_and_namespace(client):
+    """Inferred by pattern (no direct real XML evidence — both real captures
+    returned empty [] arrays, epic `datev-mock-real-data-reconciliation`,
+    W4)."""
+    response = client.get(
+        POSTING_PROPOSAL_RULES_INCOMING_INVOICES_ENDPOINT.format(
+            client_id=_fresh_id(), fiscal_year_id=_fresh_id()
+        ),
+        headers=POSTING_PROPOSAL_RULES_XML_ACCEPT_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{POSTING_PROPOSAL_RULE_NS}}}ArrayOfPostingProposalRule"
+
+    records = [child for child in root if _local_name(child.tag) == "PostingProposalRule"]
+    assert len(records) >= MIN_POSTING_PROPOSAL_RULES_INCOMING_INVOICES
+
+    first = records[0]
+    assert _xml_field(first, "Id").text is not None
+    assert _xml_field(first, "UncertainLabel").text is not None
+
+
+def test_posting_proposal_rules_incoming_invoices_default_format_is_xml(client):
+    response = client.get(
+        POSTING_PROPOSAL_RULES_INCOMING_INVOICES_ENDPOINT.format(
+            client_id=_fresh_id(), fiscal_year_id=_fresh_id()
+        )
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+
 # --- GET .../fiscal-years/{fiscal-year-id}/posting-proposal-rules-outgoing-invoices ---
 
 
@@ -526,7 +571,8 @@ def test_posting_proposal_rules_outgoing_invoices_returns_200_json_array_with_mi
     response = client.get(
         POSTING_PROPOSAL_RULES_OUTGOING_INVOICES_ENDPOINT.format(
             client_id=_fresh_id(), fiscal_year_id=_fresh_id()
-        )
+        ),
+        headers=POSTING_PROPOSAL_RULES_JSON_ACCEPT_HEADERS,
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
@@ -566,12 +612,49 @@ def test_posting_proposal_rules_outgoing_invoices_ignores_path_param_values(clie
     _assert_ignores_path_params(client, POSTING_PROPOSAL_RULES_OUTGOING_INVOICES_ENDPOINT)
 
 
+def test_posting_proposal_rules_outgoing_invoices_xml_root_tag_and_namespace(client):
+    """Shares the same PostingProposalRule contract/namespace as the
+    incoming variant (inferred by pattern, epic
+    `datev-mock-real-data-reconciliation`, W4)."""
+    response = client.get(
+        POSTING_PROPOSAL_RULES_OUTGOING_INVOICES_ENDPOINT.format(
+            client_id=_fresh_id(), fiscal_year_id=_fresh_id()
+        ),
+        headers=POSTING_PROPOSAL_RULES_XML_ACCEPT_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{POSTING_PROPOSAL_RULE_NS}}}ArrayOfPostingProposalRule"
+
+    records = [child for child in root if _local_name(child.tag) == "PostingProposalRule"]
+    assert len(records) >= MIN_POSTING_PROPOSAL_RULES_OUTGOING_INVOICES
+
+
+def test_posting_proposal_rules_outgoing_invoices_default_format_is_xml(client):
+    response = client.get(
+        POSTING_PROPOSAL_RULES_OUTGOING_INVOICES_ENDPOINT.format(
+            client_id=_fresh_id(), fiscal_year_id=_fresh_id()
+        )
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+
 # --- GET .../fiscal-years/{fiscal-year-id}/terms-of-payment ---
+
+TERMS_OF_PAYMENT_JSON_ACCEPT_HEADERS = {"accept": "application/json"}
+TERMS_OF_PAYMENT_XML_ACCEPT_HEADERS = {"accept": "application/xml"}
 
 
 def test_terms_of_payment_returns_200_json_array_with_minimum_records(client):
+    # Content negotiation (epic `datev-mock-real-data-reconciliation`, W4):
+    # now defaults to XML when the Accept header doesn't unambiguously
+    # request JSON.
     response = client.get(
-        TERMS_OF_PAYMENT_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+        TERMS_OF_PAYMENT_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=TERMS_OF_PAYMENT_JSON_ACCEPT_HEADERS,
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
@@ -626,3 +709,33 @@ def test_term_of_payment_due_type_matches_populated_variant(client):
 
 def test_terms_of_payment_ignores_path_param_values(client):
     _assert_ignores_path_params(client, TERMS_OF_PAYMENT_ENDPOINT)
+
+
+def test_terms_of_payment_xml_root_tag_and_namespace(client):
+    """Inferred by pattern (`examples/terms-of-payment.xml` real capture is
+    JSON content, not XML, despite the filename — no direct real XML
+    evidence, epic `datev-mock-real-data-reconciliation`, W4)."""
+    response = client.get(
+        TERMS_OF_PAYMENT_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers=TERMS_OF_PAYMENT_XML_ACCEPT_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{TERM_OF_PAYMENT_NS}}}ArrayOfTermOfPayment"
+
+    records = [child for child in root if _local_name(child.tag) == "TermOfPayment"]
+    assert len(records) >= MIN_TERMS_OF_PAYMENT
+
+    first = records[0]
+    assert _xml_field(first, "Caption").text is not None
+    assert _xml_field(first, "DueType").text is not None
+
+
+def test_terms_of_payment_default_format_is_xml(client):
+    response = client.get(
+        TERMS_OF_PAYMENT_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")

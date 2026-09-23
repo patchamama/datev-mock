@@ -159,6 +159,22 @@ class Echo:
 
 
 @dataclass
+class HistoricalValue:
+    """One entry of an `Addressee` "historical field" array
+    (`company_names`/`short_names`/`legal_form_ids`/`surnames`) — the
+    `current_X` (scalar) + `X` (array of `{value[, valid_from]}`) pattern
+    documented by DATEV's Client Master Data API. Real evidence
+    (`examples/addressees.xml`, real-data reconciliation epic W4): `value`
+    is always present; `valid_from` is present on only a small minority of
+    entries (7/103 `company_names` entries, 6/105 `short_names`, 5/75
+    `legal_form_ids`, 0/8 `surnames`) — genuinely optional, not just
+    schema-typed as such."""
+
+    value: str
+    valid_from: Optional[str] = None
+
+
+@dataclass
 class Addressee:
     """Master-data `Addressee` — flat top-level fields only.
 
@@ -172,6 +188,15 @@ class Addressee:
     `type` (`natural_person`|`legal_person`) is a flat enum with parallel
     sibling fields for each type (no real OpenAPI polymorphism), per the
     compiled spec doc.
+
+    `company_names`/`short_names`/`legal_form_ids`/`surnames` are the
+    "historical field" arrays confirmed by direct evidence against the full
+    111-record `examples/addressees.xml` sample (real-data reconciliation
+    epic, W4) — see `HistoricalValue`. `company_names`/`legal_form_ids` are
+    legal_person-only (0 occurrences on any natural_person record);
+    `surnames` is natural_person-only (0 occurrences on any legal_person
+    record); `short_names` is shared by both types and tracks
+    `current_short_name`'s own presence 1:1 in the real sample.
     """
 
     id: str
@@ -181,6 +206,7 @@ class Addressee:
     eu_vat_id_country_code: Optional[str] = None
     eu_vat_id_number: Optional[str] = None
     current_short_name: Optional[str] = None
+    short_names: Optional[list[HistoricalValue]] = None
     surrogate_name: Optional[str] = None
     # natural_person-only (by convention/description, not schema-enforced)
     date_of_birth: Optional[str] = None
@@ -188,11 +214,14 @@ class Addressee:
     firstname: Optional[str] = None
     sex: Optional[str] = None
     current_surname: Optional[str] = None
+    surnames: Optional[list[HistoricalValue]] = None
     tax_identification_number: Optional[str] = None
     # legal_person-only (by convention/description, not schema-enforced)
     current_company_name: Optional[str] = None
+    company_names: Optional[list[HistoricalValue]] = None
     date_of_foundation: Optional[str] = None
     current_legal_form_id: Optional[str] = None
+    legal_form_ids: Optional[list[HistoricalValue]] = None
 
 
 @dataclass
@@ -932,6 +961,25 @@ class PostingProposalRule:
     last_used_date: Optional[str] = None
 
 
+# Declaration order for the inferred-by-pattern XML shape (real-data
+# reconciliation epic, W4 — both real captures returned empty `[]`, so
+# there's zero real evidence beyond endpoint existence). `Id`/`Parent`/
+# `membersToSerialize` preamble, then the remaining *scalar* fields in
+# alphabetical PascalCase order. `assignment_criteria`
+# (required nested object) and `posting_proposal_information` (nested list)
+# are deliberately **excluded** — same precedent as `CostCenter`'s
+# `cost_rates`/`properties`: no real evidence exists for a nested XML
+# representation, so this mock doesn't invent one, they stay JSON-only.
+POSTING_PROPOSAL_RULE_FIELD_ORDER = [
+    "id",
+    "parent",
+    "members_to_serialize",
+    "creation_date",
+    "last_used_date",
+    "uncertain_label",
+]
+
+
 @dataclass
 class DueDate:
     """`datev.due-date`, required: `day_of_month`, `related_month`."""
@@ -982,6 +1030,26 @@ class TermOfPayment:
     due_as_period: Optional[DueAsPeriod] = None
     cash_discount1_percentage: Optional[float] = None
     cash_discount2_percentage: Optional[float] = None
+
+
+# Declaration order for the inferred-by-pattern XML shape (real-data
+# reconciliation epic, W4 — real evidence (`examples/terms-of-payment.xml`)
+# confirms the JSON field shape exactly matches this model already, but
+# provides no XML evidence). `Id`/`Parent`/`membersToSerialize` preamble,
+# then the remaining *scalar* fields in alphabetical PascalCase order.
+# `due_in_days`/`due_as_period` (nested optional objects) are deliberately
+# **excluded** — same precedent as `PostingProposalRule` above and
+# `CostCenter`'s `cost_rates`/`properties`: no real evidence exists for a
+# nested XML representation, so this mock doesn't invent one.
+TERM_OF_PAYMENT_FIELD_ORDER = [
+    "id",
+    "parent",
+    "members_to_serialize",
+    "caption",
+    "cash_discount1_percentage",
+    "cash_discount2_percentage",
+    "due_type",
+]
 
 
 # --- DMS extension (extended-endpoints epic, Phase C) ---

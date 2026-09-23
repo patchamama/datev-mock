@@ -36,6 +36,7 @@ from app.models import (
     GeneralLedgerAccount,
     GeneralLedgerAccountMinimal,
     GeneralLedgerAccountTaxRate,
+    HistoricalValue,
     OpenItem,
     Period,
     PostingProposalInformation,
@@ -290,9 +291,18 @@ def _generate_addressees(count: int = 8) -> list[Addressee]:
         timestamp = _random_timestamp()
         eu_vat_country = "DE" if index % 3 == 0 else None
 
+        # `short_names` tracks `current_short_name`'s own presence 1:1 in the
+        # real sample (real-data reconciliation epic W4) — genuinely sparse,
+        # not always populated even when the record has a short name.
+        short_name_absent = index % 6 == 3
+        # A small minority of historical-array entries carry `valid_from`
+        # (real evidence: ~5-7% across all 3 array fields that support it).
+        entry_has_valid_from = index % 15 == 0
+
         if addressee_type == "natural_person":
             full_name = person_names[index % len(person_names)]
             firstname, surname = _split_person_name(full_name)
+            short_name = firstname[:15]
             records.append(
                 Addressee(
                     id=_fresh_guid(),
@@ -301,18 +311,39 @@ def _generate_addressees(count: int = 8) -> list[Addressee]:
                     timestamp=timestamp,
                     eu_vat_id_country_code=eu_vat_country,
                     eu_vat_id_number=f"DE{100000000 + index}" if eu_vat_country else None,
-                    current_short_name=firstname[:15],
+                    current_short_name=None if short_name_absent else short_name,
+                    short_names=(
+                        None
+                        if short_name_absent
+                        else [
+                            HistoricalValue(
+                                value=short_name,
+                                valid_from=timestamp[:10] if entry_has_valid_from else None,
+                            )
+                        ]
+                    ),
                     surrogate_name=f"{surname}, {firstname}"[:50],
                     date_of_birth=_random_timestamp(1950, 2000)[:10],
                     etin=f"MUSTER{index:02d}A{index % 10}B",
                     firstname=firstname,
                     sex=_FIRST_NAME_SEX.get(firstname, "diverse"),
                     current_surname=surname,
+                    surnames=[
+                        HistoricalValue(
+                            value=surname,
+                            valid_from=timestamp[:10] if entry_has_valid_from else None,
+                        )
+                    ],
                     tax_identification_number=str(10000000000 + index),
                 )
             )
         else:
             company_name = org_names[index % len(org_names)]
+            short_name = company_name.split(" ")[0][:15]
+            # `legal_form_ids` is genuinely optional even for legal_person
+            # records (real evidence: 75/103, ~73% presence) — sparser than
+            # `short_names`.
+            legal_form_id_absent = index % 4 == 3
             records.append(
                 Addressee(
                     id=_fresh_guid(),
@@ -321,11 +352,36 @@ def _generate_addressees(count: int = 8) -> list[Addressee]:
                     timestamp=timestamp,
                     eu_vat_id_country_code=eu_vat_country,
                     eu_vat_id_number=f"DE{200000000 + index}" if eu_vat_country else None,
-                    current_short_name=company_name.split(" ")[0][:15],
+                    current_short_name=None if short_name_absent else short_name,
+                    short_names=(
+                        None
+                        if short_name_absent
+                        else [
+                            HistoricalValue(
+                                value=short_name,
+                                valid_from=timestamp[:10] if entry_has_valid_from else None,
+                            )
+                        ]
+                    ),
                     surrogate_name=company_name[:50],
                     current_company_name=company_name,
+                    company_names=[
+                        HistoricalValue(
+                            value=company_name,
+                            valid_from=timestamp[:10] if entry_has_valid_from else None,
+                        )
+                    ],
                     date_of_foundation=_random_timestamp(1970, 2020)[:10],
                     current_legal_form_id=_LEGAL_FORM_ID_POOL[index % len(_LEGAL_FORM_ID_POOL)],
+                    legal_form_ids=(
+                        None
+                        if legal_form_id_absent
+                        else [
+                            HistoricalValue(
+                                value=_LEGAL_FORM_ID_POOL[index % len(_LEGAL_FORM_ID_POOL)]
+                            )
+                        ]
+                    ),
                 )
             )
 
