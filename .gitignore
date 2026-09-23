@@ -9,6 +9,7 @@ settings.json
 
 # Contains sensitive real DATEV data captured from a live environment — never publish
 examples/
+test-datev.html
 
 # Local tooling cache
 .atl
