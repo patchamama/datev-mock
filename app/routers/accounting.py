@@ -15,13 +15,22 @@ addition.
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Request, Response
 
-from app import config, data_store, overrides
+from app import config, data_store, db, overrides
 from app.json_serializers import serialize_clients_json
+from app.models import AssetStocktaking, CostCenter, Creditor, Debitor, TermOfPayment
+from app.write_models import (
+    AssetStocktakingWrite,
+    CostCenterWrite,
+    CreditorWrite,
+    DebitorWrite,
+    TermOfPaymentWrite,
+)
 from app.xml_serializers import (
     serialize_accounting_sequences_processed,
     serialize_accounting_transaction_keys,
@@ -39,6 +48,29 @@ from app.xml_serializers import (
 )
 
 router = APIRouter(tags=["accounting"])
+
+# --- P2 write endpoints (datev-mock-write-endpoints-and-observability.md,
+# "Group A") -- see the module-bottom "write endpoints" section for the
+# routes themselves. `Creditor`/`Debitor`'s nested object fields
+# (`natural_person`/`legal_person`/`not_specified_person`/`addresses`/
+# `banks`/`communications`/`accounting_information`) have no dedicated XML
+# sub-rendering (real evidence: never populated in the default, non-expand
+# response either -- see `Creditor`'s own docstring), so a raw dict a caller
+# POSTed would otherwise render as a broken Python `repr()` string inside
+# XML. They're nilled for the merged GET view; full fidelity of whatever
+# was actually written stays visible in the admin UI's "Stored records"
+# card and in the raw JSON `data_json` any caller wrote.
+_BUSINESS_PARTNER_NIL_FIELDS = frozenset(
+    {
+        "natural_person",
+        "legal_person",
+        "not_specified_person",
+        "addresses",
+        "banks",
+        "communications",
+        "accounting_information",
+    }
+)
 
 ENDPOINT = "/datev/api/accounting/v1/clients"
 
@@ -78,6 +110,19 @@ POSTING_PROPOSAL_RULES_OUTGOING_INVOICES_ENDPOINT = (
     f"{_FISCAL_YEAR_PREFIX}/posting-proposal-rules-outgoing-invoices"
 )
 TERMS_OF_PAYMENT_ENDPOINT = f"{_FISCAL_YEAR_PREFIX}/terms-of-payment"
+
+# --- P2 write-endpoint-only path constants ---
+#
+# `ASSET_STOCKTAKING_ENDPOINT` is deliberately a *different* URL shape than
+# `ASSETS_STOCKTAKINGS_ENDPOINT` above (`assets/stocktakings`, the existing
+# read-only list) -- the write side's spec path is
+# `assets/{asset-id}/stocktaking/` (singular, by-id), a distinct real
+# endpoint, not an alternate spelling of the list one. Per the task's own
+# note about the spec's trailing slash: no trailing slash here, for
+# consistency with every other path constant in this module (FastAPI
+# doesn't require one, and Starlette would otherwise 307-redirect a
+# no-slash request to it).
+ASSET_STOCKTAKING_ENDPOINT = f"{_FISCAL_YEAR_PREFIX}/assets/{{asset_id}}/stocktaking"
 
 
 def _strip_none(value: Any) -> Any:
@@ -220,7 +265,7 @@ def get_cost_centers(
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_cost_centers()
+    records = db.merge_with_stored(data_store.list_cost_centers(), "accounting.cost_centers", CostCenter)
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -244,7 +289,12 @@ def get_creditors(client_id: str, fiscal_year_id: str, request: Request) -> Resp
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_creditors()
+    records = db.merge_with_stored(
+        data_store.list_creditors(),
+        "accounting.creditors",
+        Creditor,
+        nil_fields=_BUSINESS_PARTNER_NIL_FIELDS,
+    )
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -267,7 +317,12 @@ def get_debitors(client_id: str, fiscal_year_id: str, request: Request) -> Respo
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_debitors()
+    records = db.merge_with_stored(
+        data_store.list_debitors(),
+        "accounting.debitors",
+        Debitor,
+        nil_fields=_BUSINESS_PARTNER_NIL_FIELDS,
+    )
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -449,7 +504,9 @@ def get_assets_stocktakings(client_id: str, fiscal_year_id: str, request: Reques
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_assets_stocktakings()
+    records = db.merge_with_stored(
+        data_store.list_assets_stocktakings(), "accounting.assets_stocktakings", AssetStocktaking
+    )
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -528,9 +585,182 @@ def get_terms_of_payment(client_id: str, fiscal_year_id: str, request: Request) 
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_terms_of_payment()
+    records = db.merge_with_stored(
+        data_store.list_terms_of_payment(), "accounting.terms_of_payment", TermOfPayment
+    )
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
 
     return Response(content=serialize_terms_of_payment(records), media_type="application/xml")
+
+
+# --- P2 write endpoints (datev-mock-write-endpoints-and-observability.md,
+# "Group A") ---
+#
+# Every write endpoint: validate the Pydantic body (FastAPI does this
+# automatically), generate an `id` (uuid4) if the caller didn't supply one
+# (or use the URL's own `{..._id}` path param for a by-id PUT), persist via
+# `app.db.upsert_record`, and echo the stored record back as JSON -- this
+# mock's existing convention (see `app/routers/admin.py`'s master-data/
+# accounting CRUD, which already does exactly this). `201` for creates,
+# `200` for updates, matching ordinary REST/FastAPI convention.
+
+
+def _write_record(
+    resource_type: str,
+    body: Any,
+    record_id: Optional[str] = None,
+    client_id: Optional[str] = None,
+    fiscal_year_id: Optional[str] = None,
+) -> dict[str, Any]:
+    data = body.model_dump(exclude_none=True)
+    resolved_id = record_id or data.get("id") or str(uuid.uuid4())
+    data["id"] = resolved_id
+    return db.upsert_record(
+        resource_type, resolved_id, data, client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+
+
+@router.post(DEBITORS_ENDPOINT, status_code=201, summary="Create a debitor")
+def post_debitor(client_id: str, fiscal_year_id: str, body: DebitorWrite) -> dict[str, Any]:
+    return _write_record(
+        "accounting.debitors", body, client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+
+
+@router.put(
+    DEBITORS_ENDPOINT,
+    summary="Bulk-update debitors",
+    description=(
+        "Body is a JSON array (the real spec's Content-Type is "
+        "application/merge-patch+json; FastAPI parses the same array body "
+        "regardless, no special ASGI handling needed for that content-type "
+        "nuance)."
+    ),
+)
+def put_debitors(
+    client_id: str, fiscal_year_id: str, body: list[DebitorWrite]
+) -> list[dict[str, Any]]:
+    return [
+        _write_record("accounting.debitors", item, client_id=client_id, fiscal_year_id=fiscal_year_id)
+        for item in body
+    ]
+
+
+@router.put(DEBITORS_ENDPOINT + "/{debitor_id}", summary="Update a debitor by id")
+def put_debitor(
+    client_id: str, fiscal_year_id: str, debitor_id: str, body: DebitorWrite
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.debitors",
+        body,
+        record_id=debitor_id,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+@router.post(CREDITORS_ENDPOINT, status_code=201, summary="Create a creditor")
+def post_creditor(client_id: str, fiscal_year_id: str, body: CreditorWrite) -> dict[str, Any]:
+    return _write_record(
+        "accounting.creditors", body, client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+
+
+@router.put(
+    CREDITORS_ENDPOINT,
+    summary="Bulk-update creditors",
+    description=(
+        "Body is a JSON array (same application/merge-patch+json note as "
+        "debitors' bulk PUT above)."
+    ),
+)
+def put_creditors(
+    client_id: str, fiscal_year_id: str, body: list[CreditorWrite]
+) -> list[dict[str, Any]]:
+    return [
+        _write_record(
+            "accounting.creditors", item, client_id=client_id, fiscal_year_id=fiscal_year_id
+        )
+        for item in body
+    ]
+
+
+@router.put(CREDITORS_ENDPOINT + "/{creditor_id}", summary="Update a creditor by id")
+def put_creditor(
+    client_id: str, fiscal_year_id: str, creditor_id: str, body: CreditorWrite
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.creditors",
+        body,
+        record_id=creditor_id,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+@router.post(TERMS_OF_PAYMENT_ENDPOINT, status_code=201, summary="Create a term of payment")
+def post_term_of_payment(
+    client_id: str, fiscal_year_id: str, body: TermOfPaymentWrite
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.terms_of_payment", body, client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+
+
+@router.put(
+    TERMS_OF_PAYMENT_ENDPOINT + "/{term_of_payment_id}", summary="Update a term of payment by id"
+)
+def put_term_of_payment(
+    client_id: str, fiscal_year_id: str, term_of_payment_id: str, body: TermOfPaymentWrite
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.terms_of_payment",
+        body,
+        record_id=term_of_payment_id,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+@router.put(
+    ASSET_STOCKTAKING_ENDPOINT,
+    summary="Update an asset's stocktaking record",
+    description=(
+        "The URL's asset_id is used as the stored record's own id (same "
+        "by-id convention as every other PUT-by-id endpoint here) -- the "
+        "real spec's asset_number/inventory_number are separate required "
+        "body fields, not the same thing as this path id."
+    ),
+)
+def put_asset_stocktaking(
+    client_id: str, fiscal_year_id: str, asset_id: str, body: AssetStocktakingWrite
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.assets_stocktakings",
+        body,
+        record_id=asset_id,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+@router.put(
+    COST_CENTERS_ENDPOINT + "/{cost_center_id}",
+    summary="Update a cost center by id",
+)
+def put_cost_center(
+    client_id: str,
+    fiscal_year_id: str,
+    cost_system_id: str,
+    cost_center_id: str,
+    body: CostCenterWrite,
+) -> dict[str, Any]:
+    return _write_record(
+        "accounting.cost_centers",
+        body,
+        record_id=cost_center_id,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )

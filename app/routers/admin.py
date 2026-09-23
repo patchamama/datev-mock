@@ -23,7 +23,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from app import config, data_store, overrides, request_log
+from app import config, data_store, db, overrides, request_log
 
 router = APIRouter(tags=["admin"])
 
@@ -31,6 +31,7 @@ SETTINGS_ENDPOINT = "/admin/api/settings"
 MASTER_DATA_ENDPOINT = "/admin/api/clients/master-data"
 ACCOUNTING_ENDPOINT = "/admin/api/clients/accounting"
 RESET_ENDPOINT = "/admin/api/reset"
+STORED_RECORDS_ENDPOINT = "/admin/api/stored-records"
 OVERRIDES_ENDPOINT = "/admin/api/overrides"
 OVERRIDES_RESOLVE_ENDPOINT = "/admin/api/overrides/resolve"
 LOGS_ENDPOINT = "/admin/api/logs"
@@ -135,6 +136,18 @@ def delete_accounting_client(record_id: str) -> dict:
 def reset_data() -> dict:
     data_store.reset()
     return {"status": "ok"}
+
+
+# --- stored records (SQLite-backed writes, P2 of
+# datev-mock-write-endpoints-and-observability.md) ---
+
+
+@router.get(STORED_RECORDS_ENDPOINT)
+def get_stored_records() -> list[dict[str, Any]]:
+    """Every record written via any of the 15 new write endpoints, across
+    every resource type, read-only -- feeds the admin page's "Stored
+    records" card. See `app.db.list_all_with_meta`."""
+    return db.list_all_with_meta()
 
 
 # --- live request/response log (see app/request_log.py) ---
@@ -628,6 +641,38 @@ _PAGE = """<!DOCTYPE html>
   </div>
 </div>
 
+<div class="card mb-4" id="stored-records-card">
+  <div class="card-header">
+    Stored records
+    <div class="small text-muted mt-1">
+      Records written via the new write endpoints (POST/PUT), persisted in
+      SQLite (<code>datev_mock.db</code>) and visible here read-only &mdash;
+      survives a server restart, unlike every other dataset on this page.
+      A matching resource's real GET endpoint returns these merged with
+      the fake dataset (a written record with an existing id replaces the
+      fake one; a new id is added).
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="row g-2 align-items-end mb-3">
+      <div class="col-auto">
+        <label for="stored-records-type" class="form-label">Resource type</label>
+        <select id="stored-records-type" class="form-select form-select-sm"></select>
+      </div>
+      <div class="col-auto">
+        <button id="stored-records-refresh" type="button" class="btn btn-sm btn-outline-secondary">Refresh</button>
+      </div>
+    </div>
+    <div class="table-responsive scroll-table">
+      <table class="table table-sm table-striped align-middle mb-0" id="stored-records-table">
+        <thead class="table-light"><tr><th>Record id</th><th>Created</th><th>Updated</th><th>Data</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div id="stored-records-empty" class="text-muted small mt-2">No stored records for this resource type yet.</div>
+  </div>
+</div>
+
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -639,6 +684,7 @@ const SETTINGS_URL = "/admin/api/settings";
 const MASTER_DATA_URL = "/admin/api/clients/master-data";
 const ACCOUNTING_URL = "/admin/api/clients/accounting";
 const RESET_URL = "/admin/api/reset";
+const STORED_RECORDS_URL = "/admin/api/stored-records";
 const OVERRIDES_URL = "/admin/api/overrides";
 const OVERRIDES_RESOLVE_URL = "/admin/api/overrides/resolve";
 const CATALOG = __CATALOG_JSON__;
@@ -1682,12 +1728,64 @@ document.getElementById("request-log-clear").addEventListener("click", () => {
   renderRequestLogTable();
 });
 
+// --- stored records (SQLite-backed writes, P2) ---
+//
+// Read-only: no edit/delete here, just visibility into what the new write
+// endpoints have persisted (the task calls for "simpler than the full CRUD
+// editor" the master-data/accounting cards above already have). A single
+// fetch of every resource type's rows, grouped client-side into a
+// dropdown/table pair -- proportional to a read-only admin card, no new
+// per-resource-type backend routes needed.
+
+let storedRecordsByType = {};
+
+function renderStoredRecordsTable() {
+  const type = document.getElementById("stored-records-type").value;
+  const rows = storedRecordsByType[type] || [];
+  const tbody = document.querySelector("#stored-records-table tbody");
+  tbody.innerHTML = "";
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><code>${escapeHtml(row.record_id)}</code></td>
+      <td class="text-nowrap small">${escapeHtml(row.created_at)}</td>
+      <td class="text-nowrap small">${escapeHtml(row.updated_at)}</td>
+      <td><pre class="bg-light border rounded p-2 mb-0 small" style="max-width: 32rem; white-space: pre-wrap;">${escapeHtml(JSON.stringify(row.data, null, 2))}</pre></td>`;
+    tbody.appendChild(tr);
+  });
+  document.getElementById("stored-records-empty").classList.toggle("d-none", rows.length > 0);
+}
+
+async function loadStoredRecords() {
+  const res = await fetch(STORED_RECORDS_URL);
+  const rows = await res.json();
+  storedRecordsByType = {};
+  rows.forEach((row) => {
+    if (!storedRecordsByType[row.resource_type]) storedRecordsByType[row.resource_type] = [];
+    storedRecordsByType[row.resource_type].push(row);
+  });
+
+  const select = document.getElementById("stored-records-type");
+  const previous = select.value;
+  const types = Object.keys(storedRecordsByType).sort();
+  select.innerHTML = types.length
+    ? types.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)} (${storedRecordsByType[t].length})</option>`).join("")
+    : '<option value="">(no stored records yet)</option>';
+  if (types.includes(previous)) select.value = previous;
+
+  renderStoredRecordsTable();
+}
+
+document.getElementById("stored-records-type").addEventListener("change", renderStoredRecordsTable);
+document.getElementById("stored-records-refresh").addEventListener("click", loadStoredRecords);
+
 loadSettings();
 loadMasterData();
 loadAccounting();
 loadOverrides();
 renderCatalog();
 connectRequestLogStream();
+loadStoredRecords();
 </script>
 </body>
 </html>

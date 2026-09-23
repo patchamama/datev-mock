@@ -9,13 +9,16 @@ extended-endpoints epic, Phase A (see
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from app import config, data_store, overrides
+from app import config, data_store, db, overrides
 from app.json_serializers import serialize_master_data_clients_json
+from app.models import Addressee, ClientResource
+from app.write_models import AddresseeWrite, ClientResponsibility, ClientWrite
 from app.xml_serializers import serialize_client_resources
 
 router = APIRouter(tags=["master-data"])
@@ -23,6 +26,37 @@ router = APIRouter(tags=["master-data"])
 ENDPOINT = "/datev/api/master-data/v1/clients"
 ADDRESSEES_ENDPOINT = "/datev/api/master-data/v1/addressees"
 BANKS_ENDPOINT = "/datev/api/master-data/v1/banks"
+
+# --- P2 write endpoints (datev-mock-write-endpoints-and-observability.md,
+# "Group A") -- `ClientResource`'s fields are PascalCase (matching the real
+# XML element names), while `ClientWrite`'s fields are snake_case (matching
+# the spec's own JSON body field names); every other Group A dataclass
+# already uses snake_case 1:1 with its Pydantic write model, so only this
+# one resource needs a translation table for `db.merge_with_stored`.
+_CLIENT_RESOURCE_FIELD_MAP = {
+    "id": "Id",
+    "client_since": "ClientSince",
+    "client_to": "ClientTo",
+    "differing_name": "DifferingName",
+    "legal_person_id": "LegalPersonId",
+    "name": "Name",
+    "natural_person_id": "NaturalPersonId",
+    "note": "Note",
+    "number": "Number",
+    "status": "Status",
+    "timestamp": "Timestamp",
+    "type": "Type",
+    "organization_id": "OrganizationId",
+    "organization_name": "OrganizationName",
+    "organization_number": "OrganizationNumber",
+    "establishment_id": "EstablishmentId",
+    "establishment_name": "EstablishmentName",
+    "establishment_number": "EstablishmentNumber",
+    "establishment_short_name": "EstablishmentShortName",
+    "functional_area_id": "FunctionalAreaId",
+    "functional_area_name": "FunctionalAreaName",
+    "functional_area_short_name": "FunctionalAreaShortName",
+}
 
 
 def _strip_none(value: Any) -> Any:
@@ -89,7 +123,13 @@ def get_clients(request: Request) -> Response:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_master_data()
+    records = db.merge_with_stored(
+        data_store.list_master_data(),
+        "master_data.clients",
+        ClientResource,
+        id_field="Id",
+        field_map=_CLIENT_RESOURCE_FIELD_MAP,
+    )
     if _negotiate_format(request) == "json":
         payload = serialize_master_data_clients_json(records)
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -111,7 +151,10 @@ def get_addressees() -> list[dict[str, Any]]:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_addressees()]
+    records = db.merge_with_stored(
+        data_store.list_addressees(), "master_data.addressees", Addressee
+    )
+    return [_to_json(record) for record in records]
 
 
 @router.get(
@@ -120,6 +163,9 @@ def get_addressees() -> list[dict[str, Any]]:
     description="Real lookup-by-id; 404 for an unknown addressee id.",
 )
 def get_addressee(addressee_id: str) -> dict[str, Any]:
+    stored = db.get_record("master_data.addressees", addressee_id)
+    if stored is not None:
+        return stored
     record = data_store.get_addressee(addressee_id)
     if record is None:
         raise HTTPException(status_code=404, detail="addressee not found")
@@ -138,3 +184,61 @@ def get_banks() -> list[dict[str, Any]]:
         return Response(content=override.content, media_type=media_type)
 
     return [_to_json(record) for record in data_store.list_banks()]
+
+
+# --- P2 write endpoints (datev-mock-write-endpoints-and-observability.md,
+# "Group A") --- same "validate via Pydantic, generate an id if absent,
+# upsert, echo the stored record back" convention as
+# `app/routers/accounting.py`'s write endpoints.
+
+
+def _write_record(resource_type: str, body: Any, record_id: Optional[str] = None) -> dict[str, Any]:
+    data = body.model_dump(exclude_none=True)
+    resolved_id = record_id or data.get("id") or str(uuid.uuid4())
+    data["id"] = resolved_id
+    return db.upsert_record(resource_type, resolved_id, data)
+
+
+@router.post(ENDPOINT, status_code=201, summary="Create a master-data client")
+def post_client(body: ClientWrite) -> dict[str, Any]:
+    return _write_record("master_data.clients", body)
+
+
+@router.put(ENDPOINT + "/{client_id}", summary="Update a master-data client by id")
+def put_client(client_id: str, body: ClientWrite) -> dict[str, Any]:
+    return _write_record("master_data.clients", body, record_id=client_id)
+
+
+@router.put(
+    ENDPOINT + "/{client_id}/responsibilities",
+    summary="Replace a client's responsibilities",
+    description=(
+        "Full-replace semantics: the given array becomes the client's "
+        "complete responsibilities list, replacing whatever was stored "
+        "before. employee_id is not validated to reference a real employee "
+        "-- master-data.employees doesn't exist as a resource until P3, "
+        "and this mock's established convention is to store what's sent "
+        "without enforcing relational integrity beyond shape."
+    ),
+)
+def put_client_responsibilities(
+    client_id: str, body: list[ClientResponsibility]
+) -> list[dict[str, Any]]:
+    resource_type = "master_data.client_responsibilities"
+    db.delete_records(resource_type, client_id=client_id)
+    stored = []
+    for item in body:
+        data = item.model_dump(exclude_none=True)
+        record_id = str(data["id"]) if "id" in data else str(uuid.uuid4())
+        stored.append(db.upsert_record(resource_type, record_id, data, client_id=client_id))
+    return stored
+
+
+@router.post(ADDRESSEES_ENDPOINT, status_code=201, summary="Create a master-data addressee")
+def post_addressee(body: AddresseeWrite) -> dict[str, Any]:
+    return _write_record("master_data.addressees", body)
+
+
+@router.put(ADDRESSEES_ENDPOINT + "/{addressee_id}", summary="Update a master-data addressee by id")
+def put_addressee(addressee_id: str, body: AddresseeWrite) -> dict[str, Any]:
+    return _write_record("master_data.addressees", body, record_id=addressee_id)

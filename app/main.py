@@ -12,12 +12,13 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
-from app import request_log, windows_proactor_noise
+from app import db, request_log, windows_proactor_noise
 from app.routers import accounting, admin, diagnostics, dms, master_data
 
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    db.init_db()
     if sys.platform == "win32":
         windows_proactor_noise.install()
     yield

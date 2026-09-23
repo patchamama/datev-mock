@@ -919,6 +919,28 @@ class AssetStocktaking:
     unit: Optional[str] = None
     location: Optional[str] = None
     condition: Optional[str] = None
+    # --- write-side-only fields, P2 of
+    # datev-mock-write-endpoints-and-observability.md (Appendix A): real
+    # fields from the write side of the official spec, never observed on
+    # the read side (no real capture exists at all for this endpoint), so
+    # existing GET responses simply never populate them -- correct per this
+    # project's own "field completeness != observed on the read side"
+    # convention. `kost1_cost_center_id` is included here too (present in
+    # Appendix A's full field table for this endpoint, alongside the 11
+    # fields the task text names explicitly) so a stored write round-trips
+    # through the merged GET response without silently losing it.
+    acquisition_date: Optional[str] = None
+    economic_lifetime: Optional[int] = None
+    kost1_cost_center_id: Optional[str] = None
+    branch: Optional[int] = None
+    order_date: Optional[str] = None
+    origin_type: Optional[str] = None
+    farmland_number: Optional[str] = None
+    serial_number: Optional[str] = None
+    contract_number: Optional[str] = None
+    type_of_use: Optional[str] = None
+    isin: Optional[str] = None
+    explanation_of_depreciation: Optional[str] = None
 
 
 # Declaration order for the inferred-by-pattern XML shape (epic

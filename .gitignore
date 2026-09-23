@@ -6,6 +6,10 @@ __pycache__/
 certs/*.pem
 .pytest_cache/
 settings.json
+datev_mock.db
+datev_mock.db-journal
+datev_mock.db-wal
+datev_mock.db-shm
 
 # Contains sensitive real DATEV data captured from a live environment — never publish
 examples/

@@ -147,7 +147,7 @@ re-open the JAR.
       SSE stream endpoint, admin UI "Live Request Log" card (expandable,
       color-coded). Foundational and independent of P2-P3 — built first so
       it's available to help verify every later phase's new endpoints.
-- [ ] P2 — SQLite core (`app/db.py`, schema, generic CRUD helpers) + Group
+- [x] P2 — SQLite core (`app/db.py`, schema, generic CRUD helpers) + Group
       A write endpoints (7 resource families, all already GET-modeled):
       debitors, creditors, terms-of-payment, stocktaking, cost-centers,
       master-data.clients (+ responsibilities), master-data.addressees.
@@ -214,6 +214,46 @@ epic in this project.
   - `tests/test_admin_page_js_syntax.py` (the project's standing
     apostrophe-bug regression guard) re-confirmed passing independently.
   - `.gitignore` untouched (no `datev_mock.db` yet — that's P2).
+- 2026-09-23: P2 done (RED+GREEN, delegated direct). SQLite core
+  (`app/db.py`, single generic `stored_records` table, short-lived
+  per-call connections) + 15 write routes across the 7 Group A resource
+  families (debitors/creditors: POST + PUT list + PUT by id each;
+  terms-of-payment: POST + PUT by id; stocktaking: PUT; cost-centers: PUT;
+  master-data.clients: POST + PUT + PUT responsibilities; addressees:
+  POST + PUT). New `app/write_models.py` (Pydantic request-body models,
+  kept separate from `app/models.py`'s read-side dataclasses on purpose).
+  324/324 tests passing (289 + 35 new).
+  - **Route count note**: the feature doc's phase description said "13"
+    routes; the doc's own detailed per-resource enumeration always listed
+    15 (creditors/debitors each have 3 operations, not 2, plus the new
+    `responsibilities` sub-resource) — implemented per the detailed
+    enumeration, 15 routes, not the summary count. Corrected here for the
+    record.
+  - **GET-merges-SQLite verified live** (real server, real `datev_mock.db`
+    file, not just `TestClient`): POST'd a debitor, a master-data client,
+    and a term-of-payment; confirmed each appeared in its resource's `GET`
+    in both JSON and XML. **Persistence-across-restart also verified
+    live** — killed the server process entirely and started a fresh one
+    against the same `datev_mock.db` file; both written records were
+    still there. This was the explicit point of choosing SQLite over this
+    project's prior in-memory-only philosophy, and it now demonstrably
+    works, not just by design.
+  - `.gitignore`: confirmed only 4 lines added (`datev_mock.db` +
+    `-journal`/`-wal`/`-shm` sidecar files), every pre-existing line
+    untouched and in order (`git diff` reviewed directly).
+  - `tests/test_admin_page_js_syntax.py` re-confirmed passing
+    independently.
+  - Nested object/array fields with no dedicated XML rendering
+    (`Creditor`/`Debitor`'s `natural_person`/`legal_person`/`addresses`/
+    `banks`/`communications`/`accounting_information`) are force-nilled in
+    the merged XML/JSON `GET` view specifically (would otherwise render
+    as a broken Python `repr()` string inside XML) — full fidelity of
+    whatever was actually written stays visible via the new
+    `/admin/api/stored-records` endpoint and admin UI card.
+  - Full pass count and design-choice detail in the P2 delegated agent's
+    report (not duplicated here) — orchestrator independently re-ran the
+    full suite (324/324), re-verified `.gitignore`, and live-tested the
+    round-trip + restart-persistence behavior directly before committing.
 
 ---
 

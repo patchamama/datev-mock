@@ -67,6 +67,7 @@ SETTINGS_ENDPOINT = "/admin/api/settings"
 MASTER_DATA_ENDPOINT = "/admin/api/clients/master-data"
 ACCOUNTING_ENDPOINT = "/admin/api/clients/accounting"
 RESET_ENDPOINT = "/admin/api/reset"
+STORED_RECORDS_ENDPOINT = "/admin/api/stored-records"
 ACCOUNTING_CLIENTS_ENDPOINT = "/datev/api/accounting/v1/clients"
 
 DEFAULT_PORT = 58452
@@ -138,6 +139,38 @@ def test_admin_page_catalog_still_intact_after_tabbed_sample_view(client):
     body = client.get(ADMIN_PAGE).text
     for representative_path_fragment in ("addressees", "fiscal-years", "domains"):
         assert representative_path_fragment in body
+
+
+# --- stored records (P2 of
+# datev-mock-write-endpoints-and-observability.md: SQLite-backed write
+# endpoints, admin UI visibility for what's been POSTed/PUT) ---
+
+
+def test_stored_records_endpoint_returns_empty_list_by_default(client):
+    response = client.get(STORED_RECORDS_ENDPOINT)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_stored_records_endpoint_reflects_a_written_debitor(client):
+    fiscal_year_url = (
+        "/datev/api/accounting/v1/clients/example-client-id/"
+        "fiscal-years/example-fiscal-year-id/debitors"
+    )
+    created = client.post(fiscal_year_url, json={"caption": "Stored-records smoke test"}).json()
+
+    rows = client.get(STORED_RECORDS_ENDPOINT).json()
+    matches = [r for r in rows if r["resource_type"] == "accounting.debitors"]
+    assert matches, "expected the posted debitor to appear in the stored-records listing"
+    assert matches[0]["record_id"] == created["id"]
+    assert matches[0]["data"]["caption"] == "Stored-records smoke test"
+    assert "created_at" in matches[0] and "updated_at" in matches[0]
+
+
+def test_admin_page_contains_stored_records_card(client):
+    body = client.get(ADMIN_PAGE).text
+    assert "Stored records" in body
+    assert STORED_RECORDS_ENDPOINT in body
 
 
 # --- settings ---
