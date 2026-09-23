@@ -384,3 +384,40 @@ def test_admin_page_references_overrides_resolve_toggle_delete_patterns(client):
     assert "/admin/api/overrides/resolve" in body
     assert "method: \"PUT\"" in body
     assert "method: \"DELETE\"" in body
+
+
+# --- follow-on: CSV export/import for both CRUD tables + override endpoint
+# URL display --- proportional smoke tests confirming the additions actually
+# landed in the rendered page (presentational/client-side work — see the
+# rationale on the smoke tests above).
+
+
+def test_admin_page_has_csv_export_buttons_for_both_tables(client):
+    body = client.get(ADMIN_PAGE).text
+    assert 'id="md-export-csv"' in body
+    assert 'id="ac-export-csv"' in body
+    assert "Export CSV" in body
+
+
+def test_admin_page_has_csv_import_controls_for_both_tables(client):
+    body = client.get(ADMIN_PAGE).text
+    assert 'id="md-import-file"' in body
+    assert 'id="md-import-btn"' in body
+    assert 'id="ac-import-file"' in body
+    assert 'id="ac-import-btn"' in body
+    assert "Import CSV" in body
+
+
+def test_admin_page_embeds_csv_helper_functions(client):
+    body = client.get(ADMIN_PAGE).text
+    assert "function toCsv(" in body
+    assert "function fromCsv(" in body
+
+
+def test_admin_page_embeds_override_endpoint_paths_mapping(client):
+    body = client.get(ADMIN_PAGE).text
+    assert "OVERRIDE_ENDPOINT_PATHS" in body
+    # A known real path from the mapping, distinct from CATALOG's own
+    # occurrence of the same path (banks has no dedicated CATALOG-only
+    # wording, so also assert the JS constant name is actually present).
+    assert "/datev/api/master-data/v1/banks" in body

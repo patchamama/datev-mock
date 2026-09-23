@@ -4,7 +4,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Pytest](https://img.shields.io/badge/tests-212%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5-7952B3?logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
-[![Status](https://img.shields.io/badge/status-active-success)](#tasks--roadmap)
+[![Status](https://img.shields.io/badge/status-active-success)](#status)
 
 A local FastAPI mock of DATEV's local Desktop API (the REST interface a DATEV
 workstation normally exposes on `https://<local-ip>:58452/datev/api/...`),
@@ -28,7 +28,6 @@ official developer portal where the two disagree (see
 - [Running the tests](#running-the-tests)
 - [Running the server](#running-the-server)
 - [Technology](#technology)
-- [Tasks / Roadmap](#tasks--roadmap)
 
 ## Status
 
@@ -171,6 +170,14 @@ Full write-up: [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mo
   directly, plus reset both lists back to their generated defaults. Edits
   are in-memory for the life of the process — gone on restart (by design;
   only settings persist to disk, in a git-ignored `settings.json`).
+  Each table also has **Export CSV** (downloads the current records —
+  useful as a template, since it shows exactly which columns a re-import
+  understands) and **Import CSV** (adds many records in one upload instead
+  of one at a time; only the columns the "Add ..." form already supports
+  are used — `Name`/`Number`/`Status`/`Type` for master-data, `Name`/
+  `Number` for accounting — anything else in the file, like an exported
+  `Id` or `company_data.*` column, is ignored; failed rows are skipped and
+  counted rather than aborting the whole import).
 - **API Catalog** — a browsable, accordion-grouped reference covering
   **all 23 mocked endpoints** (Diagnostics, Base clients, Master Data,
   Accounting, DMS), not just the 2 editable tables above. Each entry shows
@@ -214,9 +221,11 @@ matching one of these shows all the matching candidates and asks you to
 pick — deliberately, rather than guessing wrong.
 
 Once matched (automatically or by your pick), the override is **active
-immediately** — a badge confirms which endpoint it's serving. Toggle it
-off any time to fall back to the mock's normal generated data without
-losing the uploaded file, or delete it outright. Everything is in-memory
+immediately** — a confirmation shows which endpoint it's serving *and* the
+real, clickable URL (with the live-configured port) so you can try it
+right away. Toggle it off any time to fall back to the mock's normal
+generated data without losing the uploaded file, or delete it outright.
+Everything is in-memory
 only (never written to disk) and resets on restart, same as the editable
 datasets above. An active override always wins over `accounting/v1/clients`'s
 usual `Accept`-header negotiation — it serves exactly what you uploaded,
@@ -354,63 +363,3 @@ including the accounting endpoint's XML/JSON content negotiation.
 | **Persistence** | In-memory data store (per-process, reset on restart) + a small git-ignored `settings.json` for port/format preferences |
 | **Bootstrap scripts** | Batch (`start.bat`) / POSIX shell (`start.sh`) — provision a project-local Python (system if available, else a portable download) with no admin rights |
 
-## Tasks / Roadmap
-
-All five epics complete (212/212 tests). See each task doc for full
-detail, decisions, and progress logs:
-
-**Base API** — [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (32 tests):
-- [x] T0–T7 — RED-phase tests → models → fake data → XML/JSON serializers →
-      routers → README → GREEN verification.
-
-**Settings & admin UI** — [`odd/tasks/datev-mock-settings.md`](odd/tasks/datev-mock-settings.md) (45 more tests):
-- [x] S0–S7 — RED-phase tests → `config.py` (port/format persistence) →
-      mutable data store → `/admin/api/*` CRUD → admin HTML page → live
-      content-negotiation wiring → this README section → GREEN
-      verification.
-
-**Extended endpoints** — [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mock-extended-endpoints.md) (88 more tests):
-- [x] Phase A — Master Data addressees/banks (3 endpoints)
-- [x] Phase B — Accounting sub-resources (15 endpoints, split into two
-      delivery batches)
-- [x] Phase C — DMS domains/documents (2 endpoints, self-designed schema)
-- [x] D0 — this README update
-
-**Admin UI overhaul & documentation polish** — [`odd/tasks/datev-mock-admin-ui-polish.md`](odd/tasks/datev-mock-admin-ui-polish.md):
-- [x] Bootstrap 5 redesign of `/admin`, plus a full read-only catalog
-      covering all 23 mocked endpoints (not just the 2 CRUD-editable
-      tables) — each entry shows its HTTP method, resolved example path,
-      a "view sample data" action, and a copyable `curl` example.
-- [x] README polish pass (badges, technology table, table of contents,
-      this roadmap section).
-- [x] Follow-on: `start.bat`/`start.sh` auto-open the browser at `/admin`
-      on launch; `/docs` link and real-endpoint labels added to the admin
-      page; official DATEV documentation links added where a confirmed
-      URL exists (Master Data, Accounting — Diagnostics/DMS intentionally
-      left unlinked, no confirmed docs found for either).
-
-**Custom example overrides** — [`odd/tasks/datev-mock-custom-overrides.md`](odd/tasks/datev-mock-custom-overrides.md):
-- [x] `app/overrides.py` — structural detection (XML root tag / JSON field
-      fingerprint) matching an uploaded file to one of 22 override-eligible
-      endpoints, with honest multi-candidate handling for the 3 endpoint
-      groups that share an identical schema.
-- [x] `/admin/api/overrides*` — upload, ambiguity resolution, list,
-      enable/disable, delete.
-- [x] Wired into all 22 real endpoint handlers — an active override is
-      served verbatim, bypassing normal generation and (for
-      `accounting/v1/clients`) `Accept`-header negotiation.
-- [x] Admin UI: upload form, candidate-picker for ambiguous matches, and
-      an overrides table with per-row enable/disable and delete.
-- [x] This README update.
-
-### Planned / not started
-
-- **Java port** — build an equivalent mock as a Java application (mirroring
-  the tech stack of the internal reference mock this project's extended
-  endpoints were gap-analyzed against, see
-  [`examples/DATEV_Mock_Server_Reference.md`](examples/DATEV_Mock_Server_Reference.md),
-  local-only). Not scoped or started — recorded here as a future
-  possibility, not a commitment.
-- Full CRUD (not just read-only display) for the 20 extended-endpoint
-  resources in the admin UI, if ever needed for interactive test-data
-  shaping beyond the existing master-data/accounting clients tables.

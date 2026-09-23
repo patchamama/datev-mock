@@ -282,6 +282,46 @@ CATALOG: list[dict[str, Any]] = [
 assert len(CATALOG) == 23, f"expected 23 catalog entries, got {len(CATALOG)}"
 
 
+# --- override endpoint key -> real path map (presentational only) ---
+#
+# Every override-eligible endpoint key (see `app/overrides.py`'s
+# `_XML_ROOT_MAP`/`_FINGERPRINTS` and the endpoint-key table in
+# `odd/tasks/datev-mock-custom-overrides.md`) mapped to its real, testable
+# `/datev/api/...` path, built from the same `_EXAMPLE_CLIENT`/
+# `_EXAMPLE_FISCAL_YEAR`/`_EXAMPLE_COST_SYSTEM`/`_FY_PREFIX` constants
+# `CATALOG` already uses, for consistency. Used by the admin page to show
+# the resolved live URL after a custom-override upload matches an endpoint.
+
+OVERRIDE_ENDPOINT_PATHS: dict[str, str] = {
+    "diagnostics.echo": "/datev/api/diagnostics/v1/echo",
+    "master_data.clients": "/datev/api/master-data/v1/clients",
+    "accounting.clients": "/datev/api/accounting/v1/clients",
+    "master_data.addressees": "/datev/api/master-data/v1/addressees",
+    "master_data.banks": "/datev/api/master-data/v1/banks",
+    "accounting.fiscal_years": f"/datev/api/accounting/v1/clients/{_EXAMPLE_CLIENT}/fiscal-years",
+    "accounting.cost_systems": f"{_FY_PREFIX}/cost-systems",
+    "accounting.cost_centers": f"{_FY_PREFIX}/cost-systems/{_EXAMPLE_COST_SYSTEM}/cost-centers",
+    "accounting.creditors": f"{_FY_PREFIX}/creditors",
+    "accounting.debitors": f"{_FY_PREFIX}/debitors",
+    "accounting.general_ledger_accounts": f"{_FY_PREFIX}/general-ledger-accounts",
+    "accounting.accounts_payable": f"{_FY_PREFIX}/accounts-payable",
+    "accounting.accounts_payable_condense": f"{_FY_PREFIX}/accounts-payable/condense",
+    "accounting.accounts_receivable_condense": f"{_FY_PREFIX}/accounts-receivable/condense",
+    "accounting.accounting_sequences_processed": f"{_FY_PREFIX}/accounting-sequences-processed",
+    "accounting.accounting_transaction_keys": f"{_FY_PREFIX}/accounting-transaction-keys",
+    "accounting.assets_stocktakings": f"{_FY_PREFIX}/assets/stocktakings",
+    "accounting.posting_proposal_rules_incoming": f"{_FY_PREFIX}/posting-proposal-rules-incoming-invoices",
+    "accounting.posting_proposal_rules_outgoing": f"{_FY_PREFIX}/posting-proposal-rules-outgoing-invoices",
+    "accounting.terms_of_payment": f"{_FY_PREFIX}/terms-of-payment",
+    "dms.domains": "/datev/api/dms/v1/domains",
+    "dms.documents": "/datev/api/dms/v1/documents",
+}
+
+assert len(OVERRIDE_ENDPOINT_PATHS) == 22, (
+    f"expected 22 override endpoint keys, got {len(OVERRIDE_ENDPOINT_PATHS)}"
+)
+
+
 # --- HTML page ---
 
 _PAGE = """<!DOCTYPE html>
@@ -334,14 +374,17 @@ _PAGE = """<!DOCTYPE html>
 </div>
 
 <div class="card mb-4">
-  <div class="card-header">
-    Master-data clients
-    <div class="small text-muted mt-1">
-      Real endpoint: <code>GET /datev/api/master-data/v1/clients</code> (XML). This table
-      edits via the JSON admin endpoint <code>/admin/api/clients/master-data</code> instead
-      &mdash; two different things.
-      <a href="https://developer.datev.de/de/product-detail/client-master-data/1.7.0/reference/reference-overview/client-master-data" target="_blank" rel="noopener">DATEV docs</a>
+  <div class="card-header d-flex justify-content-between align-items-start gap-2">
+    <div>
+      Master-data clients
+      <div class="small text-muted mt-1">
+        Real endpoint: <code>GET /datev/api/master-data/v1/clients</code> (XML). This table
+        edits via the JSON admin endpoint <code>/admin/api/clients/master-data</code> instead
+        &mdash; two different things.
+        <a href="https://developer.datev.de/de/product-detail/client-master-data/1.7.0/reference/reference-overview/client-master-data" target="_blank" rel="noopener">DATEV docs</a>
+      </div>
     </div>
+    <button id="md-export-csv" type="button" class="btn btn-sm btn-outline-secondary text-nowrap">Export CSV</button>
   </div>
   <div class="card-body">
     <div class="table-responsive scroll-table">
@@ -370,18 +413,30 @@ _PAGE = """<!DOCTYPE html>
         <div class="col-auto"><button id="md-add" type="button" class="btn btn-sm btn-success">Add</button></div>
       </div>
     </fieldset>
+    <fieldset class="border rounded p-3 mt-2">
+      <legend class="float-none w-auto px-2 fs-6">Import master-data clients (CSV)</legend>
+      <div class="row g-2 align-items-end">
+        <div class="col-auto"><input id="md-import-file" type="file" accept=".csv" class="form-control form-control-sm"></div>
+        <div class="col-auto"><button id="md-import-btn" type="button" class="btn btn-sm btn-primary">Import CSV</button></div>
+      </div>
+      <div class="small text-muted mt-2">Columns used: <code>Name</code>, <code>Number</code>, <code>Status</code>, <code>Type</code> (other columns are ignored).</div>
+      <div id="md-import-result" class="mt-2"></div>
+    </fieldset>
   </div>
 </div>
 
 <div class="card mb-4">
-  <div class="card-header">
-    Accounting clients
-    <div class="small text-muted mt-1">
-      Real endpoint: <code>GET /datev/api/accounting/v1/clients</code> (XML by default, JSON
-      with <code>Accept: application/json</code>). This table edits via the JSON admin
-      endpoint <code>/admin/api/clients/accounting</code> instead &mdash; two different things.
-      <a href="https://developer.datev.de/de/product-detail/accounting/1.7.4/reference/reference-overview/accounting" target="_blank" rel="noopener">DATEV docs</a>
+  <div class="card-header d-flex justify-content-between align-items-start gap-2">
+    <div>
+      Accounting clients
+      <div class="small text-muted mt-1">
+        Real endpoint: <code>GET /datev/api/accounting/v1/clients</code> (XML by default, JSON
+        with <code>Accept: application/json</code>). This table edits via the JSON admin
+        endpoint <code>/admin/api/clients/accounting</code> instead &mdash; two different things.
+        <a href="https://developer.datev.de/de/product-detail/accounting/1.7.4/reference/reference-overview/accounting" target="_blank" rel="noopener">DATEV docs</a>
+      </div>
     </div>
+    <button id="ac-export-csv" type="button" class="btn btn-sm btn-outline-secondary text-nowrap">Export CSV</button>
   </div>
   <div class="card-body">
     <div class="table-responsive scroll-table">
@@ -397,6 +452,15 @@ _PAGE = """<!DOCTYPE html>
         <div class="col-auto"><input id="ac-number" type="number" class="form-control form-control-sm" placeholder="Number"></div>
         <div class="col-auto"><button id="ac-add" type="button" class="btn btn-sm btn-success">Add</button></div>
       </div>
+    </fieldset>
+    <fieldset class="border rounded p-3 mt-2">
+      <legend class="float-none w-auto px-2 fs-6">Import accounting clients (CSV)</legend>
+      <div class="row g-2 align-items-end">
+        <div class="col-auto"><input id="ac-import-file" type="file" accept=".csv" class="form-control form-control-sm"></div>
+        <div class="col-auto"><button id="ac-import-btn" type="button" class="btn btn-sm btn-primary">Import CSV</button></div>
+      </div>
+      <div class="small text-muted mt-2">Columns used: <code>Name</code>, <code>Number</code> (other columns are ignored).</div>
+      <div id="ac-import-result" class="mt-2"></div>
     </fieldset>
   </div>
 </div>
@@ -468,6 +532,7 @@ const RESET_URL = "/admin/api/reset";
 const OVERRIDES_URL = "/admin/api/overrides";
 const OVERRIDES_RESOLVE_URL = "/admin/api/overrides/resolve";
 const CATALOG = __CATALOG_JSON__;
+const OVERRIDE_ENDPOINT_PATHS = __OVERRIDE_PATHS_JSON__;
 
 // Confirmed DATEV documentation URLs, per catalog area (see
 // odd/tasks/datev-mock-admin-ui-polish.md "Follow-on" section). Diagnostics
@@ -478,6 +543,8 @@ const AREA_DOCS = {
 };
 
 const state = { port: 58452 };
+let masterDataRecords = [];
+let accountingRecords = [];
 
 function showNote(message, kind) {
   const note = document.getElementById("settings-note");
@@ -551,6 +618,7 @@ function renderMasterDataRow(record) {
 async function loadMasterData() {
   const res = await fetch(MASTER_DATA_URL);
   const records = await res.json();
+  masterDataRecords = records;
   const tbody = document.querySelector("#master-data-table tbody");
   tbody.innerHTML = "";
   records.forEach((record) => tbody.appendChild(renderMasterDataRow(record)));
@@ -586,6 +654,7 @@ function renderAccountingRow(record) {
 async function loadAccounting() {
   const res = await fetch(ACCOUNTING_URL);
   const records = await res.json();
+  accountingRecords = records;
   const tbody = document.querySelector("#accounting-table tbody");
   tbody.innerHTML = "";
   records.forEach((record) => tbody.appendChild(renderAccountingRow(record)));
@@ -623,6 +692,236 @@ document.getElementById("reset-btn").addEventListener("click", async () => {
   loadAccounting();
 });
 
+// --- CSV export/import (client-side only; no new backend endpoints) ---
+
+function csvQuoteField(value) {
+  const text = value === null || value === undefined ? "" : String(value);
+  if (/[",\\r\\n]/.test(text)) {
+    return '"' + text.replace(/"/g, '""') + '"';
+  }
+  return text;
+}
+
+function toCsv(rows) {
+  if (!rows.length) return "";
+  const columns = [];
+  const seen = new Set();
+  rows.forEach((row) => {
+    Object.keys(row).forEach((key) => {
+      if (!seen.has(key)) {
+        seen.add(key);
+        columns.push(key);
+      }
+    });
+  });
+  const lines = [columns.map(csvQuoteField).join(",")];
+  rows.forEach((row) => {
+    lines.push(columns.map((col) => csvQuoteField(row[col])).join(","));
+  });
+  return lines.join("\\r\\n");
+}
+
+// RFC4180-aware parser: handles quoted fields with embedded commas,
+// quotes ("" for an escaped quote) and newlines. First row is the header.
+function fromCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i += 1;
+        continue;
+      }
+      field += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = true;
+      i += 1;
+      continue;
+    }
+    if (ch === ",") {
+      row.push(field);
+      field = "";
+      i += 1;
+      continue;
+    }
+    if (ch === "\\r") {
+      i += 1;
+      continue;
+    }
+    if (ch === "\\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      i += 1;
+      continue;
+    }
+    field += ch;
+    i += 1;
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  if (!rows.length) return [];
+  const header = rows[0];
+  const records = [];
+  for (let r = 1; r < rows.length; r += 1) {
+    const values = rows[r];
+    if (values.length === 1 && values[0] === "") continue; // skip blank/trailing line
+    const record = {};
+    header.forEach((col, idx) => {
+      record[col] = values[idx] !== undefined ? values[idx] : "";
+    });
+    records.push(record);
+  }
+  return records;
+}
+
+// Every top-level key that holds an object (e.g. accounting's `company_data`)
+// on ANY record gets flattened to `parent.child` columns; a record where
+// that same key is null simply leaves those columns empty for its row.
+function collectObjectKeys(records) {
+  const objectKeys = new Set();
+  records.forEach((record) => {
+    Object.keys(record).forEach((key) => {
+      const value = record[key];
+      if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+        objectKeys.add(key);
+      }
+    });
+  });
+  return objectKeys;
+}
+
+function flattenRecord(record, objectKeys) {
+  const flat = {};
+  Object.keys(record).forEach((key) => {
+    const value = record[key];
+    if (objectKeys.has(key)) {
+      if (value !== null && typeof value === "object") {
+        Object.keys(value).forEach((childKey) => {
+          flat[`${key}.${childKey}`] = value[childKey];
+        });
+      }
+      return;
+    }
+    flat[key] = value;
+  });
+  return flat;
+}
+
+function recordsToCsv(records) {
+  const objectKeys = collectObjectKeys(records);
+  const flatRows = records.map((record) => flattenRecord(record, objectKeys));
+  return toCsv(flatRows);
+}
+
+function downloadCsv(filename, csvText) {
+  const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+async function importCsvRows(file, postUrl, buildFields) {
+  const text = await file.text();
+  const rows = fromCsv(text);
+  let imported = 0;
+  let failed = 0;
+  for (const row of rows) {
+    const fields = buildFields(row);
+    try {
+      const res = await fetch(postUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (res.ok) {
+        imported += 1;
+      } else {
+        failed += 1;
+      }
+    } catch (err) {
+      failed += 1;
+    }
+  }
+  return { imported, failed, total: rows.length };
+}
+
+function showImportResult(elementId, outcome) {
+  const el = document.getElementById(elementId);
+  const kind = outcome.failed > 0 ? "alert-warning" : "alert-success";
+  const failedNote = outcome.failed > 0 ? ` (${outcome.failed} failed)` : "";
+  el.innerHTML = `<div class="alert ${kind}">Imported ${outcome.imported} of ${outcome.total} rows${failedNote}.</div>`;
+}
+
+document.getElementById("md-export-csv").addEventListener("click", () => {
+  downloadCsv("master-data-clients.csv", recordsToCsv(masterDataRecords));
+});
+
+document.getElementById("ac-export-csv").addEventListener("click", () => {
+  downloadCsv("accounting-clients.csv", recordsToCsv(accountingRecords));
+});
+
+document.getElementById("md-import-btn").addEventListener("click", async () => {
+  const input = document.getElementById("md-import-file");
+  const file = input.files && input.files[0];
+  if (!file) {
+    document.getElementById("md-import-result").innerHTML =
+      '<div class="alert alert-warning">Choose a CSV file first.</div>';
+    return;
+  }
+  const outcome = await importCsvRows(file, MASTER_DATA_URL, (row) => {
+    const fields = {};
+    if ("Name" in row) fields.Name = row.Name;
+    if ("Number" in row) fields.Number = parseInt(row.Number, 10) || 0;
+    if ("Status" in row) fields.Status = row.Status;
+    if ("Type" in row) fields.Type = row.Type;
+    return fields;
+  });
+  input.value = "";
+  showImportResult("md-import-result", outcome);
+  loadMasterData();
+});
+
+document.getElementById("ac-import-btn").addEventListener("click", async () => {
+  const input = document.getElementById("ac-import-file");
+  const file = input.files && input.files[0];
+  if (!file) {
+    document.getElementById("ac-import-result").innerHTML =
+      '<div class="alert alert-warning">Choose a CSV file first.</div>';
+    return;
+  }
+  const outcome = await importCsvRows(file, ACCOUNTING_URL, (row) => {
+    const fields = {};
+    if ("Name" in row) fields.Name = row.Name;
+    if ("Number" in row) fields.Number = parseInt(row.Number, 10) || 0;
+    return fields;
+  });
+  input.value = "";
+  showImportResult("ac-import-result", outcome);
+  loadAccounting();
+});
+
 // --- custom overrides ---
 
 function overrideEscapeHtml(value) {
@@ -633,6 +932,16 @@ function overrideEscapeHtml(value) {
 
 function showOverrideUploadResult(html) {
   document.getElementById("override-upload-result").innerHTML = html;
+}
+
+function overrideMatchedResultHtml(key) {
+  const path = OVERRIDE_ENDPOINT_PATHS[key];
+  let endpointHtml = "";
+  if (path) {
+    const url = buildUrl(path);
+    endpointHtml = `<div class="mt-1">Endpoint: <code>GET ${overrideEscapeHtml(url)}</code> &mdash; <a href="${overrideEscapeHtml(url)}" target="_blank" rel="noopener">open</a></div>`;
+  }
+  return `<div class="alert alert-success">Matched to endpoint: <code>${overrideEscapeHtml(key)}</code>. Override is now active.${endpointHtml}</div>`;
 }
 
 function renderOverrideRow(key, meta) {
@@ -709,9 +1018,7 @@ function renderAmbiguousChoiceForm(candidates, pendingId) {
       );
       return;
     }
-    showOverrideUploadResult(
-      `<div class="alert alert-success">Matched to endpoint: <code>${overrideEscapeHtml(selected.value)}</code>. Override is now active.</div>`
-    );
+    showOverrideUploadResult(overrideMatchedResultHtml(selected.value));
     loadOverrides();
   });
 }
@@ -729,9 +1036,7 @@ async function uploadOverrideFile() {
   const body = await res.json();
 
   if (body.status === "matched") {
-    showOverrideUploadResult(
-      `<div class="alert alert-success">Matched to endpoint: <code>${overrideEscapeHtml(body.endpoint)}</code>. Override is now active.</div>`
-    );
+    showOverrideUploadResult(overrideMatchedResultHtml(body.endpoint));
     input.value = "";
     loadOverrides();
     return;
@@ -758,8 +1063,12 @@ function escapeHtml(value) {
   return div.innerHTML;
 }
 
+function buildUrl(path) {
+  return `https://127.0.0.1:${state.port}${path}`;
+}
+
 function buildCurl(path) {
-  return `curl -k https://127.0.0.1:${state.port}${path}`;
+  return `curl -k ${buildUrl(path)}`;
 }
 
 async function copyCurl(path, button) {
@@ -923,4 +1232,5 @@ renderCatalog();
 @router.get("/admin", response_class=HTMLResponse)
 def admin_page() -> HTMLResponse:
     page = _PAGE.replace("__CATALOG_JSON__", json.dumps(CATALOG))
+    page = page.replace("__OVERRIDE_PATHS_JSON__", json.dumps(OVERRIDE_ENDPOINT_PATHS))
     return HTMLResponse(content=page)
