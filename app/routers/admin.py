@@ -18,11 +18,11 @@ import json
 from dataclasses import asdict
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from app import config, data_store
+from app import config, data_store, overrides
 
 router = APIRouter(tags=["admin"])
 
@@ -30,6 +30,8 @@ SETTINGS_ENDPOINT = "/admin/api/settings"
 MASTER_DATA_ENDPOINT = "/admin/api/clients/master-data"
 ACCOUNTING_ENDPOINT = "/admin/api/clients/accounting"
 RESET_ENDPOINT = "/admin/api/reset"
+OVERRIDES_ENDPOINT = "/admin/api/overrides"
+OVERRIDES_RESOLVE_ENDPOINT = "/admin/api/overrides/resolve"
 
 
 class SettingsPayload(BaseModel):
@@ -123,6 +125,72 @@ def delete_accounting_client(record_id: str) -> dict:
 @router.post(RESET_ENDPOINT)
 def reset_data() -> dict:
     data_store.reset()
+    return {"status": "ok"}
+
+
+# --- custom overrides (upload/resolve/list/toggle/delete) ---
+#
+# See `odd/tasks/datev-mock-custom-overrides.md` for the locked-in contract.
+# This is V1/V2-GREEN: the module + this admin API. Actually serving an
+# active override from the public endpoint routers is a separate, later
+# task (V3), not implemented here.
+
+
+class ResolveOverridePayload(BaseModel):
+    pending_id: str
+    endpoint: str
+
+
+class SetOverrideEnabledPayload(BaseModel):
+    enabled: bool
+
+
+@router.post(OVERRIDES_ENDPOINT)
+async def post_override(file: UploadFile = File(...)) -> Any:
+    raw = await file.read()
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return JSONResponse(status_code=422, content={"status": "unrecognized"})
+
+    candidates = overrides.detect_candidates(content)
+    if not candidates:
+        return JSONResponse(status_code=422, content={"status": "unrecognized"})
+
+    content_type = overrides.detect_content_type(content) or "json"
+    filename = file.filename or "upload"
+
+    if len(candidates) == 1:
+        overrides.set_override(candidates[0], content, content_type, filename)
+        return {"status": "matched", "endpoint": candidates[0]}
+
+    pending_id = overrides.store_pending(content, content_type, filename, candidates)
+    return {"status": "ambiguous", "candidates": candidates, "pending_id": pending_id}
+
+
+@router.post(OVERRIDES_RESOLVE_ENDPOINT)
+def post_resolve_override(payload: ResolveOverridePayload) -> dict:
+    try:
+        overrides.resolve_pending(payload.pending_id, payload.endpoint)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok"}
+
+
+@router.get(OVERRIDES_ENDPOINT)
+def get_overrides() -> dict:
+    return overrides.list_overrides()
+
+
+@router.put(OVERRIDES_ENDPOINT + "/{key}")
+def put_override(key: str, payload: SetOverrideEnabledPayload) -> dict:
+    overrides.set_enabled(key, payload.enabled)
+    return {"status": "ok"}
+
+
+@router.delete(OVERRIDES_ENDPOINT + "/{key}")
+def delete_override(key: str) -> dict:
+    overrides.delete_override(key)
     return {"status": "ok"}
 
 

@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Response
 
-from app import data_store
+from app import data_store, overrides
 from app.xml_serializers import serialize_client_resources
 
 router = APIRouter(tags=["master-data"])
@@ -39,6 +39,11 @@ def _to_json(record: Any) -> dict[str, Any]:
     description="Returns ArrayOfClientResource XML, DATEV Sdd.Connect contract.",
 )
 def get_clients() -> Response:
+    override = overrides.get_active_override("master_data.clients")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return Response(
         content=serialize_client_resources(data_store.list_master_data()),
         media_type="application/xml",
@@ -51,6 +56,11 @@ def get_clients() -> Response:
     description="Bare JSON array of Addressee (top-level fields only; no expand support).",
 )
 def get_addressees() -> list[dict[str, Any]]:
+    override = overrides.get_active_override("master_data.addressees")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_addressees()]
 
 
@@ -72,4 +82,9 @@ def get_addressee(addressee_id: str) -> dict[str, Any]:
     description="Bare JSON array of Bank.",
 )
 def get_banks() -> list[dict[str, Any]]:
+    override = overrides.get_active_override("master_data.banks")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_banks()]

@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request, Response
 
-from app import config, data_store
+from app import config, data_store, overrides
 from app.json_serializers import serialize_clients_json
 from app.xml_serializers import serialize_clients
 
@@ -92,6 +92,11 @@ def _to_json(record: Any) -> dict[str, Any]:
     ),
 )
 def get_accounting_clients(request: Request) -> Response:
+    override = overrides.get_active_override("accounting.clients")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     accept = request.headers.get("accept", "").lower()
     wants_json = "application/json" in accept
     wants_xml = "application/xml" in accept
@@ -118,6 +123,11 @@ def get_accounting_clients(request: Request) -> Response:
     description="Bare JSON array of fiscal-year. Ignores client_id (no path-param filtering, per the epic's cross-phase decision).",
 )
 def get_fiscal_years(client_id: str) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.fiscal_years")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_fiscal_years()]
 
 
@@ -127,6 +137,11 @@ def get_fiscal_years(client_id: str) -> list[dict[str, Any]]:
     description="Bare JSON array of cost-system. Ignores client_id/fiscal_year_id.",
 )
 def get_cost_systems(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.cost_systems")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_cost_systems()]
 
 
@@ -135,7 +150,14 @@ def get_cost_systems(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]
     summary="List a cost system's cost centers",
     description="Bare JSON array of cost-center. Ignores client_id/fiscal_year_id/cost_system_id.",
 )
-def get_cost_centers(client_id: str, fiscal_year_id: str, cost_system_id: str) -> list[dict[str, Any]]:
+def get_cost_centers(
+    client_id: str, fiscal_year_id: str, cost_system_id: str
+) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.cost_centers")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_cost_centers()]
 
 
@@ -145,6 +167,11 @@ def get_cost_centers(client_id: str, fiscal_year_id: str, cost_system_id: str) -
     description="Bare JSON array of creditor. Ignores client_id/fiscal_year_id.",
 )
 def get_creditors(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.creditors")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_creditors()]
 
 
@@ -154,6 +181,11 @@ def get_creditors(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
     description="Bare JSON array of debitor. Ignores client_id/fiscal_year_id.",
 )
 def get_debitors(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.debitors")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_debitors()]
 
 
@@ -162,7 +194,14 @@ def get_debitors(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
     summary="List a fiscal year's general ledger accounts",
     description="Bare JSON array of general-ledger-account. Ignores client_id/fiscal_year_id.",
 )
-def get_general_ledger_accounts(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+def get_general_ledger_accounts(
+    client_id: str, fiscal_year_id: str
+) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.general_ledger_accounts")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_general_ledger_accounts()]
 
 
@@ -172,6 +211,11 @@ def get_general_ledger_accounts(client_id: str, fiscal_year_id: str) -> list[dic
     description="Bare JSON array of open-item. Ignores client_id/fiscal_year_id.",
 )
 def get_accounts_payable(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.accounts_payable")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_accounts_payable()]
 
 
@@ -184,7 +228,14 @@ def get_accounts_payable(client_id: str, fiscal_year_id: str) -> list[dict[str, 
         "client_id/fiscal_year_id."
     ),
 )
-def get_accounts_payable_condense(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+def get_accounts_payable_condense(
+    client_id: str, fiscal_year_id: str
+) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.accounts_payable_condense")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_accounts_payable_condense()]
 
 
@@ -193,7 +244,14 @@ def get_accounts_payable_condense(client_id: str, fiscal_year_id: str) -> list[d
     summary="List a fiscal year's condensed accounts receivable open items",
     description="Bare JSON array of open-item, plus receivable-only dunning fields. Ignores client_id/fiscal_year_id.",
 )
-def get_accounts_receivable_condense(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+def get_accounts_receivable_condense(
+    client_id: str, fiscal_year_id: str
+) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.accounts_receivable_condense")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_accounts_receivable_condense()]
 
 
@@ -202,7 +260,14 @@ def get_accounts_receivable_condense(client_id: str, fiscal_year_id: str) -> lis
     summary="List a fiscal year's processed accounting sequences",
     description="Bare JSON array of accounting-sequence-read. Ignores client_id/fiscal_year_id.",
 )
-def get_accounting_sequences_processed(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+def get_accounting_sequences_processed(
+    client_id: str, fiscal_year_id: str
+) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.accounting_sequences_processed")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_accounting_sequences_processed()]
 
 
@@ -211,7 +276,14 @@ def get_accounting_sequences_processed(client_id: str, fiscal_year_id: str) -> l
     summary="List a fiscal year's accounting transaction keys",
     description="Bare JSON array of accounting-transaction-key. Ignores client_id/fiscal_year_id.",
 )
-def get_accounting_transaction_keys(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+def get_accounting_transaction_keys(
+    client_id: str, fiscal_year_id: str
+) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.accounting_transaction_keys")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_accounting_transaction_keys()]
 
 
@@ -220,7 +292,14 @@ def get_accounting_transaction_keys(client_id: str, fiscal_year_id: str) -> list
     summary="List a fiscal year's asset stocktaking records",
     description="Bare JSON array of stocktaking-record. Ignores client_id/fiscal_year_id.",
 )
-def get_assets_stocktakings(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+def get_assets_stocktakings(
+    client_id: str, fiscal_year_id: str
+) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.assets_stocktakings")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_assets_stocktakings()]
 
 
@@ -232,6 +311,11 @@ def get_assets_stocktakings(client_id: str, fiscal_year_id: str) -> list[dict[st
 def get_posting_proposal_rules_incoming_invoices(
     client_id: str, fiscal_year_id: str
 ) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.posting_proposal_rules_incoming")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [
         _to_json(record) for record in data_store.list_posting_proposal_rules_incoming_invoices()
     ]
@@ -245,6 +329,11 @@ def get_posting_proposal_rules_incoming_invoices(
 def get_posting_proposal_rules_outgoing_invoices(
     client_id: str, fiscal_year_id: str
 ) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.posting_proposal_rules_outgoing")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [
         _to_json(record) for record in data_store.list_posting_proposal_rules_outgoing_invoices()
     ]
@@ -256,4 +345,9 @@ def get_posting_proposal_rules_outgoing_invoices(
     description="Bare JSON array of term-of-payment. Ignores client_id/fiscal_year_id.",
 )
 def get_terms_of_payment(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
+    override = overrides.get_active_override("accounting.terms_of_payment")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_terms_of_payment()]

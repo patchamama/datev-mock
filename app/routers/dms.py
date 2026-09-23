@@ -16,9 +16,9 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
-from app import data_store
+from app import data_store, overrides
 
 router = APIRouter(tags=["dms"])
 
@@ -46,6 +46,11 @@ def _to_json(record: Any) -> dict[str, Any]:
     ),
 )
 def get_domains() -> list[dict[str, Any]]:
+    override = overrides.get_active_override("dms.domains")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_domains()]
 
 
@@ -58,4 +63,9 @@ def get_domains() -> list[dict[str, Any]]:
     ),
 )
 def get_documents() -> list[dict[str, Any]]:
+    override = overrides.get_active_override("dms.documents")
+    if override is not None:
+        media_type = "application/xml" if override.content_type == "xml" else "application/json"
+        return Response(content=override.content, media_type=media_type)
+
     return [_to_json(record) for record in data_store.list_documents()]
