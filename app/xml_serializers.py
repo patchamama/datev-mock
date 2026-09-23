@@ -16,6 +16,7 @@ from xml.sax.saxutils import escape
 from app.models import (
     ACCOUNTING_SEQUENCE_PROCESSED_FIELD_ORDER,
     ACCOUNTING_TRANSACTION_KEY_FIELD_ORDER,
+    ASSET_STOCKTAKING_FIELD_ORDER,
     BUSINESS_PARTNER_COMMON_NS_FIELDS,
     BUSINESS_PARTNER_FIELD_ORDER,
     CLIENT_FIELD_ORDER,
@@ -29,6 +30,7 @@ from app.models import (
     TERM_OF_PAYMENT_FIELD_ORDER,
     AccountingSequenceProcessed,
     AccountingTransactionKey,
+    AssetStocktaking,
     Client,
     ClientResource,
     CostCenter,
@@ -131,6 +133,18 @@ POSTING_PROPOSAL_RULE_NS = (
 TERM_OF_PAYMENT_NS = (
     "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
     "TermOfPayment"
+)
+
+# --- Real-data reconciliation epic, W5 ---
+#
+# `assets_stocktakings` was missed by W1-W4's batching despite being one of
+# the 15 accounting sub-resources in scope (caught during W5's final
+# regression pass). Inferred by pattern — no real capture exists at all for
+# this endpoint (`examples/info.txt` lists an attempt, but the file was
+# never actually saved).
+ASSET_STOCKTAKING_NS = (
+    "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
+    "AssetStocktaking"
 )
 
 XML_DECLARATION = '<?xml version="1.0" encoding="utf-8"?>'
@@ -438,4 +452,21 @@ def serialize_terms_of_payment(records: list[TermOfPayment]) -> str:
         f'<ArrayOfTermOfPayment xmlns:i="{XSI_NS}" xmlns="{TERM_OF_PAYMENT_NS}">'
         f"{body}"
         "</ArrayOfTermOfPayment>"
+    )
+
+
+def serialize_assets_stocktakings(records: list[AssetStocktaking]) -> str:
+    """Inferred by pattern (epic `datev-mock-real-data-reconciliation`, W5 —
+    no real capture exists for this endpoint at all). `general_ledger_account`
+    (nested) is excluded from the rendered shape, same precedent as
+    `CostCenter`'s `cost_rates`/`properties`."""
+    body = "".join(
+        _render_generic_record(r, ASSET_STOCKTAKING_FIELD_ORDER, "AssetStocktaking")
+        for r in records
+    )
+    return (
+        f"{XML_DECLARATION}"
+        f'<ArrayOfAssetStocktaking xmlns:i="{XSI_NS}" xmlns="{ASSET_STOCKTAKING_NS}">'
+        f"{body}"
+        "</ArrayOfAssetStocktaking>"
     )

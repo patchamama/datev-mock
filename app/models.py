@@ -921,6 +921,34 @@ class AssetStocktaking:
     condition: Optional[str] = None
 
 
+# Declaration order for the inferred-by-pattern XML shape (epic
+# `datev-mock-real-data-reconciliation`, W5 — this endpoint was missed by
+# W1-W4's batching despite being one of the 15 accounting sub-resources in
+# scope; `examples/info.txt` lists a stocktaking capture attempt but no
+# `stocktakings.xml` file was ever actually saved, so there's no real
+# evidence at all, same situation `cost_centers`/`posting_proposal_rules`
+# were in). `Id`/`Parent`/`membersToSerialize` preamble, then remaining
+# scalar fields alphabetically. `general_ledger_account` (nested) is
+# **excluded** — same precedent as `CostCenter.cost_rates`/`.properties`
+# and `PostingProposalRule`'s nested fields: no real evidence exists for a
+# nested XML representation, so this mock doesn't invent one.
+ASSET_STOCKTAKING_FIELD_ORDER = [
+    "id",
+    "parent",
+    "members_to_serialize",
+    "accounting_reason",
+    "asset_number",
+    "condition",
+    "inventory_name",
+    "inventory_number",
+    "location",
+    "price",
+    "quantity",
+    "stocktaking_date",
+    "unit",
+]
+
+
 @dataclass
 class AssignmentCriteria:
     """`datev.assignment-criteria-invoices`, shared by both posting-proposal-

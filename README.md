@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Pytest](https://img.shields.io/badge/tests-212%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
+[![Pytest](https://img.shields.io/badge/tests-276%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5-7952B3?logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
 [![Status](https://img.shields.io/badge/status-active-success)](#status)
 
@@ -31,11 +31,11 @@ official developer portal where the two disagree (see
 
 ## Status
 
-**GREEN — implemented and passing.** All 212 tests pass
+**GREEN — implemented and passing.** All 276 tests pass
 (`.venv\Scripts\python -m pytest tests/ -v`), and the server has been
 verified live over real HTTPS on port 58452 (all 23 mocked endpoints, the
 Bootstrap admin UI with its full endpoint catalog and custom-override
-uploads, and Swagger UI). Five epics complete:
+uploads, and Swagger UI). Six epics complete:
 [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (base API),
 [`odd/tasks/datev-mock-settings.md`](odd/tasks/datev-mock-settings.md)
 (settings/admin UI),
@@ -43,11 +43,15 @@ uploads, and Swagger UI). Five epics complete:
 (20 additional endpoints: Master Data addressees/banks, 15 Accounting
 sub-resources, DMS),
 [`odd/tasks/datev-mock-admin-ui-polish.md`](odd/tasks/datev-mock-admin-ui-polish.md)
-(Bootstrap admin UI + full endpoint catalog), and
+(Bootstrap admin UI + full endpoint catalog),
 [`odd/tasks/datev-mock-custom-overrides.md`](odd/tasks/datev-mock-custom-overrides.md)
 (upload a custom XML/JSON example to temporarily override any endpoint's
-response). See each task doc for full breakdowns, decisions, and progress
-logs.
+response), and
+[`odd/tasks/datev-mock-real-data-reconciliation.md`](odd/tasks/datev-mock-real-data-reconciliation.md)
+(reconciled every endpoint's field set and response format against data
+captured from a real DATEV installation — see [Content
+negotiation](#content-negotiation-xml-and-json) below for what changed).
+See each task doc for full breakdowns, decisions, and progress logs.
 
 ## Quick start
 
@@ -70,7 +74,7 @@ warning once) or `https://127.0.0.1:58452/docs` for Swagger.
 | Method | Path | Format |
 |---|---|---|
 | `GET` | `/datev/api/diagnostics/v1/echo` | XML |
-| `GET` | `/datev/api/master-data/v1/clients` | XML |
+| `GET` | `/datev/api/master-data/v1/clients` | XML (default) **or** JSON (`Accept: application/json`) |
 | `GET` | `/datev/api/accounting/v1/clients` | XML (default) **or** JSON (`Accept: application/json`) |
 
 All three match the real .NET `DataContractSerializer` XML conventions
@@ -80,16 +84,16 @@ contains sensitive real-environment data and is **not** included in this
 repository (kept local-only, git-ignored) — no real values from it are
 reused anywhere in the mock's data, only field shapes.
 
-**Extended endpoints** (JSON-only — no real XML evidence exists for any of
-these, only JSON evidence from DATEV's official OpenAPI specs and a
-separate internal reference mock; see
-[Extended endpoint sourcing](#extended-endpoint-sourcing) below):
+**Extended endpoints** (see [Extended endpoint
+sourcing](#extended-endpoint-sourcing) and [Content
+negotiation](#content-negotiation-xml-and-json) below for how each area's
+format was decided):
 
-| Area | Endpoints |
-|---|---|
-| Master Data | `GET /master-data/v1/addressees`, `GET /master-data/v1/addressees/{addressee-id}` (real 404-on-unknown-id lookup), `GET /master-data/v1/banks` |
-| Accounting | `GET /accounting/v1/clients/{client-id}/fiscal-years`, and under `.../fiscal-years/{fiscal-year-id}/`: `cost-systems` (+`cost-systems/{id}/cost-centers`), `creditors`, `debitors`, `general-ledger-accounts`, `accounts-payable` (+`/condense`), `accounts-receivable/condense`, `accounting-sequences-processed`, `accounting-transaction-keys`, `assets/stocktakings`, `posting-proposal-rules-incoming-invoices`, `posting-proposal-rules-outgoing-invoices`, `terms-of-payment` |
-| DMS | `GET /dms/v1/domains`, `GET /dms/v1/documents` — **self-designed schema**, no official spec exists for this area at all (see caveat below) |
+| Area | Format | Endpoints |
+|---|---|---|
+| Master Data | JSON-only | `GET /master-data/v1/addressees`, `GET /master-data/v1/addressees/{addressee-id}` (real 404-on-unknown-id lookup), `GET /master-data/v1/banks` |
+| Accounting | XML (default) **or** JSON, all 15 | `GET /accounting/v1/clients/{client-id}/fiscal-years`, and under `.../fiscal-years/{fiscal-year-id}/`: `cost-systems` (+`cost-systems/{id}/cost-centers`), `creditors`, `debitors`, `general-ledger-accounts`, `accounts-payable` (+`/condense`), `accounts-receivable/condense`, `accounting-sequences-processed`, `accounting-transaction-keys`, `assets/stocktakings`, `posting-proposal-rules-incoming-invoices`, `posting-proposal-rules-outgoing-invoices`, `terms-of-payment` |
+| DMS | JSON-only | `GET /dms/v1/domains`, `GET /dms/v1/documents` — **self-designed schema**, no official spec exists for this area at all (see caveat below) |
 
 None of the extended endpoints filter by their path parameters (`client-id`/
 `fiscal-year-id`/`cost-system-id` are accepted but ignored — every call
@@ -100,9 +104,52 @@ mock — out of scope until an actual consumer needs them.
 
 ## Key decisions
 
-### XML vs JSON on `accounting/v1/clients`
+### Content negotiation (XML and JSON)
 
-Two sources disagree on this endpoint:
+The very first version of this mock treated XML/JSON `Accept`-header
+negotiation as a quirk specific to `accounting/v1/clients` (see [Origin of
+this decision](#origin-of-this-decision) below). Real DATEV traffic
+captured later — from the user's own live installation, shape-only, never
+committed (see [`examples/`](examples/)) — showed the same pattern applies
+far more broadly: `debitors` came back as XML while `creditors` (same
+system, same session) came back as JSON, and `master-data/clients` turned
+out to have a JSON projection too, alongside its known XML shape.
+
+**Current decision: every one of the 15 Accounting sub-resources, plus
+`accounting/v1/clients` and `master-data/v1/clients`, supports both XML
+(default) and JSON (`Accept: application/json`)** via the same
+`Accept`-header mechanism, on the same port, no second binding. Master Data
+`addressees`/`banks` and DMS remain JSON-only — no evidence of an XML shape
+exists for those.
+
+Evidence quality varies per endpoint and is documented explicitly in code
+and tests rather than overstated:
+- **Confirmed by direct real capture**: `accounting/v1/clients`,
+  `cost-systems`, `debitors` (and `creditors`, by the same contract
+  family), `master-data/clients`'s JSON projection.
+- **Inferred by a consistent pattern** (`ArrayOf<Name>` root,
+  `http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.<Name>`
+  namespace — the convention every confirmed sample follows): the
+  remaining sub-resources, where either no real XML capture exists at all,
+  or the real capture turned out to be JSON content despite an `.xml`
+  filename.
+
+A handful of earlier assumptions turned out to be wrong once real data
+arrived, and were corrected rather than preserved: `accounting/v1/clients`
+JSON's `number` is a real integer (not the string the official docs'
+example showed), `general-ledger-account.main_function`/
+`main_function_number`'s valid-value sets needed `0` added,
+`accounts-receivable-condense`'s invented `dunning_level` field doesn't
+exist (the real field is `has_dunning_block`), and creditors/debitors don't
+populate nested `natural_person`/`legal_person` sub-objects by default.
+
+Full write-up, per-endpoint evidence, and the full correction log:
+[`odd/tasks/datev-mock-real-data-reconciliation.md`](odd/tasks/datev-mock-real-data-reconciliation.md).
+
+#### Origin of this decision
+
+The very first version of this project found two sources disagreeing on
+`accounting/v1/clients` specifically:
 
 - **Real captured traffic** (local-only, not in this repo): XML, port 58452,
   HTTPS.
@@ -112,14 +159,8 @@ Two sources disagree on this endpoint:
   [{"company_data":{"creditor_identifier":"DE98ZZZ09999999999"},"id":"78a11a29-2a32-4a5e-a73b-632f6aeae131","name":"DATEVconnect GmbH","number":"47011"}]
   ```
 
-**Decision: support both**, via `Accept`-header content negotiation on the
-*same* port (58452) — no second port binding. `Accept: application/xml` (or
-no preference) returns the XML shape; `Accept: application/json` returns the
-documented JSON shape, including its `number`-as-string quirk (preserved
-faithfully, not coerced to an int like the XML `Number`).
-
-Master Data and Diagnostics remain **XML-only** — there is no confirmed
-official JSON spec for those two, so none was invented. Documented
+That led to the original `Accept`-header negotiation mechanism, later
+generalized to all 15 sub-resources as described above. Documented
 OData-style query params (`select`, `filter`, `skip`, `top`, `expand`) are
 explicitly out of scope for now.
 
@@ -143,13 +184,21 @@ Two different evidence qualities apply:
   `YYYYMMDD` dates (not ISO date-time strings like everywhere else), and
   `accounts-payable`/`accounts-payable/condense` intentionally share one
   schema (condense is a server-side aggregation, not a different shape).
+  The 15 Accounting sub-resources' field sets and formats were later
+  reconciled against real captured DATEV data — see [Content
+  negotiation](#content-negotiation-xml-and-json) above.
 - **DMS (domains, documents)**: **no official spec exists** for this area
   at all (confirmed by exhaustive search) — the schema is self-designed
   from two one-line descriptions in an internal reference doc ("domain/
   folder/register tree" and "document metadata including amount, class,
   GUIDs, and timestamps"). Lower fidelity than everything else in this
   mock, by necessity, not oversight — treat DMS responses as illustrative
-  shape only, not a verified DATEV contract.
+  shape only, not a verified DATEV contract. Real evidence confirms the
+  DMS plugin is absent/not loaded on the user's own real installation
+  (both `dms/v1/domains` and `dms/v1/documents` return a "PlugIn not
+  loaded" error there) — this mock's DMS implementation has no real
+  counterpart to validate against at all, by DATEV installation
+  configuration, not a mock deficiency.
 
 Full write-up: [`odd/tasks/datev-mock-extended-endpoints.md`](odd/tasks/datev-mock-extended-endpoints.md).
 
@@ -212,8 +261,9 @@ inspects its structure to figure out which of the 22 override-eligible
 endpoints it belongs to — no manual endpoint selection needed in the
 common case:
 
-- **XML**: matched by root element (`Echo`, `ArrayOfClientResource`,
-  `ArrayOfClient` — the only 3 XML shapes this mock has).
+- **XML**: matched by root element (e.g. `Echo`, `ArrayOfClientResource`,
+  `ArrayOfClient`, `ArrayOfDebitor`, `ArrayOfOpenItem` — one per XML-capable
+  endpoint).
 - **JSON**: matched by a field-name fingerprint (e.g. a record with
   `bic`+`country_code` is recognized as `banks`; `account_number`+
   `caption`+`main_function` as `general-ledger-accounts`, etc.).
@@ -298,13 +348,13 @@ DATEV-Mock/
 │   ├── main.py
 │   ├── routers/
 │   │   ├── diagnostics.py
-│   │   ├── master_data.py   # clients (XML) + addressees/banks (JSON)
-│   │   ├── accounting.py    # clients (XML/JSON) + 15 sub-resources (JSON)
+│   │   ├── master_data.py   # clients (XML/JSON) + addressees/banks (JSON)
+│   │   ├── accounting.py    # clients + 15 sub-resources, all XML/JSON
 │   │   ├── dms.py           # domains/documents (JSON, self-designed schema)
 │   │   └── admin.py         # settings + dataset CRUD + overrides + the /admin page
 │   ├── models.py
 │   ├── xml_serializers.py
-│   ├── json_serializers.py  # accounting JSON path only
+│   ├── json_serializers.py  # accounting.clients + master_data.clients JSON projections
 │   ├── fake_data.py         # seeded generators for every resource
 │   ├── data_store.py        # mutable in-memory store the routers read from
 │   ├── config.py            # Settings (port, default format), settings.json persistence
@@ -316,8 +366,9 @@ DATEV-Mock/
 │   ├── datev-mock-settings.md              # settings/admin UI: same, for that epic
 │   ├── datev-mock-extended-endpoints.md    # 20 extended endpoints: same, for that epic
 │   ├── datev-mock-admin-ui-polish.md       # Bootstrap redesign + full catalog: same, for that epic
-│   └── datev-mock-custom-overrides.md      # upload/override system: same, for that epic
-├── tests/                     # full test suite — 212/212 passing
+│   ├── datev-mock-custom-overrides.md      # upload/override system: same, for that epic
+│   └── datev-mock-real-data-reconciliation.md  # reconciled every endpoint against real DATEV data: same, for that epic
+├── tests/                     # full test suite — 276/276 passing
 ├── start.bat / start.sh       # bootstrap Python (portable if needed) + deps + run, one step
 ├── settings.json              # git-ignored, created on first settings change
 └── requirements.txt
@@ -338,7 +389,7 @@ python -m venv .venv
 .venv\Scripts\python -m pytest tests/ -v
 ```
 
-All 212 tests pass.
+All 276 tests pass.
 
 ## Running the server
 

@@ -25,6 +25,7 @@ from app.json_serializers import serialize_clients_json
 from app.xml_serializers import (
     serialize_accounting_sequences_processed,
     serialize_accounting_transaction_keys,
+    serialize_assets_stocktakings,
     serialize_clients,
     serialize_cost_centers,
     serialize_cost_systems,
@@ -435,17 +436,25 @@ def get_accounting_transaction_keys(
 @router.get(
     ASSETS_STOCKTAKINGS_ENDPOINT,
     summary="List a fiscal year's asset stocktaking records",
-    description="Bare JSON array of stocktaking-record. Ignores client_id/fiscal_year_id.",
+    description=(
+        "Returns ArrayOfAssetStocktaking XML by default (inferred by "
+        "pattern - no real capture exists for this endpoint at all), or a "
+        "bare JSON array when Accept: application/json is sent. Ignores "
+        "client_id/fiscal_year_id."
+    ),
 )
-def get_assets_stocktakings(
-    client_id: str, fiscal_year_id: str
-) -> list[dict[str, Any]]:
+def get_assets_stocktakings(client_id: str, fiscal_year_id: str, request: Request) -> Response:
     override = overrides.get_active_override("accounting.assets_stocktakings")
     if override is not None:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    return [_to_json(record) for record in data_store.list_assets_stocktakings()]
+    records = data_store.list_assets_stocktakings()
+    if _negotiate_format(request) == "json":
+        payload = [_to_json(record) for record in records]
+        return Response(content=json.dumps(payload), media_type="application/json")
+
+    return Response(content=serialize_assets_stocktakings(records), media_type="application/xml")
 
 
 @router.get(

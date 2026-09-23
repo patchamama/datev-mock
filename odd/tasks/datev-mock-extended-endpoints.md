@@ -22,6 +22,15 @@ settings/admin epics (both already GREEN and shipped).
 
 ## Cross-phase decisions
 - **All new endpoints are JSON-only.** Unlike the original `accounting/v1/clients`, there is no real captured XML evidence for any of these 18+2 endpoints — only JSON evidence (official spec + internal mock's live JSON responses). Inventing an XML shape with no ground truth would be guesswork; don't.
+  > **Superseded for the 15 accounting sub-resources** by
+  > `odd/tasks/datev-mock-real-data-reconciliation.md` (2026-09-23, W2-W5):
+  > once real DATEV traffic showed content negotiation is universal, not
+  > `accounting/clients`-specific, all 15 accounting sub-resources gained
+  > XML support (confirmed where real capture evidence exists, inferred by
+  > a consistent pattern elsewhere — never presented as more certain than
+  > that). This entry is kept as-written for historical record of the
+  > original decision and its reasoning at the time; Master Data
+  > (`addressees`, `banks`) remain JSON-only, unaffected by that epic.
 - **No relational filtering by path params.** `{client-id}`, `{fiscal-year-id}`, `{cost-system-id}` in accounting paths are accepted (any value) but do **not** filter/select which fake dataset is returned — every accounting list endpoint always returns the same generic fake fixture regardless of the specific ids in the URL. This mirrors the existing 3 endpoints' behavior and the established "don't implement query-param semantics until a consumer needs them" philosophy (`select`/`filter`/`skip`/`top`/`expand` remain out of scope here too).
 - **Exception: `GET /addressees/{addressee-id}` does real lookup-by-id**, returning 404 for an unknown id — this exactly matches an *observed, documented* behavior of the reference mock ("An arbitrary addressee ID returned 404"), so it's evidence-based, not a guess.
 - No XML/JSON content negotiation needed for any of these — always `application/json`.

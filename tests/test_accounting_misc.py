@@ -65,6 +65,7 @@ from app.routers.accounting import (
 from app.xml_serializers import (
     ACCOUNTING_SEQUENCE_PROCESSED_NS,
     ACCOUNTING_TRANSACTION_KEY_NS,
+    ASSET_STOCKTAKING_NS,
     POSTING_PROPOSAL_RULE_NS,
     TERM_OF_PAYMENT_NS,
 )
@@ -328,8 +329,12 @@ def test_accounting_transaction_keys_default_format_is_xml(client):
 
 
 def test_assets_stocktakings_returns_200_json_array_with_minimum_records(client):
+    # Content negotiation (epic `datev-mock-real-data-reconciliation`, W5):
+    # now defaults to XML when the Accept header doesn't unambiguously
+    # request JSON.
     response = client.get(
-        ASSETS_STOCKTAKINGS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+        ASSETS_STOCKTAKINGS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers={"accept": "application/json"},
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
@@ -339,6 +344,35 @@ def test_assets_stocktakings_returns_200_json_array_with_minimum_records(client)
     assert len(records) >= MIN_ASSETS_STOCKTAKINGS, (
         f"expected at least {MIN_ASSETS_STOCKTAKINGS} stocktaking records, got {len(records)}"
     )
+
+
+def test_assets_stocktakings_xml_root_tag_and_namespace(client):
+    """Inferred by pattern (epic `datev-mock-real-data-reconciliation`, W5 —
+    no real capture exists for this endpoint at all)."""
+    response = client.get(
+        ASSETS_STOCKTAKINGS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+        headers={"accept": "application/xml"},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+
+    root = ET.fromstring(response.content)
+    assert root.tag == f"{{{ASSET_STOCKTAKING_NS}}}ArrayOfAssetStocktaking"
+
+    records = [child for child in root if _local_name(child.tag) == "AssetStocktaking"]
+    assert len(records) >= MIN_ASSETS_STOCKTAKINGS
+
+    first = records[0]
+    assert _xml_field(first, "AssetNumber").text is not None
+    assert _xml_field(first, "InventoryNumber").text is not None
+
+
+def test_assets_stocktakings_default_format_is_xml(client):
+    response = client.get(
+        ASSETS_STOCKTAKINGS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
 
 
 def test_stocktaking_record_has_required_core_fields(client):
