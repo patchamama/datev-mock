@@ -14,15 +14,16 @@ API below (settings, master-data/accounting CRUD, reset) changed shape.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import asdict
-from typing import Any
+from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from app import config, data_store, overrides
+from app import config, data_store, overrides, request_log
 
 router = APIRouter(tags=["admin"])
 
@@ -32,6 +33,14 @@ ACCOUNTING_ENDPOINT = "/admin/api/clients/accounting"
 RESET_ENDPOINT = "/admin/api/reset"
 OVERRIDES_ENDPOINT = "/admin/api/overrides"
 OVERRIDES_RESOLVE_ENDPOINT = "/admin/api/overrides/resolve"
+LOGS_ENDPOINT = "/admin/api/logs"
+LOGS_STREAM_ENDPOINT = "/admin/api/logs/stream"
+
+# How long an idle SSE connection waits for a new log entry before sending a
+# comment-only keep-alive frame (SSE clients/proxies otherwise time out an
+# idle connection; a comment line is ignored by EventSource but keeps the
+# connection alive).
+_SSE_KEEPALIVE_SECONDS = 15.0
 
 
 class SettingsPayload(BaseModel):
@@ -126,6 +135,57 @@ def delete_accounting_client(record_id: str) -> dict:
 def reset_data() -> dict:
     data_store.reset()
     return {"status": "ok"}
+
+
+# --- live request/response log (see app/request_log.py) ---
+
+
+@router.get(LOGS_ENDPOINT)
+def get_logs() -> list[dict[str, Any]]:
+    """Plain JSON snapshot of the ring buffer -- the primary way the admin
+    page's "Live Request Log" card gets content on initial page load, and
+    the endpoint this feature's automated tests exercise (SSE streaming
+    itself is only smoke-tested; see `tests/test_request_log.py`)."""
+    return request_log.get_backlog()
+
+
+async def _sse_event_stream() -> AsyncIterator[str]:
+    """Backlog first, then live entries as they're broadcast.
+
+    Deliberately does NOT poll `request.is_disconnected()` -- that call
+    deadlocks when the endpoint runs behind `app/request_log.py`'s own
+    `BaseHTTPMiddleware`-based logging middleware (a documented Starlette
+    incompatibility: `is_disconnected()`'s self-cancelling `CancelScope`
+    trick conflicts with `call_next`'s own nested task group). Client
+    disconnect is instead handled the standard way for an ASGI streaming
+    generator: the server cancels this coroutine's task when the connection
+    goes away, which surfaces here as `asyncio.CancelledError` propagating
+    out of `queue.get()`/`wait_for()` -- the `finally` block below still
+    runs and unregisters the subscriber queue either way.
+    """
+    for entry in request_log.get_backlog():
+        yield f"data: {json.dumps(entry)}\n\n"
+
+    queue = request_log.register_subscriber()
+    try:
+        while True:
+            try:
+                entry = await asyncio.wait_for(queue.get(), timeout=_SSE_KEEPALIVE_SECONDS)
+            except asyncio.TimeoutError:
+                yield ": keep-alive\n\n"
+                continue
+            yield f"data: {json.dumps(entry)}\n\n"
+    finally:
+        request_log.unregister_subscriber(queue)
+
+
+@router.get(LOGS_STREAM_ENDPOINT)
+async def get_logs_stream() -> StreamingResponse:
+    """Server-Sent-Events stream: the ring-buffer backlog first (so the
+    browser has content immediately), then live entries as they're
+    broadcast. SSE (not WebSocket) -- one-directional server->browser push
+    only, plain HTTP, no new dependency."""
+    return StreamingResponse(_sse_event_stream(), media_type="text/event-stream")
 
 
 # --- custom overrides (upload/resolve/list/toggle/delete) ---
@@ -523,6 +583,48 @@ _PAGE = """<!DOCTYPE html>
       the values supplied.
     </p>
     <div class="accordion" id="catalog-accordion"></div>
+  </div>
+</div>
+
+<div class="card mb-4" id="request-log-card">
+  <div class="card-header d-flex justify-content-between align-items-start gap-2">
+    <div>
+      Live Request Log
+      <div class="small text-muted mt-1">
+        Every request this mock receives, live via Server-Sent Events &mdash;
+        newest first. A row with a
+        <span class="badge text-bg-danger">UNMATCHED</span> badge hit no
+        registered route at all (a real gap in this mock's coverage) &mdash;
+        different from a route that matched and legitimately returned an
+        error on its own (e.g. addressee-by-id for an unknown id). Click a
+        row to see the full request/response detail.
+      </div>
+    </div>
+    <span id="request-log-status" class="badge text-bg-secondary text-nowrap">Connecting&hellip;</span>
+  </div>
+  <div class="card-body">
+    <div class="row g-2 align-items-end mb-3">
+      <div class="col-auto">
+        <label for="request-log-filter" class="form-label">Filter by path</label>
+        <input id="request-log-filter" type="text" class="form-control form-control-sm" placeholder="e.g. addressees">
+      </div>
+      <div class="col-auto">
+        <div class="form-check form-switch mt-4">
+          <input id="request-log-unmatched-only" class="form-check-input" type="checkbox" role="switch">
+          <label class="form-check-label" for="request-log-unmatched-only">Unmatched/errors only</label>
+        </div>
+      </div>
+      <div class="col-auto ms-auto">
+        <button id="request-log-clear" type="button" class="btn btn-sm btn-outline-secondary">Clear view</button>
+      </div>
+    </div>
+    <div class="table-responsive scroll-table">
+      <table class="table table-sm table-striped align-middle mb-0" id="request-log-table">
+        <thead class="table-light"><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>Duration</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div id="request-log-empty" class="text-muted small mt-2">No requests captured yet.</div>
   </div>
 </div>
 
@@ -1396,11 +1498,196 @@ function renderCatalog() {
     .join("");
 }
 
+// --- live request log ---
+
+const LOGS_STREAM_URL = "/admin/api/logs/stream";
+const REQUEST_LOG_MAX_ROWS = 1000;
+
+// Newest-first, kept in sync with what's actually rendered so the path/
+// unmatched-only filters can be re-applied client-side without another
+// network round trip.
+let requestLogEntries = [];
+
+function methodBadgeClass(method) {
+  switch (method) {
+    case "GET": return "text-bg-primary";
+    case "POST": return "text-bg-success";
+    case "PUT": return "text-bg-warning";
+    case "PATCH": return "text-bg-info";
+    case "DELETE": return "text-bg-danger";
+    default: return "text-bg-secondary";
+  }
+}
+
+function statusBadgeClass(status) {
+  if (status >= 500) return "text-bg-danger";
+  if (status >= 400) return "text-bg-warning";
+  if (status >= 300) return "text-bg-info";
+  if (status >= 200) return "text-bg-success";
+  return "text-bg-secondary";
+}
+
+function formatLogTime(iso) {
+  try {
+    return new Date(iso).toLocaleTimeString();
+  } catch (err) {
+    return iso;
+  }
+}
+
+// Picks a highlight.js language for a body preview from its Content-Type --
+// this mock's bodies are always JSON or XML (never both at once), same two
+// languages the API Catalog's "Raw" tab already loads.
+function hljsLangForContentType(contentType) {
+  return contentType && contentType.includes("xml") ? "language-xml" : "language-json";
+}
+
+function requestLogMatchesFilter(entry) {
+  const pathFilter = document.getElementById("request-log-filter").value.trim().toLowerCase();
+  const unmatchedOnly = document.getElementById("request-log-unmatched-only").checked;
+  if (unmatchedOnly && !entry.unmatched) return false;
+  if (pathFilter && !entry.path.toLowerCase().includes(pathFilter)) return false;
+  return true;
+}
+
+function buildLogDetailHtml(entry) {
+  const reqContentType = entry.request_headers && entry.request_headers["content-type"];
+  const reqBody = entry.request_body_preview || "(empty)";
+  const resBody = entry.response_body_preview || "(empty)";
+  return `
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="fw-semibold">Request</div>
+        <div>Matched route: <code>${escapeHtml(entry.route_path || "(none -- unmatched)")}</code></div>
+        <div>Query string: <code>${escapeHtml(entry.query_string || "(none)")}</code></div>
+        <div>Path params: <code>${escapeHtml(JSON.stringify(entry.path_params || {}))}</code></div>
+        <div>Headers: <code>${escapeHtml(JSON.stringify(entry.request_headers || {}))}</code></div>
+        <div class="mt-2 mb-1">Body preview:</div>
+        <pre class="bg-light border rounded p-2 mb-0 catalog-sample"><code class="${hljsLangForContentType(reqContentType)}">${escapeHtml(reqBody)}</code></pre>
+      </div>
+      <div class="col-md-6">
+        <div class="fw-semibold">Response</div>
+        <div>Status: <code>${entry.response_status}</code></div>
+        <div>Content-Type: <code>${escapeHtml(entry.response_content_type || "(none)")}</code></div>
+        <div>Duration: <code>${entry.duration_ms.toFixed(1)} ms</code></div>
+        <div class="mt-2 mb-1">Body preview:</div>
+        <pre class="bg-light border rounded p-2 mb-0 catalog-sample"><code class="${hljsLangForContentType(entry.response_content_type)}">${escapeHtml(resBody)}</code></pre>
+      </div>
+    </div>`;
+}
+
+// Returns [row, detailRow] -- a visible summary row and a collapsed detail
+// row toggled by clicking the summary, same "click to expand" idea the API
+// Catalog's Raw/Table tabs already use, just without Bootstrap's collapse
+// component (a plain class toggle is simpler for a two-row pair like this).
+function renderLogRow(entry) {
+  const tr = document.createElement("tr");
+  tr.style.cursor = "pointer";
+  if (entry.unmatched) {
+    tr.classList.add("table-danger");
+  }
+  const unmatchedBadge = entry.unmatched
+    ? ' <span class="badge text-bg-danger">UNMATCHED</span>'
+    : "";
+  tr.innerHTML = `
+    <td class="text-nowrap small">${escapeHtml(formatLogTime(entry.timestamp))}</td>
+    <td><span class="badge ${methodBadgeClass(entry.method)}">${escapeHtml(entry.method)}</span></td>
+    <td><code>${escapeHtml(entry.path)}</code>${unmatchedBadge}</td>
+    <td><span class="badge ${statusBadgeClass(entry.response_status)}">${entry.response_status}</span></td>
+    <td class="text-nowrap small">${entry.duration_ms.toFixed(1)} ms</td>`;
+
+  const detailRow = document.createElement("tr");
+  detailRow.className = "d-none";
+  const detailCell = document.createElement("td");
+  detailCell.colSpan = 5;
+  detailCell.className = "small";
+  detailCell.innerHTML = buildLogDetailHtml(entry);
+  detailRow.appendChild(detailCell);
+
+  tr.addEventListener("click", () => {
+    const wasHidden = detailRow.classList.contains("d-none");
+    detailRow.classList.toggle("d-none");
+    if (wasHidden && window.hljs) {
+      detailCell.querySelectorAll("code").forEach((el) => hljs.highlightElement(el));
+    }
+  });
+
+  return [tr, detailRow];
+}
+
+function renderRequestLogTable() {
+  const tbody = document.querySelector("#request-log-table tbody");
+  tbody.innerHTML = "";
+  const visible = requestLogEntries.filter(requestLogMatchesFilter);
+  visible.forEach((entry) => {
+    const [tr, detailRow] = renderLogRow(entry);
+    tbody.appendChild(tr);
+    tbody.appendChild(detailRow);
+  });
+  document.getElementById("request-log-empty").classList.toggle("d-none", visible.length > 0);
+}
+
+// Incremental path for live SSE pushes: prepend just the new row instead of
+// re-rendering the whole table, so a long test session doesn't cause
+// constant flicker/DOM churn. `renderRequestLogTable()` (full rebuild) is
+// used instead whenever the filter itself changes.
+function prependLogEntry(entry) {
+  requestLogEntries.unshift(entry);
+  if (requestLogEntries.length > REQUEST_LOG_MAX_ROWS) {
+    requestLogEntries.length = REQUEST_LOG_MAX_ROWS;
+  }
+  if (!requestLogMatchesFilter(entry)) return;
+  const tbody = document.querySelector("#request-log-table tbody");
+  const [tr, detailRow] = renderLogRow(entry);
+  const firstChild = tbody.firstChild;
+  tbody.insertBefore(detailRow, firstChild);
+  tbody.insertBefore(tr, detailRow);
+  while (tbody.children.length > REQUEST_LOG_MAX_ROWS * 2) {
+    tbody.removeChild(tbody.lastChild);
+  }
+  document.getElementById("request-log-empty").classList.add("d-none");
+}
+
+function setRequestLogStatus(text, badgeClass) {
+  const el = document.getElementById("request-log-status");
+  el.textContent = text;
+  el.className = `badge text-nowrap ${badgeClass}`;
+}
+
+// SSE (not polling): the backlog arrives as the stream's first batch of
+// messages, then live entries as they're broadcast -- one connection gives
+// this card everything it needs, so there is no separate initial fetch of
+// GET /admin/api/logs here (that endpoint exists for the fallback/
+// testability case the task calls for, not for this page).
+function connectRequestLogStream() {
+  const source = new EventSource(LOGS_STREAM_URL);
+  source.onopen = () => setRequestLogStatus("Live", "text-bg-success");
+  source.onerror = () => setRequestLogStatus("Disconnected — retrying…", "text-bg-danger");
+  source.onmessage = (event) => {
+    let entry;
+    try {
+      entry = JSON.parse(event.data);
+    } catch (err) {
+      return; // keep-alive comments never reach onmessage; be defensive anyway
+    }
+    if (requestLogEntries.some((existing) => existing.seq === entry.seq)) return;
+    prependLogEntry(entry);
+  };
+}
+
+document.getElementById("request-log-filter").addEventListener("input", renderRequestLogTable);
+document.getElementById("request-log-unmatched-only").addEventListener("change", renderRequestLogTable);
+document.getElementById("request-log-clear").addEventListener("click", () => {
+  requestLogEntries = [];
+  renderRequestLogTable();
+});
+
 loadSettings();
 loadMasterData();
 loadAccounting();
 loadOverrides();
 renderCatalog();
+connectRequestLogStream();
 </script>
 </body>
 </html>

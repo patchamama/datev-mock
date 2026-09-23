@@ -12,7 +12,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
-from app import windows_proactor_noise
+from app import request_log, windows_proactor_noise
 from app.routers import accounting, admin, diagnostics, dms, master_data
 
 
@@ -33,6 +33,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=_lifespan,
 )
+
+app.middleware("http")(request_log.log_requests_middleware)
 
 app.include_router(diagnostics.router)
 app.include_router(master_data.router)
