@@ -207,6 +207,54 @@ detail to execute correctly). Orchestrator reviews the diff and verifies
 live/via pytest independently after each phase before committing, same
 discipline as the write-endpoints and exe-release epics.
 
+## Appendix — write-side FK field checklist (from the P0 mapping pass)
+
+26 write endpoints (19 in `app/routers/accounting.py` + 7 in
+`app/routers/master_data.py`). Every write-body field that references
+another resource's id, and what it should validate against (P2's
+checklist):
+
+| Write model (field) | Used by endpoint(s) | Validate against |
+|---|---|---|
+| `_BusinessPartnerWriteBase.addressee_id` (shared by `DebitorWrite`/`CreditorWrite`) | POST/PUT debitors, POST/PUT creditors (6 endpoints) | `Addressee.id` (master-data addressees, global) |
+| `CreditorAccountingInformationWrite.term_of_payment_id` | POST/PUT creditor (nested) | `TermOfPayment.id` (same scope) |
+| `DebitorAccountingInformationWrite.term_of_payment_id` | POST/PUT debitor (nested) | `TermOfPayment.id` (same scope) |
+| `AssetStocktakingWrite.general_ledger_account.account_number` | PUT asset-stocktaking | `GeneralLedgerAccount.account_number` (same scope) |
+| `AssetStocktakingWrite.kost1_cost_center_id` | PUT asset-stocktaking | `CostCenter.id` (same scope's primary cost system, same convention as `OpenItem` in P1) |
+| `ClientResponsibility.employee_id` | PUT client responsibilities | `Employee.id` (master-data employees, global) — today explicitly documented as "not validated"; flips in P2 |
+| `ClientResponsibility.client_id` (body field, distinct from the URL's own `client_id`) | PUT client responsibilities | `ClientResource.Id` (master-data client) |
+| `CostAccountingRecordWrite.account_number` / `contra_account_number` | POST cost-accounting-record | `GeneralLedgerAccount.account_number` (same scope) |
+| `CostAccountingRecordWrite.alternative_cost_center` / `cost_center` | POST cost-accounting-record | `CostCenter.id` (same scope) |
+| `VariousAddressWrite.account_number` | POST various-address | `Creditor.account_number` OR `Debitor.account_number` (same scope, either family) |
+| `VariousAddressWrite.business_partner_number` | POST various-address | `Creditor.business_partner_number` OR `Debitor.business_partner_number` (same scope) |
+| `InternalCostServiceWrite.cost_center_from` / `cost_center_to` (both required) | POST internal-cost-service | `CostCenter.id` (same scope) |
+| `IncomingInvoicePostingWrite.accounting_transaction_key` | POST posting-proposals-incoming batch | `AccountingTransactionKey.number` (same scope) |
+| `IncomingInvoicePostingWrite.account_number` | same | `GeneralLedgerAccount.account_number` (same scope) |
+| `IncomingInvoicePostingWrite.creditor_account_number` | same | `Creditor.account_number` (same scope) |
+| `IncomingInvoicePostingWrite.kost1_cost_center_id` / `kost2_cost_center_id` | same | `CostCenter.id` (same scope) |
+| `OutgoingInvoicePostingWrite.accounting_transaction_key` | POST posting-proposals-outgoing batch | `AccountingTransactionKey.number` (same scope) |
+| `OutgoingInvoicePostingWrite.account_number` | same | `GeneralLedgerAccount.account_number` (same scope) |
+| `OutgoingInvoicePostingWrite.debitor_account_number` | same | `Debitor.account_number` (same scope) |
+| `OutgoingInvoicePostingWrite.kost1_cost_center_id` / `kost2_cost_center_id` | same | `CostCenter.id` (same scope) |
+| `CashRegisterPostingWrite.accounting_transaction_key` | POST posting-proposals-cash-register batch | `AccountingTransactionKey.number` (same scope) |
+| `CashRegisterPostingWrite.cash_account_number` (required) / `contra_account_number` | same | `GeneralLedgerAccount.account_number` (same scope) |
+| `CashRegisterPostingWrite.kost1_cost_center_id` / `kost2_cost_center_id` | same | `CostCenter.id` (same scope) |
+
+**No modeled target resource — leave unvalidated, one code comment each**
+(per decision #4/#6's carve-out): `_BusinessPartnerWriteBase.business_partner_relation_id`;
+`ClientWrite.legal_person_id`/`natural_person_id`/`organization_id`/`establishment_id`/`functional_area_id`;
+`EmployeeWrite.natural_person_id`/`organization_id`/`establishment_id`/`functional_area_id`.
+
+**No FK-shaped fields at all — no P2 work needed**: `TermOfPaymentWrite`,
+`CostCenterWrite`, `AddresseeWrite`, `CostCenterPropertyWrite`,
+`CostSequenceWrite`, `AccountingSequenceCreateWrite` (6 of the 26
+endpoints).
+
+Validate against **the union of the request's own scope's generated data
+(`app/scoped_data.py` accessors) and whatever's been written via SQLite
+for that same scope** — i.e. exactly what a subsequent `GET` in the same
+scope would show, per decision #6.
+
 ## Progress
 
 - 2026-09-24: Feature doc created from the dedicated mapping pass.
