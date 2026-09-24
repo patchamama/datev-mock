@@ -339,14 +339,22 @@ def merge_with_stored(
     id_field: str = "id",
     field_map: Optional[dict[str, str]] = None,
     nil_fields: frozenset[str] = frozenset(),
+    client_id: Optional[str] = None,
+    fiscal_year_id: Optional[str] = None,
 ) -> list[Any]:
-    """Union `fake_records` (dataclass instances from `app.fake_data`) with
-    every SQLite-stored record for `resource_type`. A stored record whose id
-    matches a fake one *replaces* it (PUT-over-fake semantics); a stored
-    record with a new id is appended. `id_field` is the dataclass attribute
-    name holding the id (`"id"` for every Group A resource except
-    `ClientResource`, which uses `"Id"`)."""
-    stored = list_records(resource_type)
+    """Union `fake_records` (dataclass instances from `app.fake_data`/
+    `app.scoped_data`) with every SQLite-stored record for `resource_type`.
+    A stored record whose id matches a fake one *replaces* it (PUT-over-fake
+    semantics); a stored record with a new id is appended. `id_field` is the
+    dataclass attribute name holding the id (`"id"` for every Group A
+    resource except `ClientResource`, which uses `"Id"`).
+
+    `client_id`/`fiscal_year_id` (architecture decision #5, scope-forwarding
+    fix): forwarded to `list_records()` so a caller's stored records are
+    filtered to the same scope the fake/generated records belong to —
+    without this, a write in one `(client_id, fiscal_year_id)` scope would
+    leak into every other scope's GET response."""
+    stored = list_records(resource_type, client_id=client_id, fiscal_year_id=fiscal_year_id)
     stored_instances = {
         getattr(instance, id_field): instance
         for instance in (

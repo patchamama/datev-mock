@@ -11,6 +11,7 @@ from __future__ import annotations
 import random
 import uuid
 from datetime import datetime, timedelta
+from typing import Optional
 
 from app.models import (
     Addressee,
@@ -486,7 +487,7 @@ _GL_ACCOUNT_CAPTIONS = [
 ]
 
 
-def _generate_fiscal_years(count: int = 3) -> list[FiscalYear]:
+def _generate_fiscal_years(count: int = 3, base_year: int = 2022) -> list[FiscalYear]:
     """Populates all 19 real always-present fields on every record. The 4
     genuinely optional fields (`basis_of_checking_account_function`,
     `debitor_term_of_payment_id`, `legal_form`,
@@ -495,10 +496,15 @@ def _generate_fiscal_years(count: int = 3) -> list[FiscalYear]:
     observed in `examples/fiscal-years.xml` (earlier fiscal years lack these
     fields, later ones carry them) — and `debitor_term_of_payment_id`
     additionally stays absent until the most recent record, mirroring how it
-    only appears on the last couple of real sampled years."""
+    only appears on the last couple of real sampled years.
+
+    `base_year` lets a scoped caller (`app/scoped_data.py`) vary the
+    generated years per client scope (architecture decision #1/#2 in
+    `odd/tasks/datev-mock-referential-integrity.md`) — defaults to the
+    original fixed 2022 start for every unscoped/global call site."""
     records: list[FiscalYear] = []
     for index in range(count):
-        year = 2022 + index
+        year = base_year + index
         # `+01:00` offset matches the real evidence's ISO-with-timezone shape
         # (`examples/fiscal-years.xml`) — a structural detail, not a copied
         # real value.
@@ -544,16 +550,24 @@ def _generate_fiscal_years(count: int = 3) -> list[FiscalYear]:
     return records
 
 
-def _generate_cost_systems(count: int = 3) -> list[CostSystem]:
+def _generate_cost_systems(
+    count: int = 3, rng: Optional[random.Random] = None
+) -> list[CostSystem]:
     """`cost_field` is a real **int** (confirmed by
-    `examples/cost-systems.xml`), not the earlier unevidenced string guess."""
+    `examples/cost-systems.xml`), not the earlier unevidenced string guess.
+
+    `rng` (architecture decision #2) lets a scoped caller vary
+    `is_activated_for_postings` per `(client_id, fiscal_year_id)` scope;
+    `id`/`number` stay index-derived (index 0 is the fiscal year's "primary"
+    cost system, architecture decision #4 — must stay stable)."""
     records: list[CostSystem] = []
     for index in range(count):
+        is_activated = rng.random() < 0.5 if rng is not None else index % 2 == 0
         records.append(
             CostSystem(
                 id=str(index + 1),
                 short_name=f"KoRe{index + 1}",
-                is_activated_for_postings=index % 2 == 0,
+                is_activated_for_postings=is_activated,
                 number=index + 1,
                 cost_field=index + 1,
             )
@@ -561,15 +575,27 @@ def _generate_cost_systems(count: int = 3) -> list[CostSystem]:
     return records
 
 
-def _generate_cost_centers(count: int = 4) -> list[CostCenter]:
+def _generate_cost_centers(
+    count: int = 4, rng: Optional[random.Random] = None
+) -> list[CostCenter]:
+    """`rng` (architecture decision #2) lets a scoped caller vary
+    `responsible`/`rate` per `(client_id, fiscal_year_id, cost_system_id)`
+    scope; unscoped/global call sites (no `rng` passed) keep the original
+    fixed index-derived values unchanged."""
     records: list[CostCenter] = []
     for index in range(count):
         creation_year = 2016 + index
+        if rng is not None:
+            responsible = rng.choice(_PERSON_NAME_POOL)
+            rate_value = round(30.0 + rng.uniform(0.0, 25.0), 2)
+        else:
+            responsible = _PERSON_NAME_POOL[index % len(_PERSON_NAME_POOL)]
+            rate_value = round(35.5 + index * 2.25, 2)
         cost_rates = [
             CostRate(
                 valid_from=int(f"{creation_year}1201"),
                 valid_to=int(f"{creation_year + 1}1130"),
-                rate=round(35.5 + index * 2.25, 2),
+                rate=rate_value,
             )
         ] if index % 2 == 0 else []
         records.append(
@@ -580,21 +606,35 @@ def _generate_cost_centers(count: int = 4) -> list[CostCenter]:
                 creation_date=f"{creation_year}-01-15T00:00:00.000",
                 cost_rates=cost_rates,
                 date_last_modification=f"{creation_year}-06-01T00:00:00.000",
-                responsible=_PERSON_NAME_POOL[index % len(_PERSON_NAME_POOL)],
+                responsible=responsible,
             )
         )
     return records
 
 
-def _generate_creditors(count: int = 4) -> list[Creditor]:
+def _generate_creditors(
+    count: int = 4,
+    rng: Optional[random.Random] = None,
+    addressee_ids: Optional[list[str]] = None,
+) -> list[Creditor]:
     """Forces both `legal_entity_type` values present (indices 0/1), same
     "not vacuous" pattern as `_generate_addressees`. Populates all 11 real
     always-present top-level fields; `eu_vat_id_country_code`/
     `eu_vat_id_number` are genuinely optional (sparse, same pattern as
-    `_generate_addressees`)."""
+    `_generate_addressees`).
+
+    `rng` (architecture decision #2) lets a scoped caller draw
+    per-`(client_id, fiscal_year_id)` deterministic values instead of the
+    shared `random` module; unscoped call sites keep working unchanged
+    (`rng=None` falls back to the bare module). `addressee_ids`
+    (architecture decision #4) is the **global** `Addressee.id` list —
+    when provided, `addressee_id` is drawn from it (a real cross-reference);
+    when omitted (unscoped call sites), the original unlinked fresh-guid
+    behavior is preserved."""
+    active_rng = rng if rng is not None else random
     records: list[Creditor] = []
-    org_names = random.sample(_ORG_NAME_POOL, k=min(count, len(_ORG_NAME_POOL)))
-    person_names = random.sample(_PERSON_NAME_POOL, k=min(count, len(_PERSON_NAME_POOL)))
+    org_names = active_rng.sample(_ORG_NAME_POOL, k=min(count, len(_ORG_NAME_POOL)))
+    person_names = active_rng.sample(_PERSON_NAME_POOL, k=min(count, len(_PERSON_NAME_POOL)))
 
     for index in range(count):
         if index == 0:
@@ -602,11 +642,11 @@ def _generate_creditors(count: int = 4) -> list[Creditor]:
         elif index == 1:
             entity_type = "legal_person"
         else:
-            entity_type = random.choice(_LEGAL_ENTITY_TYPES)
+            entity_type = active_rng.choice(_LEGAL_ENTITY_TYPES)
 
         account_number = 70000 + index
         business_partner_number = str(account_number)
-        addressee_id = _fresh_guid()
+        addressee_id = active_rng.choice(addressee_ids) if addressee_ids else _fresh_guid()
         eu_vat_country = "DE" if index % 3 == 0 else None
 
         # `natural_person`/`legal_person`/`accounting_information` are
@@ -629,6 +669,8 @@ def _generate_creditors(count: int = 4) -> list[Creditor]:
                 account_number=account_number,
                 addressee_id=addressee_id,
                 business_partner_number=business_partner_number,
+                # No modeled target resource for business_partner_relation_id
+                # (architecture decision #4's last bullet) — left synthetic.
                 business_partner_relation_id=_fresh_guid(),
                 caption=short_name,
                 date_last_modification=_random_timestamp(),
@@ -643,14 +685,22 @@ def _generate_creditors(count: int = 4) -> list[Creditor]:
     return records
 
 
-def _generate_debitors(count: int = 4) -> list[Debitor]:
+def _generate_debitors(
+    count: int = 4,
+    rng: Optional[random.Random] = None,
+    addressee_ids: Optional[list[str]] = None,
+) -> list[Debitor]:
     """Debitor is structurally identical to creditor for the shared
     top-level fields. Populates all 11 real always-present top-level fields;
     `eu_vat_id_country_code`/`eu_vat_id_number` are genuinely optional
-    (sparse, same pattern as `_generate_addressees`/`_generate_creditors`)."""
+    (sparse, same pattern as `_generate_addressees`/`_generate_creditors`).
+
+    `rng`/`addressee_ids` — same architecture decision #2/#4 contract as
+    `_generate_creditors` above."""
+    active_rng = rng if rng is not None else random
     records: list[Debitor] = []
-    org_names = random.sample(_ORG_NAME_POOL, k=min(count, len(_ORG_NAME_POOL)))
-    person_names = random.sample(_PERSON_NAME_POOL, k=min(count, len(_PERSON_NAME_POOL)))
+    org_names = active_rng.sample(_ORG_NAME_POOL, k=min(count, len(_ORG_NAME_POOL)))
+    person_names = active_rng.sample(_PERSON_NAME_POOL, k=min(count, len(_PERSON_NAME_POOL)))
 
     for index in range(count):
         if index == 0:
@@ -658,11 +708,11 @@ def _generate_debitors(count: int = 4) -> list[Debitor]:
         elif index == 1:
             entity_type = "legal_person"
         else:
-            entity_type = random.choice(_LEGAL_ENTITY_TYPES)
+            entity_type = active_rng.choice(_LEGAL_ENTITY_TYPES)
 
         account_number = 10000 + index
         business_partner_number = str(account_number)
-        addressee_id = _fresh_guid()
+        addressee_id = active_rng.choice(addressee_ids) if addressee_ids else _fresh_guid()
         eu_vat_country = "DE" if index % 3 == 0 else None
 
         # `natural_person`/`legal_person`/`accounting_information` are
@@ -686,6 +736,8 @@ def _generate_debitors(count: int = 4) -> list[Debitor]:
                 account_number=account_number,
                 addressee_id=addressee_id,
                 business_partner_number=business_partner_number,
+                # No modeled target resource for business_partner_relation_id
+                # (architecture decision #4's last bullet) — left synthetic.
                 business_partner_relation_id=_fresh_guid(),
                 caption=short_name,
                 date_last_modification=_random_timestamp(),
@@ -700,31 +752,46 @@ def _generate_debitors(count: int = 4) -> list[Debitor]:
     return records
 
 
-def _generate_general_ledger_accounts(count: int = 6) -> list[GeneralLedgerAccount]:
+def _generate_general_ledger_accounts(
+    count: int = 6, rng: Optional[random.Random] = None
+) -> list[GeneralLedgerAccount]:
+    """`rng` (architecture decision #2) lets a scoped caller draw
+    `caption`/`main_function`/`main_function_number`/`function_extension`/
+    `additional_function` via random pool selection per
+    `(client_id, fiscal_year_id)` scope instead of the fixed index-modulo
+    pattern; `id`/`account_number` stay index-derived (referenced by id/
+    account_number elsewhere, e.g. `AssetStocktaking`/`PostingProposalRule`
+    cross-references draw the whole record from this scope's own list, not
+    the number itself, so this doesn't affect correctness)."""
+    active_rng = rng if rng is not None else random
     records: list[GeneralLedgerAccount] = []
     for index in range(count):
+        if rng is not None:
+            caption = active_rng.choice(_GL_ACCOUNT_CAPTIONS)
+            main_function = active_rng.choice(_MAIN_FUNCTION_VALUES)
+            main_function_number = active_rng.choice(_MAIN_FUNCTION_NUMBER_VALUES)
+            function_extension = active_rng.choice(_FUNCTION_EXTENSION_VALUES)
+            additional_function = active_rng.choice(_ADDITIONAL_FUNCTION_VALUES)
+        else:
+            caption = _GL_ACCOUNT_CAPTIONS[index % len(_GL_ACCOUNT_CAPTIONS)]
+            main_function = _MAIN_FUNCTION_VALUES[index % len(_MAIN_FUNCTION_VALUES)]
+            main_function_number = _MAIN_FUNCTION_NUMBER_VALUES[index % len(_MAIN_FUNCTION_NUMBER_VALUES)]
+            function_extension = _FUNCTION_EXTENSION_VALUES[index % len(_FUNCTION_EXTENSION_VALUES)]
+            additional_function = _ADDITIONAL_FUNCTION_VALUES[index % len(_ADDITIONAL_FUNCTION_VALUES)]
         records.append(
             GeneralLedgerAccount(
                 id=str(1000 + index),
                 account_number=1000 + index,
-                caption=_GL_ACCOUNT_CAPTIONS[index % len(_GL_ACCOUNT_CAPTIONS)],
-                main_function=_MAIN_FUNCTION_VALUES[index % len(_MAIN_FUNCTION_VALUES)],
-                main_function_number=_MAIN_FUNCTION_NUMBER_VALUES[
-                    index % len(_MAIN_FUNCTION_NUMBER_VALUES)
-                ],
-                function_extension=_FUNCTION_EXTENSION_VALUES[
-                    index % len(_FUNCTION_EXTENSION_VALUES)
-                ],
-                additional_function=_ADDITIONAL_FUNCTION_VALUES[
-                    index % len(_ADDITIONAL_FUNCTION_VALUES)
-                ],
+                caption=caption,
+                main_function=main_function,
+                main_function_number=main_function_number,
+                function_extension=function_extension,
+                additional_function=additional_function,
                 # `function_description` is an unconfirmed, extra field (not
                 # part of the real 7-field shape) — left absent on the first
                 # record so it demonstrably stays optional, not silently
                 # always-populated.
-                function_description=(
-                    None if index == 0 else _GL_ACCOUNT_CAPTIONS[index % len(_GL_ACCOUNT_CAPTIONS)]
-                ),
+                function_description=(None if index == 0 else caption),
                 tax_rates=(
                     [GeneralLedgerAccountTaxRate(tax_rate=19.0, valid_from="2021-01-01T00:00:00.000")]
                     if index % 2 == 0
@@ -756,7 +823,14 @@ _BALANCING_TYPE_VALUES = ["balancing_by_means_of_payments_or_bank_posting", "man
 _PAYMENT_METHOD_VALUES = ["not_specified"]
 
 
-def _generate_open_items(count: int = 4, receivable: bool = False) -> list[OpenItem]:
+def _generate_open_items(
+    count: int = 4,
+    receivable: bool = False,
+    rng: Optional[random.Random] = None,
+    term_of_payment_ids: Optional[list[int]] = None,
+    accounting_sequence_ids: Optional[list[str]] = None,
+    cost_center_ids: Optional[list[str]] = None,
+) -> list[OpenItem]:
     """Shared generator for `accounts-payable` (#6), `accounts-payable/condense`
     (#2) and `accounts-receivable/condense` (#3) — all three share the
     `OpenItem` schema per the compiled spec doc.
@@ -776,16 +850,30 @@ def _generate_open_items(count: int = 4, receivable: bool = False) -> list[OpenI
     `has_dunning_block` is populated on every record regardless of
     `receivable`, per real evidence showing it present on both payable and
     receivable records — replaces the earlier receivable-only, invented
-    `dunning_level` field (W1)."""
+    `dunning_level` field (W1).
+
+    `rng`/`term_of_payment_ids`/`accounting_sequence_ids`/`cost_center_ids`
+    (architecture decisions #2/#4): when a scoped caller passes the current
+    `(client_id, fiscal_year_id)` scope's own generated
+    `TermOfPayment.id`/`AccountingSequenceProcessed.id` lists and the
+    fiscal year's *primary* cost system's `CostCenter.id` list,
+    `term_of_payment_id`/`accounting_sequence_id`/`kost1_cost_center_id`
+    are drawn from those real records instead of the original
+    reinvented-arithmetic values; unscoped call sites (no pools passed)
+    keep the original arithmetic unchanged."""
+    active_rng = rng if rng is not None else random
     records: list[OpenItem] = []
     base_account = 10000 if receivable else 70000
     for index in range(count):
         debit_credit = _DEBIT_CREDIT_IDENTIFIER_VALUES[index % len(_DEBIT_CREDIT_IDENTIFIER_VALUES)]
         amount = round(100.0 + index * 37.5, 2)
+        accounting_sequence_id = (
+            active_rng.choice(accounting_sequence_ids) if accounting_sequence_ids else str(1000 + index)
+        )
         record = OpenItem(
             id=_fresh_guid(),
             account_number=base_account + index,
-            accounting_sequence_id=str(1000 + index),
+            accounting_sequence_id=accounting_sequence_id,
             date=f"2024-{(index % 9) + 1:02d}-15T00:00:00.000+01:00",
             debit_credit_identifier=debit_credit,
             document_field1=str(500000 + index),
@@ -821,11 +909,15 @@ def _generate_open_items(count: int = 4, receivable: bool = False) -> list[OpenI
         if index % 2 == 0:
             record.document_field2 = str(90 + index)
         if index != count - 1:
-            record.kost1_cost_center_id = str(1 + index % 3)
+            record.kost1_cost_center_id = (
+                active_rng.choice(cost_center_ids) if cost_center_ids else str(1 + index % 3)
+            )
         if index % 2 == 0:
             record.due_date = f"2024-{((index % 2) + 10):02d}-15T00:00:00.000+01:00"
             record.due_days = 30
-            record.term_of_payment_id = 1000 + index
+            record.term_of_payment_id = (
+                active_rng.choice(term_of_payment_ids) if term_of_payment_ids else 1000 + index
+            )
         if receivable and index % 2 == 0:
             record.dunning_date1 = "2024-02-01T00:00:00.000+01:00"
         records.append(record)
@@ -846,30 +938,50 @@ _INSPECTION_STATUS_VALUES = ["not_specified"]
 _MARK_OF_ORIGIN_VALUES = ["RE", "SV"]
 
 
-def _generate_accounting_sequences_processed(count: int = 4) -> list[AccountingSequenceProcessed]:
+def _generate_accounting_sequences_processed(
+    count: int = 4, rng: Optional[random.Random] = None
+) -> list[AccountingSequenceProcessed]:
     """`date_committed`/`inspection_status`/`mark_of_origin` are real fields
     confirmed by `examples/accounting-sequences-processed.xml` (W3, epic
     `datev-mock-real-data-reconciliation`) — all present on 100% of the 53
     real sampled records. `initials` stays genuinely sparse (~94% real
     presence rate) — absent on the last generated record here, matching the
     same "absent on the last record" convention used elsewhere in this
-    module for small default datasets."""
+    module for small default datasets.
+
+    `rng` (architecture decision #2) lets a scoped caller vary
+    `accounting_reason`/`is_committed`/`mark_of_origin`/`record_type` per
+    `(client_id, fiscal_year_id)` scope; `id` stays index-derived
+    (cross-referenced by `OpenItem.accounting_sequence_id`, architecture
+    decision #4 — the id itself is drawn from this scope's own list either
+    way, so varying it isn't required for correctness)."""
+    active_rng = rng if rng is not None else random
     records: list[AccountingSequenceProcessed] = []
     for index in range(count):
+        if rng is not None:
+            accounting_reason = active_rng.choice(_ACCOUNTING_REASON_VALUES)
+            is_committed = active_rng.random() < 0.5
+            mark_of_origin = active_rng.choice(_MARK_OF_ORIGIN_VALUES)
+            record_type = active_rng.choice(_ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES)
+        else:
+            accounting_reason = _ACCOUNTING_REASON_VALUES[index % len(_ACCOUNTING_REASON_VALUES)]
+            is_committed = index % 2 == 0
+            mark_of_origin = _MARK_OF_ORIGIN_VALUES[index % len(_MARK_OF_ORIGIN_VALUES)]
+            record_type = _ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES[
+                index % len(_ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES)
+            ]
         record = AccountingSequenceProcessed(
             id=str(2000 + index),
-            accounting_reason=_ACCOUNTING_REASON_VALUES[index % len(_ACCOUNTING_REASON_VALUES)],
+            accounting_reason=accounting_reason,
             accounting_sequence_id=str(3000 + index),
             date_committed=f"2024-{(index % 9) + 1:02d}-05T00:00:00.000+01:00",
             date_from=f"2024-{(index % 9) + 1:02d}-01T00:00:00.000+01:00",
             date_to=f"2024-{(index % 9) + 1:02d}-28T23:59:59.000+01:00",
             description=f"Buchungsstapel {index + 1}",
             inspection_status=_INSPECTION_STATUS_VALUES[index % len(_INSPECTION_STATUS_VALUES)],
-            is_committed=index % 2 == 0,
-            mark_of_origin=_MARK_OF_ORIGIN_VALUES[index % len(_MARK_OF_ORIGIN_VALUES)],
-            record_type=_ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES[
-                index % len(_ACCOUNTING_SEQUENCE_RECORD_TYPE_VALUES)
-            ],
+            is_committed=is_committed,
+            mark_of_origin=mark_of_origin,
+            record_type=record_type,
         )
         if index != count - 1:
             record.initials = "ABC"
@@ -888,32 +1000,55 @@ _TRANSACTION_KEY_GROUP_VALUES = [
 _TRANSACTION_KEY_CASES_RELATED_VALUES = [0, 1, 2, 5, 9]
 
 
-def _generate_accounting_transaction_keys(count: int = 4) -> list[AccountingTransactionKey]:
+def _generate_accounting_transaction_keys(
+    count: int = 4, rng: Optional[random.Random] = None
+) -> list[AccountingTransactionKey]:
     """Expanded to the real 10-field shape (W3, epic
     `datev-mock-real-data-reconciliation`) — `additional_function`/
     `caption`/`cases_related_to_goods_and_services`/`date_from`/`date_to`/
     `group` are real fields confirmed by
     `examples/accounting-transaction-keys.xml` (465 real records), all
     present on **100%** of records — no optionality for this endpoint at
-    all, so every generated record populates every field."""
+    all, so every generated record populates every field.
+
+    `rng` (architecture decision #2) lets a scoped caller vary
+    `additional_function`/`cases_related_to_goods_and_services`/`group`/
+    `tax_rate`/`is_tax_rate_selectable` per `(client_id, fiscal_year_id)`
+    scope; `id`/`number` stay index-derived (`.number` is cross-referenced
+    by `PostingProposalRule.accounting_transaction_key`, architecture
+    decision #4 — the value is drawn from this scope's own record either
+    way, so varying `number` isn't required for correctness)."""
+    active_rng = rng if rng is not None else random
     records: list[AccountingTransactionKey] = []
     for index in range(count):
+        if rng is not None:
+            additional_function = active_rng.choice(_TRANSACTION_KEY_ADDITIONAL_FUNCTION_VALUES)
+            cases_related = active_rng.choice(_TRANSACTION_KEY_CASES_RELATED_VALUES)
+            group = active_rng.choice(_TRANSACTION_KEY_GROUP_VALUES)
+            tax_rate = active_rng.choice(_TRANSACTION_KEY_TAX_RATE_VALUES)
+            is_tax_rate_selectable = active_rng.random() < 0.5
+        else:
+            additional_function = _TRANSACTION_KEY_ADDITIONAL_FUNCTION_VALUES[
+                index % len(_TRANSACTION_KEY_ADDITIONAL_FUNCTION_VALUES)
+            ]
+            cases_related = _TRANSACTION_KEY_CASES_RELATED_VALUES[
+                index % len(_TRANSACTION_KEY_CASES_RELATED_VALUES)
+            ]
+            group = _TRANSACTION_KEY_GROUP_VALUES[index % len(_TRANSACTION_KEY_GROUP_VALUES)]
+            tax_rate = _TRANSACTION_KEY_TAX_RATE_VALUES[index % len(_TRANSACTION_KEY_TAX_RATE_VALUES)]
+            is_tax_rate_selectable = index % 2 == 0
         records.append(
             AccountingTransactionKey(
                 id=str(4000 + index),
-                additional_function=_TRANSACTION_KEY_ADDITIONAL_FUNCTION_VALUES[
-                    index % len(_TRANSACTION_KEY_ADDITIONAL_FUNCTION_VALUES)
-                ],
+                additional_function=additional_function,
                 caption=f"Steuerschlüssel {index + 1}",
-                cases_related_to_goods_and_services=_TRANSACTION_KEY_CASES_RELATED_VALUES[
-                    index % len(_TRANSACTION_KEY_CASES_RELATED_VALUES)
-                ],
+                cases_related_to_goods_and_services=cases_related,
                 date_from=f"2024-01-{(index % 9) + 1:02d}T00:00:00.000+01:00",
                 date_to=f"2024-12-{(index % 9) + 20:02d}T23:59:59.000+01:00",
-                group=_TRANSACTION_KEY_GROUP_VALUES[index % len(_TRANSACTION_KEY_GROUP_VALUES)],
+                group=group,
                 number=(index + 1) * 100,
-                tax_rate=_TRANSACTION_KEY_TAX_RATE_VALUES[index % len(_TRANSACTION_KEY_TAX_RATE_VALUES)],
-                is_tax_rate_selectable=index % 2 == 0,
+                tax_rate=tax_rate,
+                is_tax_rate_selectable=is_tax_rate_selectable,
             )
         )
     return records
@@ -922,17 +1057,34 @@ def _generate_accounting_transaction_keys(count: int = 4) -> list[AccountingTran
 _STOCKTAKING_ACCOUNTING_REASON_VALUES = [50, 30, 40, 64, 11, 12]
 
 
-def _generate_asset_stocktakings(count: int = 4) -> list[AssetStocktaking]:
+def _generate_asset_stocktakings(
+    count: int = 4,
+    rng: Optional[random.Random] = None,
+    general_ledger_accounts: Optional[list[GeneralLedgerAccount]] = None,
+) -> list[AssetStocktaking]:
+    """`general_ledger_accounts` (architecture decision #4): when a scoped
+    caller passes the current `(client_id, fiscal_year_id)` scope's own
+    generated `GeneralLedgerAccount` list, `general_ledger_account` is drawn
+    from a real record in it (`account_number` + `caption`) instead of
+    reconstructed via matching arithmetic; unscoped call sites (no list
+    passed) keep the original arithmetic unchanged."""
+    active_rng = rng if rng is not None else random
     records: list[AssetStocktaking] = []
     for index in range(count):
-        gl_account = (
-            GeneralLedgerAccountMinimal(
-                account_number=1000 + index,
-                caption=_GL_ACCOUNT_CAPTIONS[index % len(_GL_ACCOUNT_CAPTIONS)],
-            )
-            if index % 2 == 0
-            else None
-        )
+        if index % 2 == 0:
+            if general_ledger_accounts:
+                chosen_account = active_rng.choice(general_ledger_accounts)
+                gl_account = GeneralLedgerAccountMinimal(
+                    account_number=chosen_account.account_number,
+                    caption=chosen_account.caption,
+                )
+            else:
+                gl_account = GeneralLedgerAccountMinimal(
+                    account_number=1000 + index,
+                    caption=_GL_ACCOUNT_CAPTIONS[index % len(_GL_ACCOUNT_CAPTIONS)],
+                )
+        else:
+            gl_account = None
         records.append(
             AssetStocktaking(
                 id=str(5000 + index),
@@ -965,20 +1117,45 @@ _ORIGIN_OF_POSTING_DESCRIPTION_OUTGOING_VALUES = _ORIGIN_OF_POSTING_DESCRIPTION_
 ]
 
 
-def _generate_posting_proposal_rules(count: int = 4, outgoing: bool = False) -> list[PostingProposalRule]:
+def _generate_posting_proposal_rules(
+    count: int = 4,
+    outgoing: bool = False,
+    rng: Optional[random.Random] = None,
+    accounting_transaction_keys: Optional[list[AccountingTransactionKey]] = None,
+    general_ledger_accounts: Optional[list[GeneralLedgerAccount]] = None,
+) -> list[PostingProposalRule]:
     """Shared generator for `posting-proposal-rules-incoming-invoices` (#13)
     and `-outgoing-invoices` (#14) — identical shape per the compiled spec
-    doc, only the allowed `origin_of_posting_description` enum differs."""
+    doc, only the allowed `origin_of_posting_description` enum differs.
+
+    `accounting_transaction_keys`/`general_ledger_accounts` (architecture
+    decision #4): when a scoped caller passes the current
+    `(client_id, fiscal_year_id)` scope's own generated lists,
+    `accounting_transaction_key`/`account_number` are drawn from real
+    records in them (`.number`/`.account_number`) instead of the original
+    reinvented-arithmetic values; unscoped call sites (no lists passed)
+    keep the original arithmetic unchanged."""
+    active_rng = rng if rng is not None else random
     origin_values = (
         _ORIGIN_OF_POSTING_DESCRIPTION_OUTGOING_VALUES if outgoing else _ORIGIN_OF_POSTING_DESCRIPTION_INCOMING_VALUES
     )
     id_base = 8000 if outgoing else 7000
     records: list[PostingProposalRule] = []
     for index in range(count):
+        transaction_key_number = (
+            active_rng.choice(accounting_transaction_keys).number
+            if accounting_transaction_keys
+            else (index + 1) * 100
+        )
+        gl_account_number = (
+            active_rng.choice(general_ledger_accounts).account_number
+            if general_ledger_accounts
+            else 1000 + index
+        )
         info_entries = [
             PostingProposalInformation(
-                accounting_transaction_key=(index + 1) * 100,
-                account_number=1000 + index,
+                accounting_transaction_key=transaction_key_number,
+                account_number=gl_account_number,
                 origin_of_posting_description=origin_values[index % len(origin_values)],
                 posting_description=f"Buchungstext {index + 1}",
             )
@@ -1001,25 +1178,40 @@ def _generate_posting_proposal_rules(count: int = 4, outgoing: bool = False) -> 
 _RELATED_MONTH_VALUES = ["current_month", "next_month", "month_after_next"]
 
 
-def _generate_terms_of_payment(count: int = 4) -> list[TermOfPayment]:
+def _generate_terms_of_payment(
+    count: int = 4, rng: Optional[random.Random] = None
+) -> list[TermOfPayment]:
     """Guarantees both `due_type` variants are present (even indices get
     `due_in_days`, odd get `due_as_period`), same non-vacuous-mix pattern as
-    `_generate_addressees`/`_generate_creditors`."""
+    `_generate_addressees`/`_generate_creditors`.
+
+    `rng` (architecture decision #2) lets a scoped caller vary the actual
+    due-day/discount/period values per `(client_id, fiscal_year_id)` scope;
+    `id` stays index-derived (cross-referenced by id elsewhere — e.g.
+    `FiscalYear`/`OpenItem`, architecture decision #4)."""
+    active_rng = rng if rng is not None else random
     records: list[TermOfPayment] = []
     for index in range(count):
         if index % 2 == 0:
             due_type = "due_in_days"
-            due_in_days = DueInDays(due_in_days=14 + index * 5, cash_discount1_days=7)
+            if rng is not None:
+                due_in_days = DueInDays(
+                    due_in_days=active_rng.randint(7, 45),
+                    cash_discount1_days=active_rng.randint(3, 14),
+                )
+            else:
+                due_in_days = DueInDays(due_in_days=14 + index * 5, cash_discount1_days=7)
             due_as_period = None
         else:
             due_type = "due_as_period"
             due_in_days = None
+            day_of_month = active_rng.randint(1, 28) if rng is not None else 10
             due_as_period = DueAsPeriod(
                 period1=Period(
                     invoice_day_of_month=15,
                     due_date_net=DueDate(
                         related_month=_RELATED_MONTH_VALUES[index % len(_RELATED_MONTH_VALUES)],
-                        day_of_month=10,
+                        day_of_month=day_of_month,
                     ),
                 )
             )

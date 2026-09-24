@@ -21,7 +21,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Request, Response
 
-from app import config, data_store, db, overrides
+from app import config, data_store, db, overrides, scoped_data
 from app.json_serializers import serialize_clients_json
 from app.models import (
     AssetStocktaking,
@@ -253,8 +253,8 @@ def get_accounting_clients(request: Request) -> Response:
     description=(
         "Returns ArrayOfFiscalYear XML by default, or a bare JSON array when "
         "Accept: application/json is sent (same content negotiation as "
-        "accounting.clients). Ignores client_id (no path-param filtering, "
-        "per the epic's cross-phase decision)."
+        "accounting.clients). Deterministically scoped by client_id — see "
+        "app/scoped_data.py."
     ),
 )
 def get_fiscal_years(client_id: str, request: Request) -> Response:
@@ -263,7 +263,7 @@ def get_fiscal_years(client_id: str, request: Request) -> Response:
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_fiscal_years()
+    records = scoped_data.get_fiscal_years_for_client(client_id)
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -276,8 +276,9 @@ def get_fiscal_years(client_id: str, request: Request) -> Response:
     summary="List a fiscal year's cost systems",
     description=(
         "Returns ArrayOfCostSystems XML by default (confirmed real shape), "
-        "or a bare JSON array when Accept: application/json is sent. Ignores "
-        "client_id/fiscal_year_id."
+        "or a bare JSON array when Accept: application/json is sent. "
+        "Deterministically scoped by client_id/fiscal_year_id — see "
+        "app/scoped_data.py."
     ),
 )
 def get_cost_systems(client_id: str, fiscal_year_id: str, request: Request) -> Response:
@@ -286,7 +287,7 @@ def get_cost_systems(client_id: str, fiscal_year_id: str, request: Request) -> R
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_cost_systems()
+    records = scoped_data.get_cost_systems_for_scope(client_id, fiscal_year_id)
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -300,8 +301,8 @@ def get_cost_systems(client_id: str, fiscal_year_id: str, request: Request) -> R
     description=(
         "Returns ArrayOfCostCenter XML by default (inferred by pattern - no "
         "direct real XML evidence for this endpoint), or a bare JSON array "
-        "when Accept: application/json is sent. Ignores "
-        "client_id/fiscal_year_id/cost_system_id."
+        "when Accept: application/json is sent. Deterministically scoped by "
+        "client_id/fiscal_year_id/cost_system_id — see app/scoped_data.py."
     ),
 )
 def get_cost_centers(
@@ -312,7 +313,13 @@ def get_cost_centers(
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = db.merge_with_stored(data_store.list_cost_centers(), "accounting.cost_centers", CostCenter)
+    records = db.merge_with_stored(
+        scoped_data.get_cost_centers_for_scope(client_id, fiscal_year_id, cost_system_id),
+        "accounting.cost_centers",
+        CostCenter,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -327,7 +334,8 @@ def get_cost_centers(
         "Returns ArrayOfCreditor XML by default (inferred by pattern from "
         "debitors' confirmed real XML - same BusinessPartners contract "
         "family), or a bare JSON array when Accept: application/json is "
-        "sent. Ignores client_id/fiscal_year_id."
+        "sent. Deterministically scoped by client_id/fiscal_year_id — see "
+        "app/scoped_data.py."
     ),
 )
 def get_creditors(client_id: str, fiscal_year_id: str, request: Request) -> Response:
@@ -337,10 +345,12 @@ def get_creditors(client_id: str, fiscal_year_id: str, request: Request) -> Resp
         return Response(content=override.content, media_type=media_type)
 
     records = db.merge_with_stored(
-        data_store.list_creditors(),
+        scoped_data.get_creditors_for_scope(client_id, fiscal_year_id),
         "accounting.creditors",
         Creditor,
         nil_fields=_BUSINESS_PARTNER_NIL_FIELDS,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
     )
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
@@ -354,8 +364,9 @@ def get_creditors(client_id: str, fiscal_year_id: str, request: Request) -> Resp
     summary="List a fiscal year's debitors",
     description=(
         "Returns ArrayOfDebitor XML by default (confirmed real shape), or a "
-        "bare JSON array when Accept: application/json is sent. Ignores "
-        "client_id/fiscal_year_id."
+        "bare JSON array when Accept: application/json is sent. "
+        "Deterministically scoped by client_id/fiscal_year_id — see "
+        "app/scoped_data.py."
     ),
 )
 def get_debitors(client_id: str, fiscal_year_id: str, request: Request) -> Response:
@@ -365,10 +376,12 @@ def get_debitors(client_id: str, fiscal_year_id: str, request: Request) -> Respo
         return Response(content=override.content, media_type=media_type)
 
     records = db.merge_with_stored(
-        data_store.list_debitors(),
+        scoped_data.get_debitors_for_scope(client_id, fiscal_year_id),
         "accounting.debitors",
         Debitor,
         nil_fields=_BUSINESS_PARTNER_NIL_FIELDS,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
     )
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
@@ -383,8 +396,9 @@ def get_debitors(client_id: str, fiscal_year_id: str, request: Request) -> Respo
     description=(
         "Returns ArrayOfGeneralLedgerAccount XML by default (inferred by "
         "pattern - no direct real XML evidence for this endpoint), or a "
-        "bare JSON array when Accept: application/json is sent. Ignores "
-        "client_id/fiscal_year_id."
+        "bare JSON array when Accept: application/json is sent. "
+        "Deterministically scoped by client_id/fiscal_year_id — see "
+        "app/scoped_data.py."
     ),
 )
 def get_general_ledger_accounts(
@@ -395,7 +409,7 @@ def get_general_ledger_accounts(
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_general_ledger_accounts()
+    records = scoped_data.get_general_ledger_accounts_for_scope(client_id, fiscal_year_id)
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -411,8 +425,8 @@ def get_general_ledger_accounts(
     description=(
         "Returns ArrayOfOpenItem XML by default (inferred by pattern - no "
         "direct real XML evidence for this endpoint), or a bare JSON array "
-        "when Accept: application/json is sent. Ignores "
-        "client_id/fiscal_year_id."
+        "when Accept: application/json is sent. Deterministically scoped by "
+        "client_id/fiscal_year_id — see app/scoped_data.py."
     ),
 )
 def get_accounts_payable(client_id: str, fiscal_year_id: str, request: Request) -> Response:
@@ -421,7 +435,7 @@ def get_accounts_payable(client_id: str, fiscal_year_id: str, request: Request) 
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_accounts_payable()
+    records = scoped_data.get_accounts_payable_for_scope(client_id, fiscal_year_id)
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -434,8 +448,8 @@ def get_accounts_payable(client_id: str, fiscal_year_id: str, request: Request) 
     summary="List a fiscal year's condensed accounts payable open items",
     description=(
         "Same schema/negotiation as accounts-payable (condense is a "
-        "server-side aggregation, not a different shape). Ignores "
-        "client_id/fiscal_year_id."
+        "server-side aggregation, not a different shape). Deterministically "
+        "scoped by client_id/fiscal_year_id — see app/scoped_data.py."
     ),
 )
 def get_accounts_payable_condense(
@@ -446,7 +460,7 @@ def get_accounts_payable_condense(
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_accounts_payable_condense()
+    records = scoped_data.get_accounts_payable_condense_for_scope(client_id, fiscal_year_id)
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -459,8 +473,8 @@ def get_accounts_payable_condense(
     summary="List a fiscal year's condensed accounts receivable open items",
     description=(
         "Same OpenItem schema/negotiation as accounts-payable, plus the "
-        "receivable-only dunning_date1/2/3 fields. Ignores "
-        "client_id/fiscal_year_id."
+        "receivable-only dunning_date1/2/3 fields. Deterministically scoped "
+        "by client_id/fiscal_year_id — see app/scoped_data.py."
     ),
 )
 def get_accounts_receivable_condense(
@@ -471,7 +485,7 @@ def get_accounts_receivable_condense(
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_accounts_receivable_condense()
+    records = scoped_data.get_accounts_receivable_condense_for_scope(client_id, fiscal_year_id)
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -486,7 +500,8 @@ def get_accounts_receivable_condense(
         "Returns ArrayOfAccountingSequenceProcessed XML by default "
         "(inferred by pattern - no direct real XML evidence for this "
         "endpoint), or a bare JSON array when Accept: application/json is "
-        "sent. Ignores client_id/fiscal_year_id."
+        "sent. Deterministically scoped by client_id/fiscal_year_id — see "
+        "app/scoped_data.py."
     ),
 )
 def get_accounting_sequences_processed(
@@ -497,7 +512,7 @@ def get_accounting_sequences_processed(
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_accounting_sequences_processed()
+    records = scoped_data.get_accounting_sequences_processed_for_scope(client_id, fiscal_year_id)
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -513,8 +528,9 @@ def get_accounting_sequences_processed(
     description=(
         "Returns ArrayOfAccountingTransactionKey XML by default (inferred "
         "by pattern - no direct real XML evidence for this endpoint), or a "
-        "bare JSON array when Accept: application/json is sent. Ignores "
-        "client_id/fiscal_year_id."
+        "bare JSON array when Accept: application/json is sent. "
+        "Deterministically scoped by client_id/fiscal_year_id — see "
+        "app/scoped_data.py."
     ),
 )
 def get_accounting_transaction_keys(
@@ -525,7 +541,7 @@ def get_accounting_transaction_keys(
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_accounting_transaction_keys()
+    records = scoped_data.get_accounting_transaction_keys_for_scope(client_id, fiscal_year_id)
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -541,8 +557,9 @@ def get_accounting_transaction_keys(
     description=(
         "Returns ArrayOfAssetStocktaking XML by default (inferred by "
         "pattern - no real capture exists for this endpoint at all), or a "
-        "bare JSON array when Accept: application/json is sent. Ignores "
-        "client_id/fiscal_year_id."
+        "bare JSON array when Accept: application/json is sent. "
+        "Deterministically scoped by client_id/fiscal_year_id — see "
+        "app/scoped_data.py."
     ),
 )
 def get_assets_stocktakings(client_id: str, fiscal_year_id: str, request: Request) -> Response:
@@ -552,7 +569,11 @@ def get_assets_stocktakings(client_id: str, fiscal_year_id: str, request: Reques
         return Response(content=override.content, media_type=media_type)
 
     records = db.merge_with_stored(
-        data_store.list_assets_stocktakings(), "accounting.assets_stocktakings", AssetStocktaking
+        scoped_data.get_assets_stocktakings_for_scope(client_id, fiscal_year_id),
+        "accounting.assets_stocktakings",
+        AssetStocktaking,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
     )
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
@@ -568,8 +589,8 @@ def get_assets_stocktakings(client_id: str, fiscal_year_id: str, request: Reques
         "Returns ArrayOfPostingProposalRule XML by default (inferred by "
         "pattern - both real captures returned empty [] arrays, no field-"
         "shape evidence beyond endpoint existence), or a bare JSON array "
-        "when Accept: application/json is sent. Ignores "
-        "client_id/fiscal_year_id."
+        "when Accept: application/json is sent. Deterministically scoped by "
+        "client_id/fiscal_year_id — see app/scoped_data.py."
     ),
 )
 def get_posting_proposal_rules_incoming_invoices(
@@ -580,7 +601,9 @@ def get_posting_proposal_rules_incoming_invoices(
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_posting_proposal_rules_incoming_invoices()
+    records = scoped_data.get_posting_proposal_rules_incoming_invoices_for_scope(
+        client_id, fiscal_year_id
+    )
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -596,8 +619,8 @@ def get_posting_proposal_rules_incoming_invoices(
         "pattern - both real captures returned empty [] arrays, no field-"
         "shape evidence beyond endpoint existence; shares the same "
         "PostingProposalRule contract as the incoming variant), or a bare "
-        "JSON array when Accept: application/json is sent. Ignores "
-        "client_id/fiscal_year_id."
+        "JSON array when Accept: application/json is sent. Deterministically "
+        "scoped by client_id/fiscal_year_id — see app/scoped_data.py."
     ),
 )
 def get_posting_proposal_rules_outgoing_invoices(
@@ -608,7 +631,9 @@ def get_posting_proposal_rules_outgoing_invoices(
         media_type = "application/xml" if override.content_type == "xml" else "application/json"
         return Response(content=override.content, media_type=media_type)
 
-    records = data_store.list_posting_proposal_rules_outgoing_invoices()
+    records = scoped_data.get_posting_proposal_rules_outgoing_invoices_for_scope(
+        client_id, fiscal_year_id
+    )
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -622,8 +647,8 @@ def get_posting_proposal_rules_outgoing_invoices(
     description=(
         "Returns ArrayOfTermOfPayment XML by default (inferred by pattern - "
         "no direct real XML evidence for this endpoint), or a bare JSON "
-        "array when Accept: application/json is sent. Ignores "
-        "client_id/fiscal_year_id."
+        "array when Accept: application/json is sent. Deterministically "
+        "scoped by client_id/fiscal_year_id — see app/scoped_data.py."
     ),
 )
 def get_terms_of_payment(client_id: str, fiscal_year_id: str, request: Request) -> Response:
@@ -633,7 +658,11 @@ def get_terms_of_payment(client_id: str, fiscal_year_id: str, request: Request) 
         return Response(content=override.content, media_type=media_type)
 
     records = db.merge_with_stored(
-        data_store.list_terms_of_payment(), "accounting.terms_of_payment", TermOfPayment
+        scoped_data.get_terms_of_payment_for_scope(client_id, fiscal_year_id),
+        "accounting.terms_of_payment",
+        TermOfPayment,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
     )
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
@@ -662,9 +691,9 @@ def get_terms_of_payment(client_id: str, fiscal_year_id: str, request: Request) 
     description=(
         "New in P3 (Group B) -- JSON-only bare array (no fake dataset "
         "exists for this new resource; returns whatever's been PUT so "
-        "far). Ignores client_id/fiscal_year_id/cost_system_id, same "
-        "no-path-filtering convention as every other accounting "
-        "sub-resource in this router."
+        "far). Filtered by client_id/fiscal_year_id (architecture decision "
+        "#5's db.py scope-forwarding fix); cost_system_id is still ignored "
+        "-- the generic stored_records table has no cost_system_id column."
     ),
 )
 def get_cost_center_properties(
@@ -672,7 +701,9 @@ def get_cost_center_properties(
 ) -> list[dict[str, Any]]:
     records = [
         db.record_to_dataclass(CostCenterProperty, row)
-        for row in db.list_records("accounting.cost_center_properties")
+        for row in db.list_records(
+            "accounting.cost_center_properties", client_id=client_id, fiscal_year_id=fiscal_year_id
+        )
     ]
     return [_to_json(record) for record in records]
 
@@ -682,7 +713,9 @@ def get_cost_center_properties(
     summary="List a cost system's cost sequences",
     description=(
         "New in P3 (Group B) -- JSON-only bare array, no fake dataset. "
-        "Ignores client_id/fiscal_year_id/cost_system_id."
+        "Filtered by client_id/fiscal_year_id; cost_system_id is still "
+        "ignored -- the generic stored_records table has no "
+        "cost_system_id column."
     ),
 )
 def get_cost_sequences(
@@ -690,7 +723,9 @@ def get_cost_sequences(
 ) -> list[dict[str, Any]]:
     records = [
         db.record_to_dataclass(CostSequence, row)
-        for row in db.list_records("accounting.cost_sequences")
+        for row in db.list_records(
+            "accounting.cost_sequences", client_id=client_id, fiscal_year_id=fiscal_year_id
+        )
     ]
     return [_to_json(record) for record in records]
 
@@ -700,11 +735,9 @@ def get_cost_sequences(
     summary="List a cost sequence's cost accounting records",
     description=(
         "New in P3 (Group B) -- JSON-only bare array, no fake dataset. "
-        "Ignores cost_sequence_id along with the rest of the path -- the "
-        "generic stored_records table has no cost_sequence_id column "
-        "(architecture decision #2 says not to add one just for this "
-        "resource), same 'ignore path-param ids' convention as every "
-        "other accounting sub-resource."
+        "Filtered by client_id/fiscal_year_id; cost_system_id/"
+        "cost_sequence_id are still ignored -- the generic stored_records "
+        "table has no columns for them."
     ),
 )
 def get_cost_accounting_records(
@@ -712,7 +745,9 @@ def get_cost_accounting_records(
 ) -> list[dict[str, Any]]:
     records = [
         db.record_to_dataclass(CostAccountingRecord, row)
-        for row in db.list_records("accounting.cost_accounting_records")
+        for row in db.list_records(
+            "accounting.cost_accounting_records", client_id=client_id, fiscal_year_id=fiscal_year_id
+        )
     ]
     return [_to_json(record) for record in records]
 
@@ -722,13 +757,16 @@ def get_cost_accounting_records(
     summary="List a fiscal year's various addresses",
     description=(
         "New in P3 (Group B) -- JSON-only bare array, no fake dataset. "
-        "Ignores client_id/fiscal_year_id."
+        "Filtered by client_id/fiscal_year_id (architecture decision #5's "
+        "db.py scope-forwarding fix)."
     ),
 )
 def get_various_addresses(client_id: str, fiscal_year_id: str) -> list[dict[str, Any]]:
     records = [
         db.record_to_dataclass(VariousAddress, row)
-        for row in db.list_records("accounting.various_addresses")
+        for row in db.list_records(
+            "accounting.various_addresses", client_id=client_id, fiscal_year_id=fiscal_year_id
+        )
     ]
     return [_to_json(record) for record in records]
 
