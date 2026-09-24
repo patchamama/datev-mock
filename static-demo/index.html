@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DATEV Mock — Static Demo</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  body { padding-bottom: 3rem; background: #f8f9fa; }
+  main { max-width: 64rem; margin: 0 auto; padding: 1.5rem 1rem; }
+  code { word-break: break-all; }
+  .viewer-pre { max-height: 32rem; overflow: auto; background: #212529; color: #e9ecef; padding: 1rem; border-radius: .375rem; }
+  .scope-row { border-top: 1px solid var(--bs-border-color); }
+  .scope-row:first-child { border-top: none; }
+</style>
+</head>
+<body>
+<nav class="navbar navbar-dark bg-dark mb-4">
+  <div class="container-fluid d-flex justify-content-between align-items-center" style="max-width: 64rem; margin: 0 auto;">
+    <span class="navbar-brand mb-0 h1">DATEV Mock &mdash; Static Demo</span>
+    <a href="https://github.com/patchamama/datev-mock" target="_blank" rel="noopener" class="btn btn-outline-light btn-sm">GitHub repo</a>
+  </div>
+</nav>
+
+<main>
+
+<div class="alert alert-warning" role="alert">
+  <h5 class="alert-heading">This is a static, read-only snapshot &mdash; not the real mock</h5>
+  <p class="mb-2">
+    Everything below is pre-generated data served as plain files (GitHub
+    Pages has no server compute), for a small, fixed demo id set:
+  </p>
+  <ul class="mb-2">
+    <li>Clients: <code>demo-client-1</code>, <code>demo-client-2</code></li>
+    <li>Fiscal years (each applies to both clients): <code>demo-fy-2024</code>, <code>demo-fy-2025</code></li>
+    <li>Cost system: <code>demo-cost-system-1</code></li>
+  </ul>
+  <p class="mb-2">
+    JSON and XML are <strong>separate static files</strong> here &mdash;
+    there's no live <code>Accept</code>-header content negotiation like the
+    real mock has, since there's no request to negotiate on. There are also
+    <strong>no write endpoints</strong> (impossible on static hosting by
+    definition), and the write-derived resources (cost-center properties,
+    cost sequences, cost accounting records, various addresses) are
+    <strong>excluded</strong> &mdash; a fresh snapshot would only ever show
+    them as empty arrays, which teaches nothing and just adds clutter.
+  </p>
+  <hr>
+  <p class="mb-2">
+    To run the <strong>real, full dynamic mock</strong> locally &mdash; any
+    client/fiscal-year id you want, actual writes, a live request log, the
+    admin UI, Swagger &mdash; install it with the one-line installer from
+    this repo's
+    <a href="https://github.com/patchamama/datev-mock#install-and-run-one-line" target="_blank" rel="noopener">README &ldquo;Install and run (one line)&rdquo; section</a>,
+    then point at <code>https://127.0.0.1:58452</code> (self-signed HTTPS
+    certificate &mdash; accept the browser warning once). A few endpoints to
+    try once it's running:
+  </p>
+  <ul class="mb-0">
+    <li><code>https://127.0.0.1:58452/datev/api/master-data/v1/clients</code></li>
+    <li><code>https://127.0.0.1:58452/admin</code> &mdash; settings, CRUD, live request log</li>
+    <li><code>https://127.0.0.1:58452/docs</code> &mdash; Swagger UI</li>
+  </ul>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">Demo Data Catalog</div>
+  <div class="card-body">
+    <p class="text-muted small">
+      Every generated resource, grouped by type. Click JSON or XML to fetch
+      and display that static file below &mdash; nothing loads automatically.
+    </p>
+    <div id="catalog-loading" class="text-muted small">Loading catalog&hellip;</div>
+    <div id="catalog-error" class="alert alert-danger d-none"></div>
+    <div class="accordion" id="catalog-accordion"></div>
+  </div>
+</div>
+
+<div class="card mb-4" id="viewer-card">
+  <div class="card-header" id="viewer-title">Viewer</div>
+  <div class="card-body">
+    <p id="viewer-placeholder" class="text-muted small mb-0">
+      Select a JSON or XML link above to view its content here.
+    </p>
+    <pre id="viewer-pre" class="viewer-pre d-none"></pre>
+  </div>
+</div>
+
+</main>
+
+<script>
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function scopeLabel(scope) {
+  if (scope === "global" || !scope) return "Global";
+  var parts = [];
+  if (scope.client_id) parts.push(scope.client_id);
+  if (scope.fiscal_year_id) parts.push(scope.fiscal_year_id);
+  if (scope.cost_system_id) parts.push(scope.cost_system_id);
+  return parts.join(" / ");
+}
+
+async function showFile(path, format) {
+  var pre = document.getElementById("viewer-pre");
+  var placeholder = document.getElementById("viewer-placeholder");
+  var title = document.getElementById("viewer-title");
+  title.textContent = "Viewer — " + path;
+  pre.classList.remove("d-none");
+  placeholder.classList.add("d-none");
+  pre.textContent = "Loading…";
+  try {
+    var resp = await fetch("data/" + path);
+    if (!resp.ok) {
+      pre.textContent = "Failed to load " + path + " (HTTP " + resp.status + ")";
+      return;
+    }
+    if (format === "json") {
+      var data = await resp.json();
+      pre.textContent = JSON.stringify(data, null, 2);
+    } else {
+      pre.textContent = await resp.text();
+    }
+  } catch (err) {
+    pre.textContent = "Failed to load " + path + ": " + err;
+  }
+  document.getElementById("viewer-card").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function buildCatalog(manifest) {
+  var groups = new Map();
+  manifest.forEach(function (entry) {
+    if (!groups.has(entry.resource_name)) groups.set(entry.resource_name, []);
+    groups.get(entry.resource_name).push(entry);
+  });
+
+  var familyNames = Array.from(groups.keys()).sort();
+  var accordion = document.getElementById("catalog-accordion");
+  accordion.innerHTML = "";
+
+  familyNames.forEach(function (family, index) {
+    var entries = groups.get(family);
+    var collapseId = "catalog-collapse-" + index;
+    var headingId = "catalog-heading-" + index;
+
+    var rows = entries
+      .map(function (entry, entryIndex) {
+        var jsonBtn = entry.json_path
+          ? '<button type="button" class="btn btn-sm btn-outline-primary" data-path="' +
+            escapeHtml(entry.json_path) +
+            '" data-format="json">JSON</button>'
+          : "";
+        var xmlBtn = entry.xml_path
+          ? '<button type="button" class="btn btn-sm btn-outline-secondary" data-path="' +
+            escapeHtml(entry.xml_path) +
+            '" data-format="xml">XML</button>'
+          : "";
+        return (
+          '<div class="scope-row d-flex justify-content-between align-items-center py-2">' +
+          '<div><code>' + escapeHtml(scopeLabel(entry.scope)) + '</code>' +
+          '<div class="small text-muted">' + escapeHtml(entry.endpoint) + '</div></div>' +
+          '<div class="btn-group" role="group">' + jsonBtn + xmlBtn + '</div>' +
+          '</div>'
+        );
+      })
+      .join("");
+
+    var item = document.createElement("div");
+    item.className = "accordion-item";
+    item.innerHTML =
+      '<h2 class="accordion-header" id="' + headingId + '">' +
+      '<button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#' +
+      collapseId + '" aria-expanded="false" aria-controls="' + collapseId + '">' +
+      escapeHtml(family) + ' <span class="badge text-bg-secondary ms-2">' + entries.length + '</span>' +
+      '</button></h2>' +
+      '<div id="' + collapseId + '" class="accordion-collapse collapse" aria-labelledby="' +
+      headingId + '" data-bs-parent="#catalog-accordion">' +
+      '<div class="accordion-body p-0">' + rows + '</div></div>';
+    accordion.appendChild(item);
+  });
+
+  accordion.addEventListener("click", function (event) {
+    var btn = event.target.closest("button[data-path]");
+    if (!btn) return;
+    showFile(btn.getAttribute("data-path"), btn.getAttribute("data-format"));
+  });
+}
+
+async function loadManifest() {
+  var loading = document.getElementById("catalog-loading");
+  var errorBox = document.getElementById("catalog-error");
+  try {
+    var resp = await fetch("data/manifest.json");
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    var manifest = await resp.json();
+    buildCatalog(manifest);
+    loading.classList.add("d-none");
+  } catch (err) {
+    loading.classList.add("d-none");
+    errorBox.textContent = "Failed to load data/manifest.json: " + err;
+    errorBox.classList.remove("d-none");
+  }
+}
+
+loadManifest();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,633 @@
+[
+  {
+    "endpoint": "/datev/api/accounting/v1/clients",
+    "scope": "global",
+    "resource_name": "Accounting clients",
+    "json_path": "datev/api/accounting/v1/clients.json",
+    "xml_path": "datev/api/accounting/v1/clients.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounting-transaction-keys",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Accounting transaction keys",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounting-transaction-keys.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounting-transaction-keys.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounting-transaction-keys",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Accounting transaction keys",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounting-transaction-keys.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounting-transaction-keys.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounting-transaction-keys",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Accounting transaction keys",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounting-transaction-keys.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounting-transaction-keys.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounting-transaction-keys",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Accounting transaction keys",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounting-transaction-keys.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounting-transaction-keys.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounts-payable",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Accounts payable",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounts-payable.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounts-payable.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounts-payable",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Accounts payable",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounts-payable.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounts-payable.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounts-payable",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Accounts payable",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounts-payable.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounts-payable.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounts-payable",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Accounts payable",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounts-payable.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounts-payable.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounts-payable/condense",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Accounts payable (condensed)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounts-payable/condense.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounts-payable/condense.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounts-payable/condense",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Accounts payable (condensed)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounts-payable/condense.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounts-payable/condense.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounts-payable/condense",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Accounts payable (condensed)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounts-payable/condense.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounts-payable/condense.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounts-payable/condense",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Accounts payable (condensed)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounts-payable/condense.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounts-payable/condense.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounts-receivable/condense",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Accounts receivable (condensed)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounts-receivable/condense.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounts-receivable/condense.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounts-receivable/condense",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Accounts receivable (condensed)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounts-receivable/condense.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounts-receivable/condense.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounts-receivable/condense",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Accounts receivable (condensed)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounts-receivable/condense.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounts-receivable/condense.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounts-receivable/condense",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Accounts receivable (condensed)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounts-receivable/condense.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounts-receivable/condense.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/assets/stocktakings",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Asset stocktakings",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/assets/stocktakings.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/assets/stocktakings.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/assets/stocktakings",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Asset stocktakings",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/assets/stocktakings.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/assets/stocktakings.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/assets/stocktakings",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Asset stocktakings",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/assets/stocktakings.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/assets/stocktakings.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/assets/stocktakings",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Asset stocktakings",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/assets/stocktakings.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/assets/stocktakings.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/cost-systems/demo-cost-system-1/cost-centers",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024",
+      "cost_system_id": "demo-cost-system-1"
+    },
+    "resource_name": "Cost centers",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/cost-systems/demo-cost-system-1/cost-centers.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/cost-systems/demo-cost-system-1/cost-centers.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/cost-systems/demo-cost-system-1/cost-centers",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025",
+      "cost_system_id": "demo-cost-system-1"
+    },
+    "resource_name": "Cost centers",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/cost-systems/demo-cost-system-1/cost-centers.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/cost-systems/demo-cost-system-1/cost-centers.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/cost-systems/demo-cost-system-1/cost-centers",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024",
+      "cost_system_id": "demo-cost-system-1"
+    },
+    "resource_name": "Cost centers",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/cost-systems/demo-cost-system-1/cost-centers.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/cost-systems/demo-cost-system-1/cost-centers.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/cost-systems/demo-cost-system-1/cost-centers",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025",
+      "cost_system_id": "demo-cost-system-1"
+    },
+    "resource_name": "Cost centers",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/cost-systems/demo-cost-system-1/cost-centers.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/cost-systems/demo-cost-system-1/cost-centers.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/cost-systems",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Cost systems",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/cost-systems.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/cost-systems.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/cost-systems",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Cost systems",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/cost-systems.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/cost-systems.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/cost-systems",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Cost systems",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/cost-systems.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/cost-systems.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/cost-systems",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Cost systems",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/cost-systems.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/cost-systems.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/creditors",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Creditors",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/creditors.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/creditors.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/creditors",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Creditors",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/creditors.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/creditors.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/creditors",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Creditors",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/creditors.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/creditors.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/creditors",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Creditors",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/creditors.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/creditors.xml"
+  },
+  {
+    "endpoint": "/datev/api/dms/v1/documents",
+    "scope": "global",
+    "resource_name": "DMS documents",
+    "json_path": "datev/api/dms/v1/documents.json",
+    "xml_path": null
+  },
+  {
+    "endpoint": "/datev/api/dms/v1/domains",
+    "scope": "global",
+    "resource_name": "DMS domains",
+    "json_path": "datev/api/dms/v1/domains.json",
+    "xml_path": null
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/debitors",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Debitors",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/debitors.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/debitors.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/debitors",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Debitors",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/debitors.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/debitors.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/debitors",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Debitors",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/debitors.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/debitors.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/debitors",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Debitors",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/debitors.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/debitors.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years",
+    "scope": {
+      "client_id": "demo-client-1"
+    },
+    "resource_name": "Fiscal years",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years",
+    "scope": {
+      "client_id": "demo-client-2"
+    },
+    "resource_name": "Fiscal years",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/general-ledger-accounts",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "General ledger accounts",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/general-ledger-accounts.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/general-ledger-accounts.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/general-ledger-accounts",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "General ledger accounts",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/general-ledger-accounts.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/general-ledger-accounts.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/general-ledger-accounts",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "General ledger accounts",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/general-ledger-accounts.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/general-ledger-accounts.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/general-ledger-accounts",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "General ledger accounts",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/general-ledger-accounts.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/general-ledger-accounts.xml"
+  },
+  {
+    "endpoint": "/datev/api/master-data/v1/addressees",
+    "scope": "global",
+    "resource_name": "Master-data addressees",
+    "json_path": "datev/api/master-data/v1/addressees.json",
+    "xml_path": null
+  },
+  {
+    "endpoint": "/datev/api/master-data/v1/banks",
+    "scope": "global",
+    "resource_name": "Master-data banks",
+    "json_path": "datev/api/master-data/v1/banks.json",
+    "xml_path": null
+  },
+  {
+    "endpoint": "/datev/api/master-data/v1/clients",
+    "scope": "global",
+    "resource_name": "Master-data clients",
+    "json_path": "datev/api/master-data/v1/clients.json",
+    "xml_path": "datev/api/master-data/v1/clients.xml"
+  },
+  {
+    "endpoint": "/datev/api/master-data/v1/employees",
+    "scope": "global",
+    "resource_name": "Master-data employees",
+    "json_path": "datev/api/master-data/v1/employees.json",
+    "xml_path": null
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/posting-proposal-rules-incoming-invoices",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Posting proposal rules (incoming invoices)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/posting-proposal-rules-incoming-invoices.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/posting-proposal-rules-incoming-invoices.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/posting-proposal-rules-incoming-invoices",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Posting proposal rules (incoming invoices)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/posting-proposal-rules-incoming-invoices.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/posting-proposal-rules-incoming-invoices.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/posting-proposal-rules-incoming-invoices",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Posting proposal rules (incoming invoices)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/posting-proposal-rules-incoming-invoices.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/posting-proposal-rules-incoming-invoices.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/posting-proposal-rules-incoming-invoices",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Posting proposal rules (incoming invoices)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/posting-proposal-rules-incoming-invoices.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/posting-proposal-rules-incoming-invoices.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/posting-proposal-rules-outgoing-invoices",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Posting proposal rules (outgoing invoices)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/posting-proposal-rules-outgoing-invoices.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/posting-proposal-rules-outgoing-invoices.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/posting-proposal-rules-outgoing-invoices",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Posting proposal rules (outgoing invoices)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/posting-proposal-rules-outgoing-invoices.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/posting-proposal-rules-outgoing-invoices.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/posting-proposal-rules-outgoing-invoices",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Posting proposal rules (outgoing invoices)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/posting-proposal-rules-outgoing-invoices.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/posting-proposal-rules-outgoing-invoices.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/posting-proposal-rules-outgoing-invoices",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Posting proposal rules (outgoing invoices)",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/posting-proposal-rules-outgoing-invoices.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/posting-proposal-rules-outgoing-invoices.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounting-sequences-processed",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Processed accounting sequences",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounting-sequences-processed.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/accounting-sequences-processed.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounting-sequences-processed",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Processed accounting sequences",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounting-sequences-processed.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/accounting-sequences-processed.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounting-sequences-processed",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Processed accounting sequences",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounting-sequences-processed.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/accounting-sequences-processed.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounting-sequences-processed",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Processed accounting sequences",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounting-sequences-processed.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/accounting-sequences-processed.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/terms-of-payment",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Terms of payment",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/terms-of-payment.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2024/terms-of-payment.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/terms-of-payment",
+    "scope": {
+      "client_id": "demo-client-1",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Terms of payment",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/terms-of-payment.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-1/fiscal-years/demo-fy-2025/terms-of-payment.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/terms-of-payment",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2024"
+    },
+    "resource_name": "Terms of payment",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/terms-of-payment.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2024/terms-of-payment.xml"
+  },
+  {
+    "endpoint": "/datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/terms-of-payment",
+    "scope": {
+      "client_id": "demo-client-2",
+      "fiscal_year_id": "demo-fy-2025"
+    },
+    "resource_name": "Terms of payment",
+    "json_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/terms-of-payment.json",
+    "xml_path": "datev/api/accounting/v1/clients/demo-client-2/fiscal-years/demo-fy-2025/terms-of-payment.xml"
+  }
+]
