@@ -168,6 +168,25 @@ set "SSL_ARGS=--ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem"
 rem ---------------------------------------------------------------------
 :start_server
 set "PORT=58452"
+
+rem Check for an already-running instance before trying to bind -- without
+rem this, a double-clicked window just flashes shut on the resulting
+rem uvicorn bind error with no chance to read why (this exact symptom was
+rem reported and reproduced: another mock instance -- e.g. from a previous
+rem run that never got closed -- was still holding the port). Uses
+rem PowerShell's TcpClient instead of parsing `netstat` text, which is
+rem locale-dependent (e.g. German Windows reports "ABHÖREN", not
+rem "LISTENING" -- a text-matching check silently never fires there).
+powershell -NoProfile -Command "try { $c = New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1', %PORT%); $c.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
+if not errorlevel 1 (
+    echo ERROR: Port %PORT% is already in use -- the mock is probably
+    echo        already running. Open %SCHEME%://127.0.0.1:%PORT%/admin
+    echo        instead of starting a second instance, or close the
+    echo        existing one first.
+    pause
+    exit /b 1
+)
+
 echo [5/5] Starting the DATEV mock server on %SCHEME%://127.0.0.1:%PORT% ...
 
 rem Auto-open the default browser at /admin a couple seconds after uvicorn
@@ -182,7 +201,16 @@ rem request in clean plain text; uvicorn's own colored access log was
 rem printing a redundant second line per request, with raw ANSI escape
 rem codes on terminals that don't render them (e.g. classic cmd.exe).
 "%PYTHON_EXE%" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% %SSL_ARGS% --no-access-log
-exit /b %errorlevel%
+set "UVICORN_EXIT=%errorlevel%"
+rem Pause only on an abnormal exit (a graceful Ctrl+C stop exits 0) so a
+rem double-clicked window never just vanishes without showing why.
+if not "%UVICORN_EXIT%"=="0" (
+    echo.
+    echo uvicorn exited with an error ^(code %UVICORN_EXIT%^) -- see the
+    echo output above for details.
+    pause
+)
+exit /b %UVICORN_EXIT%
 
 rem ---------------------------------------------------------------------
 rem  Locates a usable system Python (python or py -3) reporting >= 3.9.

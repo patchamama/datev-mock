@@ -194,6 +194,19 @@ else
     SSL_ARGS=(--ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem)
 fi
 
+# Check for an already-running instance before trying to bind -- gives a
+# clear "already running" message instead of a raw uvicorn bind-error
+# traceback (same fix as start.bat's, after reproducing that exact
+# symptom there: a leftover mock instance still holding the port).
+if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
+    exec 3>&- 3<&-
+    echo "ERROR: Port $PORT is already in use -- the mock is probably"
+    echo "       already running. Open $SCHEME://127.0.0.1:$PORT/admin"
+    echo "       instead of starting a second instance, or close the"
+    echo "       existing one first."
+    exit 1
+fi
+
 echo "[5/5] Starting the DATEV mock server on $SCHEME://127.0.0.1:$PORT ..."
 
 # Auto-open the default browser at /admin a couple seconds after uvicorn
