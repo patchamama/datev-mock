@@ -24,3 +24,7 @@ docs/
 .env
 .env.py
 
+# Standalone Java sub-project with its own Git repository (spring-boot/.git)
+# -- never tracked or staged from the FastAPI repo's own index.
+spring-boot/
+
