@@ -1,0 +1,17 @@
+﻿# Maven build output
+target/
+
+# Maven Wrapper distribution cache
+.mvn/wrapper/maven-wrapper.jar
+.mvn/wrapper/dists/
+
+# IDE metadata
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
