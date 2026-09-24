@@ -16,8 +16,43 @@ capture, and additionally supports the response format documented on DATEV's
 official developer portal where the two disagree (see
 [Key decisions](#key-decisions) below).
 
+## Install and run (one line)
+
+No prerequisites needed — not even Python. These installers download the
+repository, bootstrap Python (system Python if found, otherwise a portable,
+project-local download — no system-wide install, no admin/root rights),
+install dependencies, generate the HTTPS cert, and start the server, all in
+one command:
+
+**Windows** (cmd.exe or PowerShell):
+
+```
+powershell -c "iwr -useb https://raw.githubusercontent.com/patchamama/datev-mock/main/scripts/install.bat -OutFile install.bat; .\install.bat"
+```
+
+**Linux**:
+
+```
+curl -fsSL https://raw.githubusercontent.com/patchamama/datev-mock/main/scripts/install.sh | bash
+```
+
+**macOS**:
+
+```
+curl -fsSL https://raw.githubusercontent.com/patchamama/datev-mock/main/scripts/install.sh | bash
+```
+
+Each command clones the repo into a `datev-mock/` folder in the current
+directory (or updates it if already present) and immediately starts the
+mock. Once it's running, open `https://127.0.0.1:58452/admin` (accept the
+self-signed certificate warning once) or `https://127.0.0.1:58452/docs` for
+Swagger.
+
+Already have the repo cloned? See [Quick start](#quick-start) below.
+
 ## Contents
 
+- [Install and run (one line)](#install-and-run-one-line)
 - [Status](#status)
 - [Quick start](#quick-start)
 - [Endpoints mocked](#endpoints-mocked)
@@ -63,10 +98,11 @@ See each task doc for full breakdowns, decisions, and progress logs.
 
 ## Quick start
 
-No Python installed? These scripts bootstrap a project-local Python (system
-Python if available, otherwise a portable download into this folder — no
-system-wide install, no admin rights), install dependencies, generate the
-HTTPS cert, and start the server:
+Already have the repo cloned locally? No Python installed? These scripts
+bootstrap a project-local Python (system Python if available, otherwise a
+portable download into this folder — no system-wide install, no admin
+rights), install dependencies, generate the HTTPS cert, and start the
+server:
 
 - Windows: `start.bat`
 - Linux/macOS: `./start.sh`
