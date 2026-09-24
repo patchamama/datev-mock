@@ -4,7 +4,6 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Pytest](https://img.shields.io/badge/tests-375%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5-7952B3?logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
-[![Status](https://img.shields.io/badge/status-active-success)](#status)
 
 A local FastAPI mock of DATEV's local Desktop API (the REST interface a DATEV
 workstation normally exposes on `https://<local-ip>:58452/datev/api/...`),
@@ -53,7 +52,7 @@ Already have the repo cloned? See [Quick start](#quick-start) below.
 ## Contents
 
 - [Install and run (one line)](#install-and-run-one-line)
-- [Status](#status)
+- [Epics](#epics)
 - [Quick start](#quick-start)
 - [Endpoints mocked](#endpoints-mocked)
 - [Key decisions](#key-decisions)
@@ -64,14 +63,10 @@ Already have the repo cloned? See [Quick start](#quick-start) below.
 - [Running the server](#running-the-server)
 - [Technology](#technology)
 
-## Status
+## Epics
 
-**GREEN — implemented and passing.** All 375 tests pass
-(`.venv\Scripts\python -m pytest tests/ -v`), and the server has been
-verified live over real HTTPS (the 23 original read-only endpoints, the 26
-new SQLite-backed write endpoints, the live request log, the Bootstrap admin
-UI with its full endpoint catalog and custom-override uploads, and Swagger
-UI). Eleven epics complete:
+Development is tracked as a series of epics, one task doc each under
+`odd/tasks/`:
 [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (base API),
 [`odd/tasks/datev-mock-settings.md`](odd/tasks/datev-mock-settings.md)
 (settings/admin UI),
@@ -128,6 +123,22 @@ server:
 
 Then open `https://127.0.0.1:58452/admin` (accept the self-signed cert
 warning once) or `https://127.0.0.1:58452/docs` for Swagger.
+
+Both launchers stop whatever's already listening on the target port
+before starting, so re-running after a previous instance was left running
+(or crashed) just works instead of failing with a bind error.
+
+**Command-line options** (both launchers, same flags):
+
+| Flag | Effect |
+|---|---|
+| `--port PORT` | Use a port other than the default `58452`. |
+| `--non-web` | Serve only the `/datev/api/...` REST endpoints — no `/admin` UI. Off by default (the admin UI — settings, live request log, editable datasets, custom overrides — is genuinely useful for local dev/testing). |
+
+```
+./start.sh --port 9000 --non-web        # Linux/macOS
+start.bat --port 9000 --non-web         # Windows
+```
 
 Integration client fighting the self-signed cert's trust chain (common
 with Java HTTP clients)? Set `DATEV_MOCK_HTTP=1` before starting to skip

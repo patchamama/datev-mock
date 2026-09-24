@@ -15,6 +15,25 @@ cd "$(dirname "${BASH_SOURCE[0]:-$0}")"
 
 PYTHON_EXE=""
 PORT=58452
+NON_WEB=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --port)
+            PORT="$2"
+            shift 2
+            ;;
+        --non-web)
+            NON_WEB=1
+            shift
+            ;;
+        *)
+            echo "ERROR: Unknown argument \"$1\""
+            echo "Usage: $0 [--port PORT] [--non-web]"
+            exit 1
+            ;;
+    esac
+done
 
 version_ge_39() {
     # $1 is a version string like "3.11.4"
@@ -194,17 +213,28 @@ else
     SSL_ARGS=(--ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem)
 fi
 
-# Check for an already-running instance before trying to bind -- gives a
-# clear "already running" message instead of a raw uvicorn bind-error
-# traceback (same fix as start.bat's, after reproducing that exact
-# symptom there: a leftover mock instance still holding the port).
+# Stop whatever's already bound to $PORT before trying to bind -- without
+# this, a leftover mock instance (very common during iterative local
+# testing) just produces a raw uvicorn bind-error traceback instead of
+# starting. `lsof` is the standard way to resolve a port to a PID on
+# Linux/macOS; if it's not installed, fall back to a clear message rather
+# than silently doing nothing.
 if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
     exec 3>&- 3<&-
-    echo "ERROR: Port $PORT is already in use -- the mock is probably"
-    echo "       already running. Open $SCHEME://127.0.0.1:$PORT/admin"
-    echo "       instead of starting a second instance, or close the"
-    echo "       existing one first."
-    exit 1
+    if command -v lsof >/dev/null 2>&1; then
+        EXISTING_PIDS="$(lsof -ti "tcp:$PORT" 2>/dev/null || true)"
+        if [ -n "$EXISTING_PIDS" ]; then
+            echo "Port $PORT is already in use -- stopping the existing process(es) ($EXISTING_PIDS) first ..."
+            kill -9 $EXISTING_PIDS 2>/dev/null || true
+            sleep 1
+        fi
+    else
+        echo "ERROR: Port $PORT is already in use and 'lsof' isn't available"
+        echo "       to find and stop the process holding it automatically."
+        echo "       Free the port yourself and re-run, or pass --port PORT"
+        echo "       to use a different one."
+        exit 1
+    fi
 fi
 
 echo "[5/5] Starting the DATEV mock server on $SCHEME://127.0.0.1:$PORT ..."
@@ -214,15 +244,21 @@ echo "[5/5] Starting the DATEV mock server on $SCHEME://127.0.0.1:$PORT ..."
 # Backgrounded and non-fatal: never blocks or fails server startup, and
 # falls back to a plain message in headless environments with neither
 # xdg-open (Linux) nor open (macOS) available.
-(
-    sleep 2
-    ADMIN_URL="$SCHEME://127.0.0.1:$PORT/admin"
-    xdg-open "$ADMIN_URL" >/dev/null 2>&1 || open "$ADMIN_URL" >/dev/null 2>&1 || echo "Open $ADMIN_URL in your browser."
-) &
+if [ "$NON_WEB" -eq 0 ]; then
+    (
+        sleep 2
+        ADMIN_URL="$SCHEME://127.0.0.1:$PORT/admin"
+        xdg-open "$ADMIN_URL" >/dev/null 2>&1 || open "$ADMIN_URL" >/dev/null 2>&1 || echo "Open $ADMIN_URL in your browser."
+    ) &
+fi
 
 # --no-access-log: app/request_log.py's middleware already logs every
 # request in clean plain text; uvicorn's own colored access log was
 # printing a redundant second line per request, with raw ANSI escape
 # codes on terminals that don't render them.
+# DATEV_MOCK_NON_WEB=1 (--non-web): app/main.py skips mounting the /admin
+# UI router entirely -- REST API only, not the default (the admin UI is
+# genuinely useful for most local dev/testing).
+export DATEV_MOCK_NON_WEB="$NON_WEB"
 exec "$PYTHON_EXE" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" \
     "${SSL_ARGS[@]}" --no-access-log

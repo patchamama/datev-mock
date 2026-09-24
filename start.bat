@@ -16,6 +16,27 @@ cd /d "%~dp0"
 
 set "PYTHON_EXE="
 set "USE_VENV="
+set "CUSTOM_PORT="
+set "NON_WEB=0"
+
+:parse_args
+if "%~1"=="" goto :args_done
+if /i "%~1"=="--port" (
+    set "CUSTOM_PORT=%~2"
+    shift
+    shift
+    goto :parse_args
+)
+if /i "%~1"=="--non-web" (
+    set "NON_WEB=1"
+    shift
+    goto :parse_args
+)
+echo ERROR: Unknown argument "%~1"
+echo Usage: start.bat [--port PORT] [--non-web]
+pause
+exit /b 1
+:args_done
 
 echo [1/5] Checking for a usable system Python ^(^>= 3.9^)...
 
@@ -168,38 +189,38 @@ set "SSL_ARGS=--ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem"
 rem ---------------------------------------------------------------------
 :start_server
 set "PORT=58452"
+if defined CUSTOM_PORT set "PORT=%CUSTOM_PORT%"
 
-rem Check for an already-running instance before trying to bind -- without
-rem this, a double-clicked window just flashes shut on the resulting
-rem uvicorn bind error with no chance to read why (this exact symptom was
-rem reported and reproduced: another mock instance -- e.g. from a previous
-rem run that never got closed -- was still holding the port). Uses
-rem PowerShell's TcpClient instead of parsing `netstat` text, which is
+rem Stop whatever's already bound to %PORT% before trying to bind --
+rem without this, a leftover mock instance (very common during iterative
+rem local testing) just produces a raw uvicorn bind-error traceback, or a
+rem double-clicked window flashing shut before it can be read. Uses
+rem PowerShell's Get-NetTCPConnection (structured objects, not text) to
+rem find the owning PID and stop it -- not `netstat`, whose output is
 rem locale-dependent (e.g. German Windows reports "ABHÖREN", not
 rem "LISTENING" -- a text-matching check silently never fires there).
-powershell -NoProfile -Command "try { $c = New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1', %PORT%); $c.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
-if not errorlevel 1 (
-    echo ERROR: Port %PORT% is already in use -- the mock is probably
-    echo        already running. Open %SCHEME%://127.0.0.1:%PORT%/admin
-    echo        instead of starting a second instance, or close the
-    echo        existing one first.
-    pause
-    exit /b 1
-)
+powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Write-Host \"Port %PORT% is already in use -- stopping the existing process (PID $($_.OwningProcess)) first ...\"; Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
+timeout /t 1 /nobreak >nul 2>&1
 
 echo [5/5] Starting the DATEV mock server on %SCHEME%://127.0.0.1:%PORT% ...
 
-rem Auto-open the default browser at /admin a couple seconds after uvicorn
-rem launches, in parallel via a detached PowerShell helper -- uvicorn needs
-rem a moment to actually bind the port. Non-blocking: this "start" call
-rem returns immediately and uvicorn below still runs as the normal
-rem foreground/blocking final command, exactly as before.
-start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process '%SCHEME%://127.0.0.1:%PORT%/admin'"
+if "%NON_WEB%"=="0" (
+    rem Auto-open the default browser at /admin a couple seconds after
+    rem uvicorn launches, in parallel via a detached PowerShell helper --
+    rem uvicorn needs a moment to actually bind the port. Non-blocking:
+    rem this "start" call returns immediately and uvicorn below still
+    rem runs as the normal foreground/blocking final command, exactly as
+    rem before. Skipped in --non-web mode -- there's no /admin to open.
+    start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process '%SCHEME%://127.0.0.1:%PORT%/admin'"
+)
 
 rem --no-access-log: app/request_log.py's middleware already logs every
 rem request in clean plain text; uvicorn's own colored access log was
 rem printing a redundant second line per request, with raw ANSI escape
 rem codes on terminals that don't render them (e.g. classic cmd.exe).
+rem DATEV_MOCK_NON_WEB (--non-web): app/main.py skips mounting the /admin
+rem UI router entirely -- REST API only, not the default.
+set "DATEV_MOCK_NON_WEB=%NON_WEB%"
 "%PYTHON_EXE%" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% %SSL_ARGS% --no-access-log
 set "UVICORN_EXIT=%errorlevel%"
 rem Pause only on an abnormal exit (a graceful Ctrl+C stop exits 0) so a

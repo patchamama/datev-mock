@@ -6,6 +6,7 @@ Swagger UI is available at `/docs` (FastAPI default) for manual testing.
 """
 from __future__ import annotations
 
+import os
 import sys
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -40,5 +41,11 @@ app.middleware("http")(request_log.log_requests_middleware)
 app.include_router(diagnostics.router)
 app.include_router(master_data.router)
 app.include_router(accounting.router)
-app.include_router(admin.router)
 app.include_router(dms.router)
+
+# DATEV_MOCK_NON_WEB=1 (start.sh/start.bat --non-web): serve only the
+# DATEV REST API, no /admin UI -- not the default, since the admin UI is
+# genuinely useful for local dev/testing (settings, live request log,
+# editable datasets, custom overrides).
+if os.environ.get("DATEV_MOCK_NON_WEB") != "1":
+    app.include_router(admin.router)
