@@ -1,23 +1,23 @@
 ﻿# Spring Boot parity roadmap
 
-> **Decision:** `spring-boot/` is a separate Java project with its own initialized `.git` repository; do not use the FastAPI repository's Git index for Java work.
+> **Superseded decision (SB0, held through SB3):** `spring-boot/` was a separate Java project with its own initialized `.git` repository. **Merged into this repo after SB3** via `git subtree add --prefix=spring-boot`, commit `82f6cb8`, once the confirmed "same frontend, configurable backend URL" architecture (see the Frontend/backend selection row below) made one root repo the simpler long-term layout for sharing a frontend across both backends. Full history preserved: `32725b1`, `60bbfb2`, `c69666d`, `94d8664` are real ancestors of current `main` (verified with `git merge-base --is-ancestor`). A backup of the pre-merge standalone working tree is kept outside the repo at `C:\Users\eloadmin\spring-boot-standalone-backup` (safe to delete once you're satisfied with the merge). From SB4 onward, Java work commits directly to this repo's own index — no more separate repo, no more `-c safe.directory=...` workaround.
 
 ## Remaining path
 
-1. Restore Maven Central availability or provide an approved local Maven distribution.
-2. Resume SB1 with strict TDD: observe RED, implement the smallest health boundary, then observe GREEN.
-3. Implement the remaining epics in dependency order.
-4. Keep every completed epic as a reviewable work-unit commit in the standalone Java repository.
+1. ~~Restore Maven Central availability~~ — done; not a real blocker (see SB1 status).
+2. ~~Resume SB1~~ — done.
+3. Implement the remaining epics (SB4+) in dependency order, now directly in this repo under `spring-boot/`.
+4. Keep every completed epic as a reviewable work-unit commit.
 
 ## Contract and boundaries
 
 | Topic | Decision |
 | --- | --- |
 | Contract source | Current FastAPI code and tests are authoritative. The historical Java JAR/reference is supplementary. |
-| Java project | `spring-boot/`; Java 21 is verified at `C:\ELO\java\bin\java.exe` (Zulu OpenJDK 21.0.1 with `javac` and `jar`). |
+| Java project | `spring-boot/`, now a normal subdirectory of this repo (merged from its own history-bearing repo after SB3); Java 21 is verified at `C:\ELO\java\bin\java.exe` (Zulu OpenJDK 21.0.1 with `javac` and `jar`). |
 | Compatibility | Preserve paths, status codes, request/response shapes, multipart field `file`, XML/JSON negotiation, state semantics, and SSE. |
 | Excluded root work | Do not alter existing edits in `.github/workflows/release.yml`, `README.md`, `app/main.py`, or `start.sh`. |
-| Delivery | One conventional work-unit commit per coherent epic in `spring-boot/.git`; push, PR, and merge remain user decisions. |
+| Delivery | One conventional work-unit commit per coherent epic, in this repo's own index (from SB4 onward); push, PR, and merge remain user decisions. |
 | TDD | RED -> GREEN -> REFACTOR is mandatory. No production behavior is claimed without observed evidence. |
 | Frontend/backend selection | "Same frontend for both backends" is implemented as a configurable target, not a hardcoded FastAPI/Java switch. The existing `/admin` frontend gains a settings field for the API base URL (scheme+host+port) it talks to; all its API calls go through that configurable base instead of assuming same-origin. Default stays same-origin (today's behavior). This also lets the same frontend point at the real DATEV production API, a DATEV test endpoint, or any other DATEV-compatible mock available locally (e.g. `C:\Mockup\serve-0.1-generate.jar`) for interoperability testing — not just this project's two backends. Scoped into SB9; needs CORS enabled on both this project's backends so cross-origin calls from the frontend's own origin work when the target differs from it. |
 
@@ -141,9 +141,8 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 
 - Java 21 is verified at `C:\ELO\java\bin\java.exe`: Azul OpenJDK 21.0.1, with `javac.exe` and `jar.exe`. Maven 3.9.16 is verified at `C:\apache-maven-3.9.16\\bin\\mvn.cmd` when `JAVA_HOME=C:\\ELO\\java`; it is not on the system `PATH`.
 - Maven Central is reachable and dependency resolution works against the default `~/.m2` repository; the earlier "Permission denied" report did not reproduce and is presumed to have been a transient/local environment issue in that session, not a real network restriction. No blocker remains for further epics.
-- `spring-boot/.git` exists independently, with no configured remote yet (local-only); SB0, SB1, SB2, and SB3 are committed (`32725b1`, `60bbfb2`, `c69666d`, `94d8664`) on branch `feat/sb1-build-foundation` with the repository-local author identity configured.
-- The FastAPI root repository's own `.gitignore` now excludes `spring-boot/` so it is never swept into the FastAPI repo's index.
-- `mvn test` on `spring-boot/` currently reports `Tests run: 50, Failures: 0, Errors: 0`.
+- `spring-boot/` was merged from its own standalone repository into this one via `git subtree add --prefix=spring-boot spring-boot-origin feat/sb1-build-foundation`, commit `82f6cb8` on `main`. SB0-SB3 (`32725b1`, `60bbfb2`, `c69666d`, `94d8664`) are verified real ancestors of `main`. The temporary `spring-boot-origin` remote was removed after the merge. A pre-merge backup of the standalone working tree remains at `C:\Users\eloadmin\spring-boot-standalone-backup` (outside this repo) until the user confirms it can be deleted.
+- `mvn test` from the merged `spring-boot/` re-verified after the merge: `Tests run: 50, Failures: 0, Errors: 0`.
 
 ## Next action
 
