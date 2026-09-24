@@ -124,7 +124,7 @@ attempt that, it deliberately covers only the fixed demo set.
       `static-demo/**`-triggered + manual dispatch). YAML validated.
       Documents the one-time "enable Pages in repo settings" step as an
       explicit handoff to the user, doesn't assume it's done.
-- [ ] P4 — README section (what this is, link to the Pages URL once
+- [x] P4 — README section (what this is, link to the Pages URL once
       known, how to regenerate the static data), commit + push per
       phase (established workflow).
 
@@ -182,3 +182,14 @@ same pattern as the exe-release epic's `release.yml`/README phases).
   (Settings → Pages → Source: "GitHub Actions") no git/CLI action in this
   session can set. Until that's done once, this workflow will run but the
   deployment step will fail with a "Pages not enabled" style error.
+- 2026-09-24: P4 done. README: 10th epic entry in Status, new "Static
+  demo on GitHub Pages" Key Decisions subsection (what it is, why it's
+  honest given the referential-integrity epic's determinism, how to
+  regenerate, the one-time Pages-enable handoff repeated here too so it's
+  visible without reading this task doc). Full regression re-run:
+  369/369, unchanged (docs-only phase).
+  This closes the epic: a static, read-only demo snapshot for a fixed set
+  of demo ids, honestly framed (banner states its own limitations up
+  front), publishable to GitHub Pages via official-actions-only CI —
+  pending the user's one-time repo setting to actually go live. Committed
+  across 4 phases (P1-P4), all pushed to `main`.

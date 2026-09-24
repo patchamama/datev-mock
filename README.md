@@ -71,7 +71,7 @@ Already have the repo cloned? See [Quick start](#quick-start) below.
 verified live over real HTTPS (the 23 original read-only endpoints, the 26
 new SQLite-backed write endpoints, the live request log, the Bootstrap admin
 UI with its full endpoint catalog and custom-override uploads, and Swagger
-UI). Nine epics complete:
+UI). Ten epics complete:
 [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (base API),
 [`odd/tasks/datev-mock-settings.md`](odd/tasks/datev-mock-settings.md)
 (settings/admin UI),
@@ -97,14 +97,17 @@ now only partial, in-memory-by-default philosophy),
 [`odd/tasks/datev-mock-exe-release.md`](odd/tasks/datev-mock-exe-release.md)
 (one-line installers for Windows/Linux/macOS, a standalone `datev-mock.exe`
 built and published via a tag-triggered GitHub Actions release workflow),
-and
 [`odd/tasks/datev-mock-referential-integrity.md`](odd/tasks/datev-mock-referential-integrity.md)
 (deterministic per-scope fake-data generation so `client_id`/
 `fiscal_year_id`/`cost_system_id` actually filter GET responses instead of
 being ignored, real cross-references between resources instead of
 unrelated/coincidental ids, and 422 write-side validation for every
 FK-shaped write field — see [Referential integrity and path-param
-scoping](#referential-integrity-and-path-param-scoping) below).
+scoping](#referential-integrity-and-path-param-scoping) below), and
+[`odd/tasks/datev-mock-static-demo-gh-pages.md`](odd/tasks/datev-mock-static-demo-gh-pages.md)
+(a static, read-only snapshot of a fixed demo id set published to GitHub
+Pages — see [Static demo on GitHub
+Pages](#static-demo-on-github-pages) below).
 See each task doc for full breakdowns, decisions, and progress logs.
 
 ## Quick start
@@ -397,6 +400,45 @@ by arithmetic coincidence. This epic replaced both:
   (`domains`/`documents`) were already correctly modeled and stay global/
   unscoped — this epic only touched the accounting sub-resources nested
   under a client/fiscal-year path.
+
+### Static demo on GitHub Pages
+
+GitHub Pages is static hosting only — no server compute, no arbitrary
+port, so the real dynamic mock (writes, any client/fiscal-year id, the
+live request log, the admin UI) can't run there; its whole purpose is
+emulating a *local* DATEV Desktop API in the first place. What GitHub
+Pages *can* honestly serve: a **static, read-only snapshot** of a small,
+fixed demo id set.
+
+- `scripts/generate_static_demo.py` snapshots every Group-A GET endpoint
+  (the ones with real fake data — see [Extended endpoint
+  sourcing](#extended-endpoint-sourcing) above) for 2 demo clients ×
+  2 demo fiscal years × 1 demo cost system, in both JSON and XML where the
+  live endpoint actually supports both (detected from the real response's
+  content type, not assumed), into `static-demo/data/`, mirroring the real
+  URL paths. Group B write-derived resources are excluded — a fresh
+  snapshot would only ever show them empty.
+- Deterministic, thanks to [Referential integrity and path-param
+  scoping](#referential-integrity-and-path-param-scoping) above: the same
+  demo scope always generates the same, internally-consistent data, so
+  this snapshot is a faithful mirror, not an approximation — a demo
+  creditor's `addressee_id` really does resolve in the demo addressees
+  file, same guarantee the live mock gives.
+- `static-demo/index.html` is a small, dependency-free Bootstrap page: a
+  banner up top spelling out exactly what this is and isn't (static,
+  fixed demo ids, no writes, no `Accept`-header negotiation — JSON/XML are
+  separate files here) plus how to run the real mock locally instead, and
+  a catalog below it (built from `static-demo/data/manifest.json`) to
+  browse every snapshotted resource.
+- Published via `.github/workflows/gh-pages.yml` (official
+  `actions/upload-pages-artifact` + `actions/deploy-pages`, no
+  third-party action) on every push touching `static-demo/**`. Requires
+  a one-time repo setting (**Settings → Pages → Source: "GitHub
+  Actions"**) to actually go live.
+- Regenerate after any change to `fake_data.py`'s generation logic:
+  `.venv\Scripts\python scripts\generate_static_demo.py` (Windows) /
+  `.venv/bin/python scripts/generate_static_demo.py` (Linux/macOS), then
+  commit the resulting `static-demo/data/` diff.
 
 ### Settings & admin UI
 
