@@ -4,6 +4,11 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Pytest](https://img.shields.io/badge/tests-375%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5-7952B3?logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
+[![Java](https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white)](spring-boot/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](spring-boot/)
+
+**[Live demo (GitHub Pages)](https://patchamama.github.io/datev-mock/)** ·
+**[Latest release (download)](https://github.com/patchamama/datev-mock/releases/latest)**
 
 A local FastAPI mock of DATEV's local Desktop API (the REST interface a DATEV
 workstation normally exposes on `https://<local-ip>:58452/datev/api/...`),
