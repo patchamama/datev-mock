@@ -1,6 +1,9 @@
 ﻿# Maven build output
 target/
 
+# Project-local Maven repository (optional -Dmaven.repo.local target)
+.m2/
+
 # Maven Wrapper distribution cache
 .mvn/wrapper/maven-wrapper.jar
 .mvn/wrapper/dists/
