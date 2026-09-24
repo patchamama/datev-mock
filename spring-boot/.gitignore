@@ -18,3 +18,9 @@ target/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Runtime local state (SB4: SQLite write-overlay store)
+datev_mock.db
+datev_mock.db-journal
+datev_mock.db-wal
+datev_mock.db-shm

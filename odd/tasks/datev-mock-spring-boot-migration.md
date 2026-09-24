@@ -29,7 +29,7 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - [x] **SB1 — Establish build and strict-TDD foundation**
 - [x] **SB2 — Shared DATEV contracts, XML, and format negotiation**
 - [x] **SB3 — Deterministic mock generation and read-state composition**
-- [ ] **SB4 — SQLite overlays, validation, and reset semantics**
+- [x] **SB4 — SQLite overlays, validation, and reset semantics**
 - [ ] **SB5 — Master-data API parity**
 - [ ] **SB6 — Accounting read API parity**
 - [ ] **SB7 — Accounting write API parity**
@@ -79,7 +79,7 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - **Checks:** Persistence/restart tests, validation matrix, reset tests, and failure-status parity tests.
 - **Route/dependency evidence:** `app/db.py`, write-endpoint tests, `tests/test_db.py`; shared dependency for master-data and accounting writes.
 - **Delivery boundary:** One persistence/validation commit.
-- **Status:** Planned; depends on SB3.
+- **Status:** **Complete.** Ported `app/db.py`'s generic write-overlay module to Java: `com.elo.datevmock.store.StoredRecordStore` (SQLite via `org.xerial:sqlite-jdbc`, one `stored_records` table keyed on `(resource_type, record_id)`, a short-lived JDBC connection per call — same choice FastAPI made). Full CRUD parity: `upsertRecord`/`getRecord`/`listRecords`(+client/fiscal-year filters)/`deleteRecord`/`deleteRecords`(bulk)/`reset`/`listAllWithMeta`, plus the `created_at`-preserved/`updated_at`-changed upsert contract — every case in `tests/test_db.py` has a matching JUnit test (`StoredRecordStoreTest`, 12 tests), plus one FastAPI doesn't have: `writtenRecordSurvivesASimulatedRestart` opens a second `StoredRecordStore` instance against the same file to prove restart persistence for real. `RecordMapper` ports `record_to_dataclass`/`merge_with_stored` via reflection over Java record components (type-appropriate defaults for missing fields, `nilFields`, a `fieldMap` for source-key translation, stored-wins-on-shared-id union) — `RecordMapperTest`, 6 tests, exercised against the real `CostCenter` model from SB2. `ReferenceValidation`/`ValidationException` port `_validate_reference`'s 422-on-unknown-reference contract (`ReferenceValidationTest`, 3 tests) for SB5-SB7 controllers to call once they exist. `mvn test`: `Tests run: 71, Failures: 0, Errors: 0` (50 pre-existing + 21 new). Real RED observed before each class (compiler "Symbol nicht gefunden"). Reset semantics note: FastAPI's actual `/admin/api/reset` endpoint (`app/routers/admin.py::reset_data`) only resets the legacy `app/data_store.py` in-memory demo dataset, NOT `app/db.py`'s SQLite store, `app/scoped_data.py`'s caches, or `app/overrides.py` — there is no unified reset endpoint to port today. `StoredRecordStore.reset()` (matching `db.py::reset()`) is the correct SB4-scope unit; wiring a unified admin reset action across all four subsystems, if wanted, belongs to SB9 (admin API) alongside the rest of that endpoint surface. Not in scope here: no HTTP controllers (still SB5-SB7) and no wired-up conflict/not-found status codes beyond the 422 reference-validation contract, since FastAPI's own write endpoints don't raise 404/409 either (upsert-over-fake semantics, confirmed by reading `app/routers/accounting.py`). Commit: `a80d74d` (`feat(sb4): SQLite write-overlay store, record mapping, and reference validation`).
 
 ### SB5 — Master-data API parity
 - **Scope:** Client, addressee, bank, and employee reads/writes under `/datev/api/master-data/v1/*`.
@@ -142,8 +142,8 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - Java 21 is verified at `C:\ELO\java\bin\java.exe`: Azul OpenJDK 21.0.1, with `javac.exe` and `jar.exe`. Maven 3.9.16 is verified at `C:\apache-maven-3.9.16\\bin\\mvn.cmd` when `JAVA_HOME=C:\\ELO\\java`; it is not on the system `PATH`.
 - Maven Central is reachable and dependency resolution works against the default `~/.m2` repository; the earlier "Permission denied" report did not reproduce and is presumed to have been a transient/local environment issue in that session, not a real network restriction. No blocker remains for further epics.
 - `spring-boot/` was merged from its own standalone repository into this one via `git subtree add --prefix=spring-boot spring-boot-origin feat/sb1-build-foundation`, commit `82f6cb8` on `main`. SB0-SB3 (`32725b1`, `60bbfb2`, `c69666d`, `94d8664`) are verified real ancestors of `main`. The temporary `spring-boot-origin` remote was removed after the merge. A pre-merge backup of the standalone working tree remains at `C:\Users\eloadmin\spring-boot-standalone-backup` (outside this repo) until the user confirms it can be deleted.
-- `mvn test` from the merged `spring-boot/` re-verified after the merge: `Tests run: 50, Failures: 0, Errors: 0`.
+- `mvn test`: `Tests run: 71, Failures: 0, Errors: 0` after SB4 (`sqlite-jdbc` 3.46.1.3 added to `pom.xml`; `datev_mock.db*` gitignored under `spring-boot/`, mirroring the FastAPI root `.gitignore`).
 
 ## Next action
 
-**Implement SB4 (SQLite overlays, validation, and reset semantics) with strict TDD, using `app/db.py`, the write-endpoint tests, and `tests/test_db.py` in the FastAPI project as the authoritative contract.**
+**Implement SB5 (master-data API parity) with strict TDD, using `app/routers/master_data.py` and its tests in the FastAPI project as the authoritative contract.**
