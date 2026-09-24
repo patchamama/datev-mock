@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Pytest](https://img.shields.io/badge/tests-369%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
+[![Pytest](https://img.shields.io/badge/tests-373%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5-7952B3?logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
 [![Status](https://img.shields.io/badge/status-active-success)](#status)
 
@@ -66,12 +66,12 @@ Already have the repo cloned? See [Quick start](#quick-start) below.
 
 ## Status
 
-**GREEN — implemented and passing.** All 369 tests pass
+**GREEN — implemented and passing.** All 373 tests pass
 (`.venv\Scripts\python -m pytest tests/ -v`), and the server has been
 verified live over real HTTPS (the 23 original read-only endpoints, the 26
 new SQLite-backed write endpoints, the live request log, the Bootstrap admin
 UI with its full endpoint catalog and custom-override uploads, and Swagger
-UI). Ten epics complete:
+UI). Eleven epics complete:
 [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (base API),
 [`odd/tasks/datev-mock-settings.md`](odd/tasks/datev-mock-settings.md)
 (settings/admin UI),
@@ -107,7 +107,12 @@ scoping](#referential-integrity-and-path-param-scoping) below), and
 [`odd/tasks/datev-mock-static-demo-gh-pages.md`](odd/tasks/datev-mock-static-demo-gh-pages.md)
 (a static, read-only snapshot of a fixed demo id set published to GitHub
 Pages — see [Static demo on GitHub
-Pages](#static-demo-on-github-pages) below).
+Pages](#static-demo-on-github-pages) below), and
+[`odd/tasks/datev-mock-expand-nested-content.md`](odd/tasks/datev-mock-expand-nested-content.md)
+(real `expand=all` nested content for creditors/debitors, spec-grounded
+per a fresh official-spec extraction, plus an RFC3339 timestamp fix found
+via live debugging of a real integration client — see [Expand and nested
+content](#expand-and-nested-content) below).
 See each task doc for full breakdowns, decisions, and progress logs.
 
 ## Quick start
@@ -448,6 +453,85 @@ fixed demo id set.
   `.venv/bin/python scripts/generate_static_demo.py` (Linux/macOS), then
   commit the resulting `static-demo/data/` diff.
 
+### Expand and nested content
+
+`GET .../creditors` and `GET .../debitors` leave `addresses`/`banks`/
+`communications`/`accounting_information`/`legal_person`/`natural_person`/
+`not_specified_person` nil by default — confirmed real DATEV behavior
+(real-data-reconciliation epic), not a gap. Pass `?expand=all` to get them
+populated with real, spec-shaped, deterministic content instead (same
+scope/id always returns the same expanded content):
+
+```
+GET /datev/api/accounting/v1/clients/{client_id}/fiscal-years/{fiscal_year_id}/creditors?expand=all
+```
+
+`expand` is the **only** query parameter this mock reads and acts on —
+`select`/`filter`/`skip`/`top` are still uniformly ignored (this project's
+established "support a query param only when a real consumer needs it"
+principle; every other documented DATEV query param has never had a
+concrete consumer ask for it).
+
+This epic also fixed a genuine bug found via a real integration client:
+a couple of generated timestamps (and the shared `_random_timestamp()`
+helper behind most of this mock's dates) were missing their RFC3339 zone
+offset (`"...T00:00:00.000"` instead of `"...T00:00:00.000+01:00"`) —
+harmless to most JSON consumers, but a strict Java client's
+`OffsetDateTime.parse()` rejects a naive date-time string outright. Fixed
+at the source; every generated timestamp now includes the offset.
+
+### Trusting the mock's TLS certificate (Java / enterprise HTTP clients)
+
+The mock's self-signed certificate (`certs/cert.pem`) is fine for a
+browser (accept the one-time warning) or `curl -k`, but a strict Java
+HTTP client — the kind generated for enterprise integrations like ELO's
+DATEV connector — validates the certificate chain by default and will
+fail with something like:
+
+```
+javax.net.ssl.SSLHandshakeException: PKIX path building failed:
+sun.security.provider.certpath.SunCertPathBuilderException: unable to
+find valid certification path to requested target
+```
+
+even with a client-side "trust all hosts/certificates" toggle enabled, if
+that toggle doesn't actually cover the code path making the request. The
+reliable fix is importing the mock's certificate directly into the
+JVM's truststore the integration client actually runs on:
+
+1. **Start the mock at least once** so `certs/cert.pem` exists (`start.sh`/
+   `start.bat` generate it on first run if missing).
+2. **Find the JVM your integration client uses** — not necessarily your
+   system `java`; an enterprise product often ships its own bundled
+   runtime (e.g. `<product-install-dir>\java\bin\java.exe`). Confirm its
+   version and locate its truststore, normally at
+   `<that-jvm-dir>/lib/security/cacerts` (default password `changeit`
+   unless the product changed it).
+3. **Import the certificate** (`keytool` ships with every JDK):
+   ```bat
+   "<jvm-dir>\bin\keytool.exe" -importcert ^
+     -keystore "<jvm-dir>\lib\security\cacerts" ^
+     -storepass changeit ^
+     -alias datev-mock ^
+     -file "<path-to-this-repo>\certs\cert.pem" ^
+     -noprompt
+   ```
+   (`keytool` prints a warning suggesting its newer `-cacerts` convenience
+   flag — don't combine it with an explicit `-keystore`, they conflict;
+   the explicit `-keystore` form above works on every JDK version.)
+4. **Restart the service/process that embeds that JVM** — a truststore is
+   read once at JVM startup, so an already-running process won't pick up
+   the new entry until it's restarted.
+5. **Point the client at `https://` on this mock's port** (not `http://`
+   — TLS is mandatory here, matching the real DATEV Desktop API; see
+   [Quick start](#quick-start) for the `DATEV_MOCK_HTTP=1` escape hatch
+   if TLS trust genuinely can't be arranged for a given client).
+
+To verify the import worked without restarting anything yet:
+```bat
+"<jvm-dir>\bin\keytool.exe" -list -keystore "<jvm-dir>\lib\security\cacerts" -storepass changeit -alias datev-mock
+```
+
 ### Settings & admin UI
 
 `https://127.0.0.1:58452/admin` — a Bootstrap 5 in-browser page with:
@@ -629,7 +713,7 @@ DATEV-Mock/
 │   ├── datev-mock-custom-overrides.md      # upload/override system: same, for that epic
 │   ├── datev-mock-real-data-reconciliation.md  # reconciled every endpoint against real DATEV data: same, for that epic
 │   └── datev-mock-write-endpoints-and-observability.md  # 26 write endpoints + SQLite + live log: same, for that epic
-├── tests/                     # full test suite — 369/369 passing
+├── tests/                     # full test suite — 373/373 passing
 ├── start.bat / start.sh       # bootstrap Python (portable if needed) + deps + run, one step
 ├── settings.json              # git-ignored, created on first settings change
 ├── datev_mock.db              # git-ignored, created on first write to any of the 26 new write endpoints
@@ -651,7 +735,7 @@ python -m venv .venv
 .venv\Scripts\python -m pytest tests/ -v
 ```
 
-All 369 tests pass.
+All 373 tests pass.
 
 ## Running the server
 

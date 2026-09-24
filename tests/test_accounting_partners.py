@@ -190,6 +190,55 @@ def test_creditors_do_not_populate_accounting_information(client):
         assert record.get("accounting_information") is None
 
 
+def test_creditors_expand_all_populates_nested_content(client):
+    """`expand=all` (epic `datev-mock-expand-nested-content`, P2) is the
+    one query param this mock actually reads and acts on — without it,
+    the fields above stay nil (confirmed real DATEV default behavior,
+    tests above); with it, they're populated with real, spec-shaped
+    content instead."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    url = CREDITORS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id) + "?expand=all"
+    response = client.get(url, headers=JSON_ACCEPT_HEADERS)
+    assert response.status_code == 200
+    records = response.json()
+    assert records, "no creditor records returned"
+
+    record = records[0]
+    assert record["addresses"] and record["addresses"][0]["id"]
+    assert record["banks"] and record["banks"][0]["id"]
+    assert record["communications"] and record["communications"][0]["id"]
+    assert record["accounting_information"] is not None
+    assert record.get("legal_person") is not None or record.get("natural_person") is not None
+
+
+def test_creditors_expand_all_is_deterministic_per_scope(client):
+    """Same `(client_id, fiscal_year_id)` scope, `expand=all` twice, must
+    return byte-identical expanded content (architecture decision #4)."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    url = CREDITORS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id) + "?expand=all"
+    first = client.get(url, headers=JSON_ACCEPT_HEADERS).json()
+    second = client.get(url, headers=JSON_ACCEPT_HEADERS).json()
+    assert first == second
+
+
+def test_creditors_expand_all_json_and_xml_agree(client):
+    """`expand=all` must render correctly in both formats — this is
+    exactly where the pre-existing XML `repr()`-string bug (fixed
+    alongside `expand=all`, P2) would resurface if it regressed."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    url = CREDITORS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id) + "?expand=all"
+    json_response = client.get(url, headers=JSON_ACCEPT_HEADERS)
+    xml_response = client.get(url, headers=XML_ACCEPT_HEADERS)
+    assert json_response.status_code == 200
+    assert xml_response.status_code == 200
+
+    root = ET.fromstring(xml_response.text)
+    creditor_el = next(iter(root))
+    addresses_el = _field(creditor_el, "Addresses")
+    assert not _is_nil(addresses_el)
+    assert len(addresses_el) >= 1
+
+
 def test_creditor_eu_vat_fields_are_genuinely_optional(client):
     """`eu_vat_id_country_code`/`eu_vat_id_number` are the only 2 genuinely
     optional fields in the real 13-field shape — at least one record must
@@ -297,6 +346,44 @@ def test_debitors_do_not_populate_accounting_information(client):
 
     for record in records:
         assert record.get("accounting_information") is None
+
+
+def test_debitors_expand_all_populates_nested_content_with_real_enum_values(client):
+    """Companion to the creditors `expand=all` tests above. Also guards
+    against the specific bug found via a real integration client (epic
+    `datev-mock-expand-nested-content`, follow-up fix): the accounting-
+    information enum fields must be real `datev.debitor-accounting-
+    information` spec members, not invented placeholder tokens — a strict
+    Java enum deserializer rejects anything else with the same generic
+    error a missing RFC3339 offset produces."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    url = DEBITORS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id) + "?expand=all"
+    response = client.get(url, headers=JSON_ACCEPT_HEADERS)
+    assert response.status_code == 200
+    records = response.json()
+    assert records, "no debitor records returned"
+
+    record = records[0]
+    assert record["addresses"] and record["addresses"][0]["id"]
+    assert record["banks"] and record["banks"][0]["id"]
+    ai = record["accounting_information"]
+    assert ai is not None
+    real_dunning_procedures = {
+        "not_specified",
+        "first_dun",
+        "second_dun",
+        "first_and_second_dun",
+        "third_dun",
+        "second_and_third_dun",
+        "first_second_and_third_dun",
+        "no_dun",
+    }
+    assert ai["dunning_procedure"] in real_dunning_procedures
+    assert not ai["dunning_procedure"].startswith("dunning_procedure_option")
+    # Every generated date-time string must carry an RFC3339 zone offset
+    # (the other half of the same real-integration-client-found bug).
+    assert record["date_last_modification"][-6] in ("+", "-")
+    assert record["addresses"][0]["valid_from"][-6] in ("+", "-")
 
 
 # --- XML content negotiation (epic `datev-mock-real-data-reconciliation`,
