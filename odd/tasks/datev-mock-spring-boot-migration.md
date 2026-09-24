@@ -19,6 +19,7 @@
 | Excluded root work | Do not alter existing edits in `.github/workflows/release.yml`, `README.md`, `app/main.py`, or `start.sh`. |
 | Delivery | One conventional work-unit commit per coherent epic in `spring-boot/.git`; push, PR, and merge remain user decisions. |
 | TDD | RED -> GREEN -> REFACTOR is mandatory. No production behavior is claimed without observed evidence. |
+| Frontend/backend selection | "Same frontend for both backends" is implemented as a configurable target, not a hardcoded FastAPI/Java switch. The existing `/admin` frontend gains a settings field for the API base URL (scheme+host+port) it talks to; all its API calls go through that configurable base instead of assuming same-origin. Default stays same-origin (today's behavior). This also lets the same frontend point at the real DATEV production API, a DATEV test endpoint, or any other DATEV-compatible mock available locally (e.g. `C:\Mockup\serve-0.1-generate.jar`) for interoperability testing — not just this project's two backends. Scoped into SB9; needs CORS enabled on both this project's backends so cross-origin calls from the frontend's own origin work when the target differs from it. |
 
 The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, and conditionally mounted admin UI/API. Read behavior combines deterministic mock data, SQLite-backed write overlays, content negotiation, overrides, and a request-log SSE stream.
 
@@ -113,9 +114,9 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - **Status:** Planned; depends on SB2–SB3.
 
 ### SB9 — Admin frontend/API/settings/override/log/SSE compatibility
-- **Scope:** Existing `/admin` frontend and `/admin/api/*`: settings; master-data/accounting management; reset; stored records; multipart `file` override upload/resolve/list/update/delete; request logs; and `/admin/api/logs/stream` SSE.
-- **Acceptance:** The existing frontend works against Spring unchanged; admin data operations, settings, overrides, logging limits, and live SSE behavior match FastAPI.
-- **Checks:** Ported `test_admin_api.py`, admin-page JS syntax check, override API/integration tests, request-log tests, multipart/SSE API checks, and manual admin smoke test.
+- **Scope:** Existing `/admin` frontend and `/admin/api/*`: settings; master-data/accounting management; reset; stored records; multipart `file` override upload/resolve/list/update/delete; request logs; and `/admin/api/logs/stream` SSE. Also add a frontend "API base URL" setting (scheme+host+port, e.g. `https://127.0.0.1:58452` or `https://127.0.0.1:58553`) that all frontend API calls route through instead of assuming same-origin, defaulting to same-origin; enable CORS on both FastAPI and Spring Boot backends for cross-origin calls from the admin frontend's own origin.
+- **Acceptance:** The existing frontend works against Spring unchanged; admin data operations, settings, overrides, logging limits, and live SSE behavior match FastAPI. The base-URL setting also lets the same frontend page successfully call the real DATEV production/test API or another local DATEV-compatible mock (e.g. `C:\Mockup\serve-0.1-generate.jar`) without code changes, limited only by that target's own auth/TLS/CORS posture.
+- **Checks:** Ported `test_admin_api.py`, admin-page JS syntax check, override API/integration tests, request-log tests, multipart/SSE API checks, base-URL-switch manual smoke test against both backends, and manual admin smoke test.
 - **Route/dependency evidence:** `app/routers/admin.py`, `app/request_log.py`, `app/overrides.py`; depends on SB3–SB8.
 - **Delivery boundary:** One admin compatibility commit, or coherent UI/API slices with their matching tests.
 - **Status:** Planned.
@@ -138,12 +139,11 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 
 ## Current evidence and blockers
 
-- Java 21 is verified at `C:\ELO\java\bin\java.exe`: Azul OpenJDK 21.0.1, with `javac.exe` and `jar.exe`. Maven 3.9.16 is verified at `C:\apache-maven-3.9.16\\bin\\mvn.cmd` when `JAVA_HOME=C:\\ELO\\java`; it is not on the system `PATH`. Maven must use an absolute path to the user-authorized project-local repository `spring-boot/.m2`; Maven Central dependency transfers are currently denied by the environment.
-- The incomplete SB1 artifacts already live in `spring-boot/`: `pom.xml`, `.mvn/`, `mvnw.cmd`, and the focused health test.
-- No production Spring application exists yet because the mandatory focused RED test has not executed; both authorized 2026-09-24 Maven Wrapper attempts failed before Maven launched, including the retry after the stated access change.
-- `spring-boot/.git` exists independently on `main`; SB0 is committed and the repository-local author identity is configured.
-- SB0 verification: `git -C spring-boot status --short --branch` reports `main`; the SB0 commit is `32725b1`. The pending SB1 files remain intentionally uncommitted until strict TDD can execute.
+- Java 21 is verified at `C:\ELO\java\bin\java.exe`: Azul OpenJDK 21.0.1, with `javac.exe` and `jar.exe`. Maven 3.9.16 is verified at `C:\apache-maven-3.9.16\\bin\\mvn.cmd` when `JAVA_HOME=C:\\ELO\\java`; it is not on the system `PATH`.
+- Maven Central is reachable and dependency resolution works against the default `~/.m2` repository; the earlier "Permission denied" report did not reproduce and is presumed to have been a transient/local environment issue in that session, not a real network restriction. No blocker remains for further epics.
+- `spring-boot/.git` exists independently, with no configured remote yet (local-only); SB0 and SB1 are committed (`32725b1`, `60bbfb2`) on branch `feat/sb1-build-foundation` with the repository-local author identity configured.
+- The FastAPI root repository's own `.gitignore` now excludes `spring-boot/` so it is never swept into the FastAPI repo's index.
 
 ## Next action
 
-**Make the required Maven Central dependencies accessible (or provide them locally), then continue SB1 with the focused RED test using an absolute project-local Maven repository path.**
+**Implement SB2 (shared DATEV contracts, XML, and format negotiation) with strict TDD, using `app/models.py`, `app/xml_serializers.py`, and their tests in the FastAPI project as the authoritative contract.**
