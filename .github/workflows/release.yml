@@ -25,7 +25,7 @@ jobs:
           pip install pyinstaller
 
       - name: Build standalone executable
-        run: pyinstaller --onefile --name datev-mock scripts/run_server.py
+        run: pyinstaller --onefile --name datev-mock --paths . scripts/run_server.py
 
       # Split into small, individually-named steps -- every prior attempt
       # (backtick line-continuation fixed, repo "Workflow permissions"
