@@ -188,7 +188,7 @@ section is the distilled version the design below is built on):
       test suite will regress here (expected — P3 fixes it); the
       acceptance bar for P1 is live/manual verification that scoping and
       cross-references work correctly, not a green test suite yet.
-- [ ] P2 — Write-side FK validation across all 26 write endpoints per
+- [x] P2 — Write-side FK validation across all 26 write endpoints per
       decision #6 and the mapping report's table 5.
 - [ ] P3 — Test suite migration (decision #7): rewrite the 15 "ignores"
       tests, update FK-dependent write tests, add new
@@ -281,4 +281,26 @@ scope would show, per decision #6.
   `pytest tests/ -q` (329 passed, 15 failed — exactly the 15
   `*_ignores_*`-style tests predicted, zero collateral damage; `tests/`
   itself untouched per `git diff --stat -- tests/`). Committed as
-  `<pending>`.
+  `9eedb1a`, pushed.
+- 2026-09-24: P2 done (delegated direct). Write-side FK validation across
+  22 of 26 write endpoints (the other 4 have no FK-shaped fields, per the
+  Appendix). Reused `db.merge_with_stored` for every candidate set
+  (scope-generated ∪ SQLite-stored) rather than querying SQLite directly.
+  One real int/str type gotcha handled: `TermOfPayment.id` is `str` but
+  the write-body `term_of_payment_id` fields are `int` — a small
+  `_as_int`/`_int_candidates` best-effort-coercion helper fixes this
+  (every other cross-referenced pair was already type-matched). Batch
+  endpoints (posting-proposals ×3) validate every item before writing
+  any of them — no partial writes on a bad batch item.
+  `put_client_responsibilities`' `employee_id`/`client_id` now validate
+  against global master-data employees/clients, flipping the previously
+  documented "not validated" behavior on purpose (decision #6).
+  Orchestrator independently re-verified: read the full diff across all 3
+  touched files (`write_models.py`'s comment-only changes,
+  `master_data.py`'s new helpers + `put_client_responsibilities`,
+  `accounting.py`'s shared helpers + every touched write handler),
+  re-ran `pytest tests/ -q` (326 passed, 18 failed — exactly P1's 15 plus
+  3 new FK-validation-driven failures the agent flagged in advance as
+  expected: `test_put_client_responsibilities_stores_array_without_validating_employee`
+  and 2 `test_write_endpoints_group_b.py` tests that POST bogus FK
+  values; `tests/` itself untouched). Committed as `2179193`, pushed.
