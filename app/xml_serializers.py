@@ -11,6 +11,7 @@ test suite's own `ET.fromstring` round-trip).
 """
 from __future__ import annotations
 
+import dataclasses
 from xml.sax.saxutils import escape
 
 from app.models import (
@@ -159,9 +160,52 @@ def _render_field(name: str, value: object, ns_attr: str = "") -> str:
         # and `examples/debitors.xml` (`IsBusinessPartnerActive`) — Python's
         # `str(True)` would otherwise emit the wrong-case `True`.
         text = "true" if value else "false"
-    else:
-        text = str(value)
+        return f"<{name}{ns_attr}>{escape(text)}</{name}>"
+    if dataclasses.is_dataclass(value):
+        # Nested single object (e.g. `Address.address_usage_type`,
+        # `Creditor.accounting_information`, `Creditor.legal_person`) —
+        # recurse into its own fields instead of `str()`-ing the instance
+        # (see `_render_dataclass_fields`'s docstring for the bug this
+        # avoids).
+        return f"<{name}{ns_attr}>{_render_dataclass_fields(value)}</{name}>"
+    if isinstance(value, list):
+        # Nested array of dataclass items (e.g. `Creditor.addresses`/
+        # `.banks`/`.communications`) — wrap each item in an element named
+        # after its own class (no real DATEV evidence for the exact per-item
+        # tag name here, since these fields are never populated in any real
+        # capture this project has — `Address`/`BusinessPartnerBank`/
+        # `Communication` are already the singular-of-the-field-name shape
+        # this project's naming convention would produce anyway).
+        if not value:
+            return f"<{name}{ns_attr}/>"
+        item_tag = type(value[0]).__name__
+        items = "".join(
+            f"<{item_tag}>{_render_dataclass_fields(item)}</{item_tag}>" for item in value
+        )
+        return f"<{name}{ns_attr}>{items}</{name}>"
+    text = str(value)
     return f"<{name}{ns_attr}>{escape(text)}</{name}>"
+
+
+def _render_dataclass_fields(instance: object) -> str:
+    """Recursively render every field of a nested dataclass instance (e.g.
+    `Address`/`BusinessPartnerBank`/`Communication`/
+    `CreditorAccountingInformation`/`DebitorAccountingInformation`, and
+    their own nested sub-objects like `AddressUsageType`) as child XML
+    elements, in declaration order.
+
+    P2 of `datev-mock-expand-nested-content.md`: previously `_render_field`
+    unconditionally did `str(value)` on anything that wasn't `None`/`bool`
+    — for a dataclass or list, that produced a broken Python `repr()`
+    string inside the XML (the write-endpoints epic's P2 notes; the reason
+    `Creditor`/`Debitor`'s nested fields were force-nilled for stored
+    records, see `app/routers/accounting.py::_BUSINESS_PARTNER_NIL_FIELDS`).
+    `_render_field` above now recurses into real elements via this helper
+    instead, so `expand=all` content actually renders as well-formed XML."""
+    return "".join(
+        _render_field(_xml_tag(f.name), getattr(instance, f.name))
+        for f in dataclasses.fields(instance)
+    )
 
 
 def _pascal(name: str) -> str:

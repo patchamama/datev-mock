@@ -407,6 +407,103 @@ COST_CENTER_FIELD_ORDER = [
 
 
 @dataclass
+class AddressUsageType:
+    """`datev.address-usage-type` — nested required sub-object of `Address`
+    (7 booleans, per the P1 Appendix in
+    `odd/tasks/datev-mock-expand-nested-content.md`)."""
+
+    is_correspondence_address: bool = False
+    is_default_delivery_address: bool = False
+    is_default_payment_address: bool = False
+    is_delivery_address: bool = False
+    is_main_post_office_box_address: bool = False
+    is_main_street_address: bool = False
+    is_management_address: bool = False
+
+
+@dataclass
+class Address:
+    """`datev.address` — creditor/debitor `addresses[]` item (P2,
+    `expand=all` epic). `address_usage_type` is the spec's own sole
+    required field in this schema family; every other field is optional,
+    per the P1 Appendix."""
+
+    id: str
+    address_usage_type: AddressUsageType
+    additional_correspondence_title: Optional[str] = None
+    additional_delivery_text1: Optional[str] = None
+    additional_delivery_text2: Optional[str] = None
+    address_appendix: Optional[str] = None
+    address_manually_edited: Optional[str] = None
+    address_type: Optional[str] = None
+    city: Optional[str] = None
+    country_code: Optional[str] = None
+    district: Optional[str] = None
+    individual_shipping_information: Optional[str] = None
+    is_address_manually_edited: Optional[bool] = None
+    note: Optional[str] = None
+    post_office_box: Optional[str] = None
+    postal_code: Optional[str] = None
+    street: Optional[str] = None
+    valid_from: Optional[str] = None
+    valid_to: Optional[str] = None
+
+
+@dataclass
+class BusinessPartnerBank:
+    """`datev.bank` — creditor/debitor `banks[]` item (P2, `expand=all`
+    epic). **Not** the master-data `Bank` dataclass above — a different
+    schema (see the P1 Appendix's "Important finding" note): only 4 field
+    names overlap and even those mean different things in context."""
+
+    id: str
+    bank_account_number: Optional[str] = None
+    bank_code: Optional[str] = None
+    bank_name: Optional[str] = None
+    bic: Optional[str] = None
+    business_partner_bank_position: Optional[int] = None
+    country_code: Optional[str] = None
+    differing_account_holder: Optional[str] = None
+    iban: Optional[str] = None
+    is_business_partner_bank: Optional[bool] = None
+    sepa_mandate_reference: Optional[str] = None
+    note: Optional[str] = None
+    valid_from: Optional[str] = None
+    valid_to: Optional[str] = None
+
+
+@dataclass
+class CommunicationUsageType:
+    """`datev.communication-usage-type` — nested sub-object of
+    `Communication` (2 booleans)."""
+
+    is_main_communication_usage_type: bool = False
+    is_main_management_phone: bool = False
+
+
+@dataclass
+class Communication:
+    """`datev.communication` — creditor/debitor `communications[]` item
+    (P2, `expand=all` epic)."""
+
+    id: str
+    communication_data_content: Optional[str] = None
+    communication_type: Optional[str] = None
+    note: Optional[str] = None
+    communication_usage_type: Optional[CommunicationUsageType] = None
+
+
+@dataclass
+class IndividualField:
+    """`datev.individual-field` — shared by `CreditorAccountingInformation`/
+    `DebitorAccountingInformation`'s `individual_fields[]` (max 10 items per
+    the spec)."""
+
+    content: Optional[str] = None
+    position: Optional[int] = None
+
+
+@dataclass
 class NaturalPerson:
     """Shared by `creditor`/`debitor` (`datev.natural-person`)."""
 
@@ -436,35 +533,70 @@ class NotSpecifiedPerson:
 
 @dataclass
 class CreditorAccountingInformation:
-    """`datev.creditor-accounting-information` — partial, unasserted by RED;
-    populated for shape-completeness only."""
+    """`datev.creditor-accounting-information` — full spec-grounded 14-field
+    shape (P2, `expand=all` epic; extends the earlier 7-field partial
+    subset with `alternative_contact_person`/`clerk`/`client_bank_position`/
+    `contact_person`/`tax_number`/`temp_payment_block`/`individual_fields`,
+    per the P1 Appendix)."""
 
+    alternative_contact_person: Optional[str] = None
+    clerk: Optional[str] = None
+    client_bank_position: Optional[int] = None
+    contact_person: Optional[str] = None
     currency_management: Optional[str] = None
     is_insolvent: Optional[bool] = None
     is_various_account: Optional[bool] = None
     language: Optional[str] = None
     output_destination: Optional[str] = None
     payment_medium: Optional[str] = None
+    tax_number: Optional[str] = None
+    temp_payment_block: Optional[str] = None
     term_of_payment_id: Optional[int] = None
+    individual_fields: Optional[list[IndividualField]] = None
 
 
 @dataclass
 class DebitorAccountingInformation:
-    """`datev.debitor-accounting-information` — richer than the creditor
-    equivalent; not asserted by RED at all (epic doc: GREEN has full
-    latitude here), populated for shape-completeness only."""
+    """`datev.debitor-accounting-information` — full spec-grounded shape
+    (P2, `expand=all` epic; extends the earlier 11-field partial subset
+    with the dunning/direct-debit/enforcement-block field family, per the
+    P1 Appendix)."""
 
     account_statement: Optional[str] = None
+    account_statement_text: Optional[str] = None
+    alternative_contact_person: Optional[str] = None
+    clerk: Optional[str] = None
+    client_bank_position: Optional[int] = None
+    contact_person: Optional[str] = None
     credit_limit: Optional[int] = None
     currency_management: Optional[str] = None
     direct_debit: Optional[str] = None
+    dunning_final_deadline: Optional[int] = None
+    dunning_interest_rate1: Optional[float] = None
+    dunning_interest_rate2: Optional[float] = None
+    dunning_interest_rate3: Optional[float] = None
+    dunning_limit_amount: Optional[float] = None
+    dunning_limit_percent: Optional[float] = None
+    dunning_period1: Optional[int] = None
+    dunning_period2: Optional[int] = None
+    dunning_period3: Optional[int] = None
+    dunning_period_calculation: Optional[str] = None
     dunning_procedure: Optional[str] = None
+    dunning_text1: Optional[str] = None
+    dunning_text2: Optional[str] = None
+    dunning_text3: Optional[str] = None
+    has_enforcement_block: Optional[bool] = None
     interest_calculation: Optional[str] = None
     is_insolvent: Optional[bool] = None
     is_various_account: Optional[bool] = None
     language: Optional[str] = None
     output_destination: Optional[str] = None
+    tax_number: Optional[str] = None
+    temp_direct_debit_block: Optional[str] = None
+    temp_enforcement_block: Optional[str] = None
+    temp_dunning_block: Optional[str] = None
     term_of_payment_id: Optional[int] = None
+    individual_fields: Optional[list[IndividualField]] = None
 
 
 @dataclass
@@ -481,7 +613,13 @@ class Creditor:
     `complimentary_close` are additional always-nil fields confirmed by
     debitors' real XML (see `Debitor` below) — inferred to apply here too
     since creditor/debitor share the same `BusinessPartners` contract
-    family."""
+    family.
+
+    P2 of `datev-mock-expand-nested-content.md`: `expand=all` is now a real,
+    implemented query param (`app/routers/accounting.py`) — with it, these
+    latent fields are populated with real generated content from
+    `app/scoped_data.py`'s deterministic per-scope generation; without it
+    (the default), they stay nil exactly as above."""
 
     id: str
     account_number: int
@@ -495,10 +633,10 @@ class Creditor:
     legal_entity_type: str
     short_name: str
     accounting_information: Optional[CreditorAccountingInformation] = None
-    addresses: Optional[str] = None
+    addresses: Optional[list[Address]] = None
     alternative_search_name: Optional[str] = None
-    banks: Optional[str] = None
-    communications: Optional[str] = None
+    banks: Optional[list[BusinessPartnerBank]] = None
+    communications: Optional[list[Communication]] = None
     complimentary_close: Optional[str] = None
     correspondence_title: Optional[str] = None
     eu_vat_id_country_code: Optional[str] = None
@@ -537,10 +675,10 @@ class Debitor:
     legal_entity_type: str
     short_name: str
     accounting_information: Optional[DebitorAccountingInformation] = None
-    addresses: Optional[str] = None
+    addresses: Optional[list[Address]] = None
     alternative_search_name: Optional[str] = None
-    banks: Optional[str] = None
-    communications: Optional[str] = None
+    banks: Optional[list[BusinessPartnerBank]] = None
+    communications: Optional[list[Communication]] = None
     complimentary_close: Optional[str] = None
     correspondence_title: Optional[str] = None
     eu_vat_id_country_code: Optional[str] = None

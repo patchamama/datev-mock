@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any, Optional, Union
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -93,6 +93,23 @@ _BUSINESS_PARTNER_NIL_FIELDS = frozenset(
         "accounting_information",
     }
 )
+
+
+def _apply_expand_gate(records: list[Any], expand_all: bool) -> list[Any]:
+    """P2 of `datev-mock-expand-nested-content.md`: `expand=all` is the
+    first (and, per architecture decision #2, only) query param this mock
+    actually reads and acts on. Generation of these fields already happens
+    unconditionally in `app/scoped_data.py`/`app/fake_data.py`
+    (deterministic per scope, decision #4) — this gate only controls what
+    the *response* exposes. Without `expand=all` (the default, or any other
+    value), these fields stay nil exactly as confirmed real DATEV evidence
+    requires (same field set as `_BUSINESS_PARTNER_NIL_FIELDS` above, which
+    already force-nils the *stored*-record side of a merged response for
+    the same reason)."""
+    if expand_all:
+        return records
+    return [replace(record, **{field: None for field in _BUSINESS_PARTNER_NIL_FIELDS}) for record in records]
+
 
 ENDPOINT = "/datev/api/accounting/v1/clients"
 
@@ -355,6 +372,7 @@ def get_creditors(client_id: str, fiscal_year_id: str, request: Request) -> Resp
         client_id=client_id,
         fiscal_year_id=fiscal_year_id,
     )
+    records = _apply_expand_gate(records, request.query_params.get("expand") == "all")
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")
@@ -386,6 +404,7 @@ def get_debitors(client_id: str, fiscal_year_id: str, request: Request) -> Respo
         client_id=client_id,
         fiscal_year_id=fiscal_year_id,
     )
+    records = _apply_expand_gate(records, request.query_params.get("expand") == "all")
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")

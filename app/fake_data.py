@@ -14,20 +14,27 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.models import (
+    Address,
     Addressee,
+    AddressUsageType,
     AccountingSequenceProcessed,
     AccountingTransactionKey,
     AssetStocktaking,
     AssignmentCriteria,
     Bank,
+    BusinessPartnerBank,
     Client,
     ClientResource,
+    Communication,
+    CommunicationUsageType,
     CompanyData,
     CostCenter,
     CostRate,
     CostSystem,
     Creditor,
+    CreditorAccountingInformation,
     Debitor,
+    DebitorAccountingInformation,
     Document,
     Domain,
     DueAsPeriod,
@@ -38,6 +45,9 @@ from app.models import (
     GeneralLedgerAccountMinimal,
     GeneralLedgerAccountTaxRate,
     HistoricalValue,
+    IndividualField,
+    LegalPerson,
+    NaturalPerson,
     OpenItem,
     Period,
     PostingProposalInformation,
@@ -123,11 +133,19 @@ def _fresh_guid() -> str:
     return str(uuid.uuid4())
 
 
-def _random_timestamp(start_year: int = 2015, end_year: int = 2025) -> str:
+def _random_timestamp(
+    start_year: int = 2015, end_year: int = 2025, rng: Optional[random.Random] = None
+) -> str:
+    """`rng` (same architecture decision #2 contract as the scoped
+    `_generate_*` functions) lets a scoped caller draw a deterministic
+    timestamp from its own `random.Random` instance instead of the shared
+    `random` module; every pre-existing call site omits it and keeps using
+    the global module unchanged."""
+    active_rng = rng if rng is not None else random
     base = datetime(start_year, 1, 1)
     end = datetime(end_year, 1, 1)
-    offset_days = random.randint(0, max((end - base).days, 1))
-    offset_seconds = random.randint(0, 86399)
+    offset_days = active_rng.randint(0, max((end - base).days, 1))
+    offset_seconds = active_rng.randint(0, 86399)
     ts = base + timedelta(days=offset_days, seconds=offset_seconds)
     return ts.isoformat(timespec="milliseconds")
 
@@ -612,6 +630,195 @@ def _generate_cost_centers(
     return records
 
 
+# --- `expand=all` nested content (P2 of
+# datev-mock-expand-nested-content.md): `Address`/`BusinessPartnerBank`/
+# `Communication`/`*AccountingInformation` generation for
+# `Creditor`/`Debitor`, called from `_generate_creditors`/`_generate_debitors`
+# below using that same record's scope-seeded `rng` (architecture decision
+# #4 — deterministic per `(client_id, fiscal_year_id, creditor/debitor id)`,
+# same as every other scoped generator in this module). No real DATEV
+# values are used, same as everywhere else in this file. A few enum-typed
+# fields (`account_statement`/`account_statement_text`/`direct_debit`/
+# `dunning_procedure`/`interest_calculation`/`dunning_text*`) have no
+# extracted real enum member list in the P1 Appendix (only the member
+# *count* is documented) — small invented placeholder pools are used for
+# those, same "no real vocabulary exists" precedent as `Document.
+# document_class`.
+
+_ADDRESS_TYPE_VALUES = [
+    "not_specified",
+    "street_address",
+    "post_office_box_address",
+    "corporate_client_address",
+]
+_ADDRESS_STREET_POOL = [
+    "Bahnhofstraße",
+    "Hauptstraße",
+    "Gartenweg",
+    "Lindenallee",
+    "Bergstraße",
+    "Schulstraße",
+    "Marktplatz",
+    "Ringstraße",
+]
+_ADDRESS_CITY_POOL = [
+    ("Hamburg", "20095"),
+    ("München", "80331"),
+    ("Köln", "50667"),
+    ("Dresden", "01067"),
+    ("Stuttgart", "70173"),
+    ("Berlin", "10115"),
+    ("Leipzig", "04109"),
+    ("Frankfurt am Main", "60311"),
+]
+_COMMUNICATION_TYPE_VALUES = ["phone", "email", "url", "fax", "other"]
+_CURRENCY_MANAGEMENT_VALUES = ["payments_in_input_currency", "payments_in_euro"]
+_ACCOUNTING_LANGUAGE_VALUES = ["not_specified", "german", "french", "english", "spanish", "italian"]
+_ACCOUNTING_OUTPUT_DESTINATION_VALUES = ["not_specified", "print", "fax", "email"]
+_PAYMENT_MEDIUM_VALUES = [
+    "not_specified",
+    "individual_check",
+    "collective_check",
+    "sepa_bank_transfer_with_one_invoice",
+    "sepa_bank_transfer_with_multiple_invoices",
+    "no_bank_transfer",
+]
+# Placeholder pools — member *count* is spec-confirmed (P1 Appendix), exact
+# member names are not (see module comment above).
+_ACCOUNT_STATEMENT_VALUES = [f"account_statement_option_{i}" for i in range(1, 6)]
+_ACCOUNT_STATEMENT_TEXT_VALUES = [f"account_statement_text_option_{i}" for i in range(1, 11)]
+_DIRECT_DEBIT_VALUES = [f"direct_debit_option_{i}" for i in range(1, 5)]
+_DUNNING_PROCEDURE_VALUES = [f"dunning_procedure_option_{i}" for i in range(1, 8)]
+_INTEREST_CALCULATION_VALUES = [f"interest_calculation_option_{i}" for i in range(1, 5)]
+_DUNNING_TEXT_VALUES = [f"dunning_text_group_{i}" for i in range(1, 11)]
+_DUNNING_PERIOD_CALCULATION_VALUES = ["not_specified", "calculate_dunning_period"]
+
+
+def _generate_address(rng: random.Random, index: int) -> Address:
+    city, postal_code = _ADDRESS_CITY_POOL[index % len(_ADDRESS_CITY_POOL)]
+    usage_type = AddressUsageType(
+        is_correspondence_address=True,
+        is_default_delivery_address=True,
+        is_default_payment_address=index % 2 == 0,
+        is_delivery_address=True,
+        is_main_post_office_box_address=False,
+        is_main_street_address=True,
+        is_management_address=index % 3 == 0,
+    )
+    return Address(
+        id=_fresh_guid(),
+        address_usage_type=usage_type,
+        address_type=_ADDRESS_TYPE_VALUES[index % len(_ADDRESS_TYPE_VALUES)],
+        city=city,
+        country_code="DE",
+        postal_code=postal_code,
+        street=f"{rng.choice(_ADDRESS_STREET_POOL)} {rng.randint(1, 199)}",
+        valid_from=_random_timestamp(rng=rng),
+    )
+
+
+def _generate_business_partner_bank(rng: random.Random, index: int) -> BusinessPartnerBank:
+    entry = _BANK_POOL[index % len(_BANK_POOL)]
+    return BusinessPartnerBank(
+        id=_fresh_guid(),
+        bank_account_number=str(rng.randint(1000000, 99999999)),
+        bank_code=str(10000000 + index * 111)[:8],
+        bank_name=entry["name"],
+        bic=entry["bic"],
+        business_partner_bank_position=index + 1,
+        country_code=entry["country_code"],
+        iban=f"{entry['country_code']}{rng.randint(10, 99)}{rng.randint(10**14, 10**15 - 1)}",
+        is_business_partner_bank=True,
+        valid_from=_random_timestamp(rng=rng),
+    )
+
+
+def _generate_communication(rng: random.Random, index: int) -> Communication:
+    comm_type = _COMMUNICATION_TYPE_VALUES[index % len(_COMMUNICATION_TYPE_VALUES)]
+    if comm_type == "email":
+        content = f"kontakt{index}@example-mock.test"
+    elif comm_type == "phone":
+        content = f"+49 30 {rng.randint(1000000, 9999999)}"
+    elif comm_type == "fax":
+        content = f"+49 30 {rng.randint(1000000, 9999999)}"
+    elif comm_type == "url":
+        content = f"https://www.example-mock-{index}.test"
+    else:
+        content = f"contact-note-{index}"
+    return Communication(
+        id=_fresh_guid(),
+        communication_data_content=content,
+        communication_type=comm_type,
+        communication_usage_type=CommunicationUsageType(
+            is_main_communication_usage_type=True,
+            is_main_management_phone=comm_type == "phone",
+        ),
+    )
+
+
+def _generate_creditor_accounting_information(
+    rng: random.Random, index: int
+) -> CreditorAccountingInformation:
+    return CreditorAccountingInformation(
+        alternative_contact_person=None,
+        clerk=_PERSON_NAME_POOL[index % len(_PERSON_NAME_POOL)],
+        client_bank_position=index + 1,
+        contact_person=_PERSON_NAME_POOL[(index + 1) % len(_PERSON_NAME_POOL)],
+        currency_management=rng.choice(_CURRENCY_MANAGEMENT_VALUES),
+        is_insolvent=False,
+        is_various_account=index % 5 == 0,
+        language=rng.choice(_ACCOUNTING_LANGUAGE_VALUES),
+        output_destination=rng.choice(_ACCOUNTING_OUTPUT_DESTINATION_VALUES),
+        payment_medium=rng.choice(_PAYMENT_MEDIUM_VALUES),
+        tax_number=f"{rng.randint(10, 99)}/{rng.randint(100, 999)}/{rng.randint(10000, 99999)}",
+        temp_payment_block=None,
+        term_of_payment_id=None,
+        individual_fields=[IndividualField(content=f"note-{index}", position=1)],
+    )
+
+
+def _generate_debitor_accounting_information(
+    rng: random.Random, index: int
+) -> DebitorAccountingInformation:
+    return DebitorAccountingInformation(
+        account_statement=rng.choice(_ACCOUNT_STATEMENT_VALUES),
+        account_statement_text=rng.choice(_ACCOUNT_STATEMENT_TEXT_VALUES),
+        alternative_contact_person=None,
+        clerk=_PERSON_NAME_POOL[index % len(_PERSON_NAME_POOL)],
+        client_bank_position=index + 1,
+        contact_person=_PERSON_NAME_POOL[(index + 1) % len(_PERSON_NAME_POOL)],
+        credit_limit=(index + 1) * 5000,
+        currency_management=rng.choice(_CURRENCY_MANAGEMENT_VALUES),
+        direct_debit=rng.choice(_DIRECT_DEBIT_VALUES),
+        dunning_final_deadline=rng.randint(0, 999),
+        dunning_interest_rate1=round(rng.uniform(1.0, 9.0), 2),
+        dunning_interest_rate2=round(rng.uniform(1.0, 9.0), 2),
+        dunning_interest_rate3=round(rng.uniform(1.0, 9.0), 2),
+        dunning_limit_amount=round(rng.uniform(10.0, 500.0), 2),
+        dunning_limit_percent=round(rng.uniform(1.0, 10.0), 2),
+        dunning_period1=rng.randint(7, 30),
+        dunning_period2=rng.randint(7, 30),
+        dunning_period3=rng.randint(7, 30),
+        dunning_period_calculation=rng.choice(_DUNNING_PERIOD_CALCULATION_VALUES),
+        dunning_procedure=rng.choice(_DUNNING_PROCEDURE_VALUES),
+        dunning_text1=rng.choice(_DUNNING_TEXT_VALUES),
+        dunning_text2=rng.choice(_DUNNING_TEXT_VALUES),
+        dunning_text3=rng.choice(_DUNNING_TEXT_VALUES),
+        has_enforcement_block=False,
+        interest_calculation=rng.choice(_INTEREST_CALCULATION_VALUES),
+        is_insolvent=False,
+        is_various_account=index % 5 == 0,
+        language=rng.choice(_ACCOUNTING_LANGUAGE_VALUES),
+        output_destination=rng.choice(_ACCOUNTING_OUTPUT_DESTINATION_VALUES),
+        tax_number=f"{rng.randint(10, 99)}/{rng.randint(100, 999)}/{rng.randint(10000, 99999)}",
+        temp_direct_debit_block=None,
+        temp_enforcement_block=None,
+        temp_dunning_block=None,
+        term_of_payment_id=None,
+        individual_fields=[IndividualField(content=f"note-{index}", position=1)],
+    )
+
+
 def _generate_creditors(
     count: int = 4,
     rng: Optional[random.Random] = None,
@@ -649,19 +856,33 @@ def _generate_creditors(
         addressee_id = active_rng.choice(addressee_ids) if addressee_ids else _fresh_guid()
         eu_vat_country = "DE" if index % 3 == 0 else None
 
-        # `natural_person`/`legal_person`/`accounting_information` are
-        # deliberately never populated here: real captured evidence
-        # (`examples/creditors.xml`/`examples/debitors.xml`) shows none of
-        # them ever appear in the default (non-`expand`) response — this
-        # project's earlier population of them was invented, not observed.
+        # `natural_person`/`legal_person`/`accounting_information` are never
+        # populated in the *default* (non-`expand`) response — real captured
+        # evidence (`examples/creditors.xml`/`examples/debitors.xml`) shows
+        # none of them ever appear there. They (plus `addresses`/`banks`/
+        # `communications`) *are* generated here unconditionally though
+        # (architecture decision #4, P2 of
+        # datev-mock-expand-nested-content.md) — deterministic per this
+        # scope's own `rng`, so the same creditor id in the same scope
+        # always gets the same expanded content; the router
+        # (`app/routers/accounting.py`) decides whether the response
+        # actually exposes them, gated by the `expand=all` query param.
         # `short_name` is still derived from the same name pools.
         if entity_type == "natural_person":
             full_name = person_names[index % len(person_names)]
-            _, surname = _split_person_name(full_name)
+            firstname, surname = _split_person_name(full_name)
             short_name = f"{surname}"[:15]
+            natural_person = NaturalPerson(
+                firstname=firstname,
+                surname=surname,
+                date_of_birth=_random_timestamp(1950, 2000, rng=active_rng)[:10],
+            )
+            legal_person = None
         else:
             company_name = org_names[index % len(org_names)]
             short_name = company_name.split(" ")[0][:15]
+            natural_person = None
+            legal_person = LegalPerson(legal_name=company_name)
 
         records.append(
             Creditor(
@@ -680,6 +901,12 @@ def _generate_creditors(
                 short_name=short_name,
                 eu_vat_id_country_code=eu_vat_country,
                 eu_vat_id_number=f"DE{300000000 + index}" if eu_vat_country else None,
+                addresses=[_generate_address(active_rng, index)],
+                banks=[_generate_business_partner_bank(active_rng, index)],
+                communications=[_generate_communication(active_rng, index)],
+                accounting_information=_generate_creditor_accounting_information(active_rng, index),
+                natural_person=natural_person,
+                legal_person=legal_person,
             )
         )
     return records
@@ -715,20 +942,30 @@ def _generate_debitors(
         addressee_id = active_rng.choice(addressee_ids) if addressee_ids else _fresh_guid()
         eu_vat_country = "DE" if index % 3 == 0 else None
 
-        # `natural_person`/`legal_person`/`accounting_information` are
-        # deliberately never populated here: real captured evidence
-        # (`examples/debitors.xml`, real XML) shows `NaturalPerson`/
-        # `LegalPerson`/`AccountingInformation` always `i:nil="true"` in the
-        # default (non-`expand`) response — this project's earlier
-        # population of them was invented, not observed. `short_name` is
-        # still derived from the same name pools.
+        # `natural_person`/`legal_person`/`accounting_information` are never
+        # populated in the *default* (non-`expand`) response — real captured
+        # evidence (`examples/debitors.xml`, real XML) shows `NaturalPerson`/
+        # `LegalPerson`/`AccountingInformation` always `i:nil="true"` there.
+        # They (plus `addresses`/`banks`/`communications`) *are* generated
+        # here unconditionally though (architecture decision #4, P2 of
+        # datev-mock-expand-nested-content.md) — same rationale as
+        # `_generate_creditors` above. `short_name` is still derived from
+        # the same name pools.
         if entity_type == "natural_person":
             full_name = person_names[index % len(person_names)]
-            _, surname = _split_person_name(full_name)
+            firstname, surname = _split_person_name(full_name)
             short_name = f"{surname}"[:15]
+            natural_person = NaturalPerson(
+                firstname=firstname,
+                surname=surname,
+                date_of_birth=_random_timestamp(1950, 2000, rng=active_rng)[:10],
+            )
+            legal_person = None
         else:
             company_name = org_names[index % len(org_names)]
             short_name = company_name.split(" ")[0][:15]
+            natural_person = None
+            legal_person = LegalPerson(legal_name=company_name)
 
         records.append(
             Debitor(
@@ -747,6 +984,12 @@ def _generate_debitors(
                 short_name=short_name,
                 eu_vat_id_country_code=eu_vat_country,
                 eu_vat_id_number=f"DE{400000000 + index}" if eu_vat_country else None,
+                addresses=[_generate_address(active_rng, index)],
+                banks=[_generate_business_partner_bank(active_rng, index)],
+                communications=[_generate_communication(active_rng, index)],
+                accounting_information=_generate_debitor_accounting_information(active_rng, index),
+                natural_person=natural_person,
+                legal_person=legal_person,
             )
         )
     return records
