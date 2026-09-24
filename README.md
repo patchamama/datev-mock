@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Pytest](https://img.shields.io/badge/tests-344%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
+[![Pytest](https://img.shields.io/badge/tests-369%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5-7952B3?logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
 [![Status](https://img.shields.io/badge/status-active-success)](#status)
 
@@ -66,12 +66,12 @@ Already have the repo cloned? See [Quick start](#quick-start) below.
 
 ## Status
 
-**GREEN — implemented and passing.** All 344 tests pass
+**GREEN — implemented and passing.** All 369 tests pass
 (`.venv\Scripts\python -m pytest tests/ -v`), and the server has been
 verified live over real HTTPS (the 23 original read-only endpoints, the 26
 new SQLite-backed write endpoints, the live request log, the Bootstrap admin
 UI with its full endpoint catalog and custom-override uploads, and Swagger
-UI). Seven epics complete:
+UI). Nine epics complete:
 [`odd/tasks/datev-mock.md`](odd/tasks/datev-mock.md) (base API),
 [`odd/tasks/datev-mock-settings.md`](odd/tasks/datev-mock-settings.md)
 (settings/admin UI),
@@ -86,14 +86,25 @@ response),
 [`odd/tasks/datev-mock-real-data-reconciliation.md`](odd/tasks/datev-mock-real-data-reconciliation.md)
 (reconciled every endpoint's field set and response format against data
 captured from a real DATEV installation — see [Content
-negotiation](#content-negotiation-xml-and-json) below for what changed), and
+negotiation](#content-negotiation-xml-and-json) below for what changed),
 [`odd/tasks/datev-mock-write-endpoints-and-observability.md`](odd/tasks/datev-mock-write-endpoints-and-observability.md)
 (26 new SQLite-backed `POST`/`PUT` write endpoints across 14 DATEV resource
 families — 7 already GET-modeled, 7 brand new, the latter also adding 6 new
 GET endpoints — plus a live browser/CLI request log with
 unregistered-route and wrong-method detection; see [Write endpoints and
 persistence](#write-endpoints-and-persistence) below for the resulting,
-now only partial, in-memory-by-default philosophy).
+now only partial, in-memory-by-default philosophy),
+[`odd/tasks/datev-mock-exe-release.md`](odd/tasks/datev-mock-exe-release.md)
+(one-line installers for Windows/Linux/macOS, a standalone `datev-mock.exe`
+built and published via a tag-triggered GitHub Actions release workflow),
+and
+[`odd/tasks/datev-mock-referential-integrity.md`](odd/tasks/datev-mock-referential-integrity.md)
+(deterministic per-scope fake-data generation so `client_id`/
+`fiscal_year_id`/`cost_system_id` actually filter GET responses instead of
+being ignored, real cross-references between resources instead of
+unrelated/coincidental ids, and 422 write-side validation for every
+FK-shaped write field — see [Referential integrity and path-param
+scoping](#referential-integrity-and-path-param-scoping) below).
 See each task doc for full breakdowns, decisions, and progress logs.
 
 ## Quick start
@@ -343,6 +354,50 @@ touch:
   the admin UI's **Stored records** card and at `GET
   /admin/api/stored-records`.
 
+### Referential integrity and path-param scoping
+
+Every accounting GET route under `/clients/{client_id}/fiscal-years/
+{fiscal_year_id}[/cost-systems/{cost_system_id}]/...` used to **ignore**
+those path params entirely and return one single global fake dataset,
+generated once at process startup — and cross-referenced fields
+(`Creditor.addressee_id`, `OpenItem.term_of_payment_id`, etc.) either
+pointed at brand-new unrelated UUIDs or matched another resource's ids only
+by arithmetic coincidence. This epic replaced both:
+
+- **Deterministic per-scope generation, not strict validation.** Any
+  `client_id`/`fiscal_year_id`/`cost_system_id` a caller supplies
+  deterministically generates (and caches, for the process lifetime) its
+  own internally-consistent dataset the first time it's used — seeded via
+  SHA256 of the scope key, not Python's salted `hash()`. Two calls with the
+  same scope always return identical data; different scopes return
+  different data. **No scope id is ever rejected as "unknown"** — a
+  deliberate choice over 404-ing on unrecognized ids, so ad hoc integration
+  testing with a caller's own arbitrary ids keeps working, while still
+  guaranteeing real internal consistency per scope.
+- **Real cross-references, not reinvented arithmetic.** `Creditor`/
+  `Debitor.addressee_id` now draws from the actual global `Addressee.id`
+  list; `OpenItem.term_of_payment_id`/`accounting_sequence_id`/
+  `kost1_cost_center_id`, `AssetStocktaking.general_ledger_account`, and
+  `PostingProposalRule`'s transaction-key/account-number links all draw
+  from their own scope's actually-generated records — fetch a creditor,
+  then `GET` its `addressee_id` from `/master-data/v1/addressees`, and it's
+  really there.
+- **Write-side FK validation.** Every write endpoint with an FK-shaped body
+  field (`addressee_id`, `term_of_payment_id`, cost-center/general-ledger/
+  accounting-transaction-key links, `employee_id` on client
+  responsibilities, ...) now rejects an unresolvable reference with `422`,
+  checked against the union of that scope's generated data and whatever's
+  already been written via SQLite — exactly what a subsequent `GET` in the
+  same scope would show. A handful of fields with no modeled target
+  resource at all (`business_partner_relation_id`, the
+  organization/establishment/functional-area id triads) stay deliberately
+  unvalidated, each flagged with a code comment rather than silently
+  ignored.
+- Master data (`clients`/`addressees`/`banks`/`employees`) and DMS
+  (`domains`/`documents`) were already correctly modeled and stay global/
+  unscoped — this epic only touched the accounting sub-resources nested
+  under a client/fiscal-year path.
+
 ### Settings & admin UI
 
 `https://127.0.0.1:58452/admin` — a Bootstrap 5 in-browser page with:
@@ -524,7 +579,7 @@ DATEV-Mock/
 │   ├── datev-mock-custom-overrides.md      # upload/override system: same, for that epic
 │   ├── datev-mock-real-data-reconciliation.md  # reconciled every endpoint against real DATEV data: same, for that epic
 │   └── datev-mock-write-endpoints-and-observability.md  # 26 write endpoints + SQLite + live log: same, for that epic
-├── tests/                     # full test suite — 344/344 passing
+├── tests/                     # full test suite — 369/369 passing
 ├── start.bat / start.sh       # bootstrap Python (portable if needed) + deps + run, one step
 ├── settings.json              # git-ignored, created on first settings change
 ├── datev_mock.db              # git-ignored, created on first write to any of the 26 new write endpoints
@@ -546,7 +601,7 @@ python -m venv .venv
 .venv\Scripts\python -m pytest tests/ -v
 ```
 
-All 344 tests pass.
+All 369 tests pass.
 
 ## Running the server
 

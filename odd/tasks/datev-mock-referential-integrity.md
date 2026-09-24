@@ -190,12 +190,12 @@ section is the distilled version the design below is built on):
       cross-references work correctly, not a green test suite yet.
 - [x] P2 — Write-side FK validation across all 26 write endpoints per
       decision #6 and the mapping report's table 5.
-- [ ] P3 — Test suite migration (decision #7): rewrite the 15 "ignores"
+- [x] P3 — Test suite migration (decision #7): rewrite the 15 "ignores"
       tests, update FK-dependent write tests, add new
       scoping/cross-reference tests. Full regression must be green
       (344 baseline ± the net change from added/removed/rewritten tests,
       accounted for explicitly, not just "still passes").
-- [ ] P4 — README/task-doc updates, full live re-verification, commit +
+- [x] P4 — README/task-doc updates, full live re-verification, commit +
       push per phase (established workflow).
 
 ## Route
@@ -304,3 +304,55 @@ scope would show, per decision #6.
   expected: `test_put_client_responsibilities_stores_array_without_validating_employee`
   and 2 `test_write_endpoints_group_b.py` tests that POST bogus FK
   values; `tests/` itself untouched). Committed as `2179193`, pushed.
+- 2026-09-24: P3 done (delegated direct). 15 `*_ignores_*` tests replaced
+  with same-id-stable/different-id-differs pairs across 4 GET test files;
+  3 FK tests fixed (2 flipped to expect 422 + a real-value companion, 2
+  fixed in place to fetch a real reference first) plus 8 new
+  cross-reference tests (creditor→addressee, open-item→term-of-payment/
+  cost-center, asset-stocktaking→GL-account, SQLite-write cross-reference,
+  fiscal-year write-scoping isolation). 344 → 369 tests, arithmetic
+  reconciled exactly (15 removed + 30 added + 8 net-new + 2 renamed-split
+  = +25). Anti-flake retry (a few fresh id pairs, not a single draw) added
+  to "different data" tests given `cost-systems` only varies one boolean
+  field across 3 records.
+  Orchestrator independently re-verified: ran `pytest tests/ -q` **three
+  times** given the disclosed flakiness risk — 369 passed every time, zero
+  variance. Read the full diff of the smallest changed file
+  (`test_accounting_partners.py`) in detail — clean, well-commented,
+  reasonable retry logic, not masking a real bug. Confirmed
+  `git diff --stat -- app/ odd/` empty (source untouched, as instructed).
+  **Noted an unrelated stray artifact**: an empty, untracked
+  `docs/Contelo_23/Business_Solutions_Custom-ebi.datev.datatransfer-
+  Configuration-API_Mappings.txt` appeared during this phase, named
+  nothing like anything in this project — almost certainly cross-
+  contamination from another session on this shared VM (same class of
+  issue as P1's stray leftover `uvicorn` process on port 58452). Not
+  committed, not deleted, left alone; flagged to the user. Committed
+  (test files only) as `6d27d01`.
+- 2026-09-24: P4 done. README updated: new "Referential integrity and
+  path-param scoping" Key Decisions subsection, test badge/count
+  (344→369), 8th epic entry in Status.
+  **Live re-verification over a real running HTTPS server** (not just
+  `pytest`/`TestClient`) — hit the exact same shared-VM stray-process
+  problem P1's agent already ran into: this session's own freshly
+  launched `uvicorn` failed to bind port 58452 (`WinError 10048`, port
+  already in use) because an orphaned server process from an unrelated
+  earlier session was still bound there — curl was silently hitting that
+  **stale pre-epic build**, which made two checks look like real bugs
+  (identical data across different scopes; an unresolved `addressee_id`).
+  Diagnosed via the server's own log (bind error) + `tasklist`, killed the
+  orphaned PID, restarted clean, and every check then passed correctly:
+  different `(client_id, fiscal_year_id)` scopes return different
+  creditor data (byte-length differs, content differs); the same scope
+  called twice is byte-identical; a creditor's `addressee_id` resolves in
+  `GET .../addressees`; a bogus `addressee_id` on `POST .../creditors`
+  correctly `422`s. This is now a **second confirmed instance** of stray
+  processes on this shared VM contaminating live verification — worth the
+  user knowing this environment isn't exclusively ours.
+  This closes the epic: real referential integrity (cross-referenced ids
+  resolve to actual records) and genuine path-param scoping (different
+  client_id/fiscal_year_id/cost_system_id values now return different,
+  internally-consistent data, deterministically and without rejecting any
+  caller-supplied id) across every accounting GET/write endpoint, 369/369
+  tests green, committed across 4 phases (P1-P4) plus 2 docs-only commits,
+  all pushed to `main`.
