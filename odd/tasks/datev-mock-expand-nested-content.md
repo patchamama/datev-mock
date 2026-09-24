@@ -130,7 +130,7 @@ of this epic's fix).
       (`Address`, `Communication`, promoted `addresses`/`banks`/
       `communications` types), scoped-deterministic generation, query-
       param-aware router logic, working XML + JSON rendering.
-- [ ] P3 — `general-ledger-accounts`/`posting-proposal-rules-*` field-
+- [x] P3 — `general-ledger-accounts`/`posting-proposal-rules-*` field-
       shape correction per P1's findings.
 - [ ] P4 — Test suite updates (new `expand=all` coverage; updated shape
       assertions for GL-accounts/posting-proposal-rules where fields
@@ -215,6 +215,36 @@ session.
   discrepancy rather than fabricating a reconciliation, flagged it
   instead of guessing. Committed as `bdfb69c` (P1 doc, which had never
   actually been committed after P1 finished) and `144cff7` (P2 code).
+- 2026-09-24: P3 complete (delegated direct). Investigated and
+  **disconfirmed** the leading "omit vs. null" hypothesis carried over
+  from live pre-epic debugging — with real evidence: the real-data-
+  reconciliation epic already confirmed "absent, not null" for optional
+  fields is genuine real DATEV behavior, not a mock defect; changing it
+  would have made the mock less faithful, not more, and the implementer
+  correctly declined to make that change despite it being the delegation
+  prompt's own leading theory.
+  Found the actual root cause instead: two hardcoded date literals
+  (`GeneralLedgerAccountTaxRate.valid_from`,
+  `PostingProposalRule.creation_date`) had no RFC3339 zone offset
+  (`"...000"` vs. every other literal's `"...000+01:00"`) — a Java
+  client's `OffsetDateTime.parse()` rejects a naive date-time string,
+  and Jersey reports that as exactly ELO's observed generic "Error
+  reading entity from input stream." Fixed both literals, plus corrected
+  a now-stale `function_description` "unconfirmed" comment (P1 already
+  confirmed it's real) — no field-shape/dataclass changes, matching P1's
+  verdict that neither resource needed one.
+  **Orchestrator extended the fix at its systemic source** after
+  reviewing: `_random_timestamp()` itself (used at 13 call sites across
+  `app/fake_data.py`, including P2's new `Address`/
+  `BusinessPartnerBank.valid_from`) built its result from a naive
+  `datetime`, so the same missing-offset defect existed everywhere else
+  it's called too — not just the two spots P3 was scoped to. Fixed once
+  at the helper (append the same `"+01:00"` convention), re-verified live
+  that `Address.valid_from`/`BusinessPartnerBank.valid_from` now carry
+  the offset too, re-ran the full suite (369/369, unchanged). Zero test
+  files needed updates (confirmed by the delegated agent: no test pins
+  an exact date-literal string, only type/presence/enum-membership).
+  Committed as `7655c0f`.
 
 ## Appendix — official spec field tables (P1)
 
