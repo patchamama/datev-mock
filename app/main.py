@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app import db, request_log, windows_proactor_noise
 from app.routers import accounting, admin, diagnostics, dms, master_data
@@ -34,6 +35,18 @@ app = FastAPI(
     ),
     version="0.1.0",
     lifespan=_lifespan,
+)
+
+# Lets the /admin page (SB9's configurable "API base URL") call this API
+# from a different origin -- e.g. the Spring Boot mock's own /admin page
+# pointed here, or vice versa. Local-only dev tool, not internet-facing, so
+# a permissive localhost/127.0.0.1-any-port allow-list is appropriate.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"https?://(127\.0\.0\.1|localhost)(:\d+)?",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.middleware("http")(request_log.log_requests_middleware)

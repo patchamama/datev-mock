@@ -467,6 +467,37 @@ _PAGE = """<!DOCTYPE html>
 </div>
 
 <div class="card mb-4">
+  <div class="card-header">Backend target</div>
+  <div class="card-body">
+    <div class="row gy-2 gx-3 align-items-end">
+      <div class="col-auto" style="min-width: 22rem;">
+        <label for="api-base-input" class="form-label">API base URL</label>
+        <input id="api-base-input" type="text" class="form-control"
+               placeholder="Same origin as this page (default)">
+      </div>
+      <div class="col-auto">
+        <button id="api-base-save" type="button" class="btn btn-primary">Save &amp; reload</button>
+      </div>
+    </div>
+    <div class="small text-muted mt-2">
+      This page's own JavaScript always makes every API call (settings,
+      master-data/accounting, overrides, stored records, the live request
+      log, and everything in the catalog below) against this base URL
+      instead of assuming it's hosted next to its backend. Leave empty to
+      use this page's own origin (today's default behavior, e.g. this
+      FastAPI mock). Point it at another local instance
+      (e.g. <code>https://127.0.0.1:58452</code> for the FastAPI mock or
+      <code>https://127.0.0.1:58553</code> for the Spring Boot mock, or
+      whatever port that backend is running on), the real DATEV API, a
+      DATEV test endpoint, or any other DATEV-compatible mock &mdash; no
+      code changes needed, only that target's own auth/TLS/CORS posture
+      applies. Stored per-browser (not synced to the server); saving
+      reloads the page so every card re-fetches from the new target.
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
   <div class="card-header d-flex justify-content-between align-items-start gap-2">
     <div>
       Master-data clients
@@ -700,13 +731,28 @@ _PAGE = """<!DOCTYPE html>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/languages/xml.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/languages/json.min.js"></script>
 <script>
-const SETTINGS_URL = "/admin/api/settings";
-const MASTER_DATA_URL = "/admin/api/clients/master-data";
-const ACCOUNTING_URL = "/admin/api/clients/accounting";
-const RESET_URL = "/admin/api/reset";
-const STORED_RECORDS_URL = "/admin/api/stored-records";
-const OVERRIDES_URL = "/admin/api/overrides";
-const OVERRIDES_RESOLVE_URL = "/admin/api/overrides/resolve";
+// API base URL this page targets for every fetch/EventSource call below --
+// per-browser (localStorage), empty means "this page's own origin" (today's
+// default, zero-regression behavior). See the "Backend target" card.
+function loadApiBase() {
+  try {
+    return localStorage.getItem("datevMockApiBase") || "";
+  } catch (err) {
+    return "";
+  }
+}
+const API_BASE = loadApiBase().replace(/[/]$/, "");
+function apiUrl(path) {
+  return API_BASE + path;
+}
+
+const SETTINGS_URL = `${API_BASE}/admin/api/settings`;
+const MASTER_DATA_URL = `${API_BASE}/admin/api/clients/master-data`;
+const ACCOUNTING_URL = `${API_BASE}/admin/api/clients/accounting`;
+const RESET_URL = `${API_BASE}/admin/api/reset`;
+const STORED_RECORDS_URL = `${API_BASE}/admin/api/stored-records`;
+const OVERRIDES_URL = `${API_BASE}/admin/api/overrides`;
+const OVERRIDES_RESOLVE_URL = `${API_BASE}/admin/api/overrides/resolve`;
 const CATALOG = __CATALOG_JSON__;
 const OVERRIDE_ENDPOINT_PATHS = __OVERRIDE_PATHS_JSON__;
 
@@ -840,6 +886,22 @@ async function loadAccounting() {
 }
 
 document.getElementById("settings-save").addEventListener("click", saveSettings);
+
+document.getElementById("api-base-input").value = API_BASE;
+document.getElementById("api-base-save").addEventListener("click", () => {
+  const value = document.getElementById("api-base-input").value.trim().replace(/[/]$/, "");
+  try {
+    if (value) {
+      localStorage.setItem("datevMockApiBase", value);
+    } else {
+      localStorage.removeItem("datevMockApiBase");
+    }
+  } catch (err) {
+    // localStorage unavailable (private mode, blocked site data, ...) --
+    // nothing to persist, but don't block the reload below.
+  }
+  location.reload();
+});
 
 document.getElementById("md-add").addEventListener("click", async () => {
   const Name = document.getElementById("md-name").value;
@@ -1450,7 +1512,7 @@ async function fetchSample(path, containerId) {
   const container = document.getElementById(containerId);
   container.innerHTML = '<div class="text-muted small">Loading&hellip;</div>';
   try {
-    const res = await fetch(path);
+    const res = await fetch(apiUrl(path));
     const contentType = res.headers.get("content-type") || "";
     const isJson = contentType.includes("application/json");
     const text = await res.text();
@@ -1568,7 +1630,7 @@ function renderCatalog() {
 
 // --- live request log ---
 
-const LOGS_STREAM_URL = "/admin/api/logs/stream";
+const LOGS_STREAM_URL = `${API_BASE}/admin/api/logs/stream`;
 const REQUEST_LOG_MAX_ROWS = 1000;
 
 // Newest-first, kept in sync with what's actually rendered so the path/
