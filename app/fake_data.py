@@ -642,14 +642,13 @@ def _generate_cost_centers(
 # `Creditor`/`Debitor`, called from `_generate_creditors`/`_generate_debitors`
 # below using that same record's scope-seeded `rng` (architecture decision
 # #4 — deterministic per `(client_id, fiscal_year_id, creditor/debitor id)`,
-# same as every other scoped generator in this module). No real DATEV
-# values are used, same as everywhere else in this file. A few enum-typed
-# fields (`account_statement`/`account_statement_text`/`direct_debit`/
-# `dunning_procedure`/`interest_calculation`/`dunning_text*`) have no
-# extracted real enum member list in the P1 Appendix (only the member
-# *count* is documented) — small invented placeholder pools are used for
-# those, same "no real vocabulary exists" precedent as `Document.
-# document_class`.
+# same as every other scoped generator in this module). No invented values
+# for any enum field: every one below is the real member list, extracted
+# directly from `Accounting-1.5.0.json`'s `datev.debitor-accounting-
+# information` schema after a real ELO client rejected the P2 phase's
+# invented placeholder tokens (`Error reading entity from input stream`,
+# same class of failure as the RFC3339 date bug -- a strict Java enum
+# deserializer rejects any string that isn't one of the real constants).
 
 _ADDRESS_TYPE_VALUES = [
     "not_specified",
@@ -689,14 +688,59 @@ _PAYMENT_MEDIUM_VALUES = [
     "sepa_bank_transfer_with_multiple_invoices",
     "no_bank_transfer",
 ]
-# Placeholder pools — member *count* is spec-confirmed (P1 Appendix), exact
-# member names are not (see module comment above).
-_ACCOUNT_STATEMENT_VALUES = [f"account_statement_option_{i}" for i in range(1, 6)]
-_ACCOUNT_STATEMENT_TEXT_VALUES = [f"account_statement_text_option_{i}" for i in range(1, 11)]
-_DIRECT_DEBIT_VALUES = [f"direct_debit_option_{i}" for i in range(1, 5)]
-_DUNNING_PROCEDURE_VALUES = [f"dunning_procedure_option_{i}" for i in range(1, 8)]
-_INTEREST_CALCULATION_VALUES = [f"interest_calculation_option_{i}" for i in range(1, 5)]
-_DUNNING_TEXT_VALUES = [f"dunning_text_group_{i}" for i in range(1, 11)]
+_ACCOUNT_STATEMENT_VALUES = [
+    "not_specified",
+    "account_statement_for_all_items",
+    "account_statement_dunnable_only",
+    "account_statement_all_dunnable_items",
+    "no_account_statement_for_customer",
+]
+_ACCOUNT_STATEMENT_TEXT_VALUES = [
+    "not_specified",
+    "account_statement_text1",
+    "account_statement_text2",
+    "account_statement_text3",
+    "account_statement_text4",
+    "account_statement_text5",
+    "account_statement_text6",
+    "account_statement_text7",
+    "account_statement_text8",
+    "no_account_statement_text",
+]
+_DIRECT_DEBIT_VALUES = [
+    "not_specified",
+    "sepa_direct_debit",
+    "sepa_direct_debit_with_multiple_invoices",
+    "no_direct_debit_with_this_debitor",
+]
+_DUNNING_PROCEDURE_VALUES = [
+    "not_specified",
+    "first_dun",
+    "second_dun",
+    "first_and_second_dun",
+    "third_dun",
+    "second_and_third_dun",
+    "first_second_and_third_dun",
+    "no_dun",
+]
+_INTEREST_CALCULATION_VALUES = [
+    "not_specified",
+    "fixed_interest_rate",
+    "interest_rate_based_on_sliding_scale",
+    "no_interest_calculated_for_this_debitor",
+]
+_DUNNING_TEXT_VALUES = [
+    "not_specified",
+    "text_group1",
+    "text_group2",
+    "text_group3",
+    "text_group4",
+    "text_group5",
+    "text_group6",
+    "text_group7",
+    "text_group8",
+    "text_group9",
+]
 _DUNNING_PERIOD_CALCULATION_VALUES = ["not_specified", "calculate_dunning_period"]
 
 
