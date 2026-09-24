@@ -16,6 +16,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -237,5 +239,136 @@ class AccountingControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(content().string(containsString("overridden")));
+    }
+
+    // --- SB7: accounting write API parity ---------------------------------------
+
+    @org.junit.jupiter.api.BeforeEach
+    void resetStore() {
+        store.reset();
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.elo.datevmock.store.StoredRecordStore store;
+
+    @Test
+    void postThenGetCreditorRoundTripsThroughStoreInBothFormats() throws Exception {
+        String body = """
+                {"caption": "New Creditor GmbH", "account_number": 70099}
+                """;
+        MvcResult postResult = mockMvc.perform(post(BASE + SCOPE + "/creditors")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode created = json.readTree(postResult.getResponse().getContentAsString());
+        String newId = created.get("id").asText();
+
+        MvcResult jsonResult = mockMvc.perform(get(BASE + SCOPE + "/creditors").header("Accept", "application/json"))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode records = json.readTree(jsonResult.getResponse().getContentAsString());
+        boolean foundJson = false;
+        for (JsonNode record : records) {
+            if (record.get("id").asText().equals(newId)) {
+                foundJson = true;
+                assertThat(record.get("caption").asText()).isEqualTo("New Creditor GmbH");
+            }
+        }
+        assertThat(foundJson).isTrue();
+
+        MvcResult xmlResult = mockMvc.perform(get(BASE + SCOPE + "/creditors"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_XML))
+                .andReturn();
+        assertThat(xmlResult.getResponse().getContentAsString()).contains("New Creditor GmbH");
+    }
+
+    @Test
+    void writtenCreditorIsScopedToItsOwnFiscalYearOnly() throws Exception {
+        String body = """
+                {"caption": "Scoped Creditor"}
+                """;
+        mockMvc.perform(post(BASE + SCOPE + "/creditors").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get(BASE + "/clients/client-1/fiscal-years/fy-2/creditors").header("Accept", "application/json"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.not(containsString("Scoped Creditor"))));
+    }
+
+    @Test
+    void postCreditorWithUnknownAddresseeIdReturns422() throws Exception {
+        String body = """
+                {"caption": "Bad Ref Creditor", "addressee_id": "does-not-exist"}
+                """;
+        mockMvc.perform(post(BASE + SCOPE + "/creditors").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void postTermOfPaymentWithoutCaptionReturns422() throws Exception {
+        mockMvc.perform(post(BASE + SCOPE + "/terms-of-payment").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void postThenGetTermOfPaymentRoundTrips() throws Exception {
+        String body = """
+                {"caption": "30 days net"}
+                """;
+        MvcResult postResult = mockMvc.perform(post(BASE + SCOPE + "/terms-of-payment")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated()).andReturn();
+        JsonNode created = json.readTree(postResult.getResponse().getContentAsString());
+        String newId = created.get("id").asText();
+
+        MvcResult getResult = mockMvc.perform(get(BASE + SCOPE + "/terms-of-payment").header("Accept", "application/json"))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(getResult.getResponse().getContentAsString()).contains(newId).contains("30 days net");
+    }
+
+    @Test
+    void putCostCenterByIdIsVisibleOnSubsequentGet() throws Exception {
+        String body = """
+                {"long_name": "Updated Cost Center"}
+                """;
+        mockMvc.perform(put(BASE + SCOPE + "/cost-systems/1/cost-centers/cc-sb7-new")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk());
+
+        MvcResult getResult = mockMvc.perform(
+                        get(BASE + SCOPE + "/cost-systems/1/cost-centers").header("Accept", "application/json"))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(getResult.getResponse().getContentAsString()).contains("Updated Cost Center");
+    }
+
+    @Test
+    void putAssetStocktakingMissingRequiredFieldsReturns422() throws Exception {
+        mockMvc.perform(put(BASE + SCOPE + "/assets/asset-1/stocktaking")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void postPostingProposalsIncomingInvoicesBatchCreatesRecords() throws Exception {
+        String body = """
+                [{"amount": 119.0, "date": "2024-01-01T00:00:00+01:00"}]
+                """;
+        MvcResult result = mockMvc.perform(post(BASE + SCOPE + "/posting-proposals-incoming-invoices/batch")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated()).andReturn();
+        JsonNode created = json.readTree(result.getResponse().getContentAsString());
+        assertThat(created.isArray()).isTrue();
+        assertThat(created.size()).isEqualTo(1);
+        assertThat(created.get(0).get("amount").asDouble()).isEqualTo(119.0);
+    }
+
+    @Test
+    void postPostingProposalsIncomingInvoicesBatchWithUnknownAccountNumberReturns422() throws Exception {
+        String body = """
+                [{"amount": 119.0, "date": "2024-01-01T00:00:00+01:00", "account_number": 999999999}]
+                """;
+        mockMvc.perform(post(BASE + SCOPE + "/posting-proposals-incoming-invoices/batch")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isUnprocessableEntity());
     }
 }

@@ -51,7 +51,18 @@ public final class RecordMapper {
             if (data.containsKey(sourceKey)) {
                 args[i] = data.get(sourceKey);
             } else {
-                args[i] = defaultForType(component.getType());
+                // Falls back to the snake_case spelling of the component name --
+                // every write body arrives as raw (unmapped) JSON keys matching
+                // this project's snake_case convention (e.g. "long_name"), while
+                // Java record components are camelCase ("longName"). An explicit
+                // fieldMap entry (checked above) still wins when a name genuinely
+                // differs beyond casing (e.g. ClientResource's PascalCase XML names).
+                String snakeKey = toSnakeCase(name);
+                if (data.containsKey(snakeKey)) {
+                    args[i] = data.get(snakeKey);
+                } else {
+                    args[i] = defaultForType(component.getType());
+                }
             }
         }
 
@@ -62,6 +73,19 @@ public final class RecordMapper {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("failed to build " + type.getSimpleName() + " from stored data", e);
         }
+    }
+
+    private static String toSnakeCase(String camelCase) {
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < camelCase.length(); i++) {
+            char c = camelCase.charAt(i);
+            if (Character.isUpperCase(c)) {
+                result.append('_').append(Character.toLowerCase(c));
+            } else {
+                result.append(c);
+            }
+        }
+        return result.toString();
     }
 
     private static String sourceKeyFor(String componentName, Map<String, String> fieldMap) {
