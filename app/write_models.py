@@ -88,7 +88,7 @@ class _BusinessPartnerWriteBase(BaseModel):
     addressee_id: Optional[str] = None
     alternative_search_name: Optional[str] = None
     business_partner_number: Optional[str] = None
-    business_partner_relation_id: Optional[str] = None
+    business_partner_relation_id: Optional[str] = None  # no modeled target resource -- left unvalidated (decision #4/#6)
     caption: Optional[str] = None
     complimentary_close: Optional[str] = None
     correspondence_title: Optional[str] = None
@@ -222,32 +222,32 @@ class ClientWrite(BaseModel):
     client_since: Optional[str] = None
     client_to: Optional[str] = None
     differing_name: Optional[str] = None
-    legal_person_id: Optional[str] = None
+    legal_person_id: Optional[str] = None  # no modeled target resource -- left unvalidated (decision #4/#6)
     name: str
-    natural_person_id: Optional[str] = None
+    natural_person_id: Optional[str] = None  # no modeled target resource -- left unvalidated (decision #4/#6)
     note: Optional[str] = None
     number: int
     status: Optional[str] = None
     timestamp: Optional[str] = None
     type: str
-    organization_id: Optional[str] = None
+    organization_id: Optional[str] = None  # no modeled target resource -- left unvalidated (decision #4/#6)
     organization_name: Optional[str] = None
     organization_number: Optional[str] = None
-    establishment_id: Optional[str] = None
+    establishment_id: Optional[str] = None  # no modeled target resource -- left unvalidated (decision #4/#6)
     establishment_name: Optional[str] = None
     establishment_number: Optional[str] = None
     establishment_short_name: Optional[str] = None
-    functional_area_id: Optional[str] = None
+    functional_area_id: Optional[str] = None  # no modeled target resource -- left unvalidated (decision #4/#6)
     functional_area_name: Optional[str] = None
     functional_area_short_name: Optional[str] = None
 
 
 class ClientResponsibility(BaseModel):
     """`PUT /master-data/v1/clients/{client_id}/responsibilities` array-body
-    item. References `employee_id`, which isn't a real resource until P3's
-    `employees` — same "mock doesn't enforce relational integrity beyond
-    shape" philosophy already established project-wide: not validated to
-    exist, just stored as sent."""
+    item. `employee_id`/`client_id` are validated against master-data
+    `Employee`/`ClientResource` (global, not fiscal-year-scoped) — P2's
+    write-side FK validation (architecture decision #6); see
+    `app/routers/master_data.py::put_client_responsibilities`."""
 
     id: Optional[int] = None
     area_of_responsibility_id: Optional[str] = None
@@ -386,21 +386,21 @@ class EmployeeWrite(BaseModel):
     fax: Optional[str] = None
     initials: Optional[str] = None
     name: str
-    natural_person_id: str
+    natural_person_id: str  # no modeled target resource -- left unvalidated (decision #4/#6)
     note: Optional[str] = None
     number: Optional[int] = None
     phone_extension: Optional[str] = None
     separation_date: Optional[str] = None
     status: Optional[str] = None
     timestamp: Optional[str] = None
-    organization_id: Optional[str] = None
+    organization_id: Optional[str] = None  # no modeled target resource -- left unvalidated (decision #4/#6)
     organization_name: Optional[str] = None
     organization_number: Optional[str] = None
-    establishment_id: Optional[str] = None
+    establishment_id: Optional[str] = None  # no modeled target resource -- left unvalidated (decision #4/#6)
     establishment_name: Optional[str] = None
     establishment_number: Optional[str] = None
     establishment_short_name: Optional[str] = None
-    functional_area_id: Optional[str] = None
+    functional_area_id: Optional[str] = None  # no modeled target resource -- left unvalidated (decision #4/#6)
     functional_area_name: Optional[str] = None
     functional_area_short_name: Optional[str] = None
 

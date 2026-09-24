@@ -17,13 +17,15 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import asdict
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from app import config, data_store, db, overrides, scoped_data
 from app.json_serializers import serialize_clients_json
 from app.models import (
+    AccountingTransactionKey,
+    Addressee,
     AssetStocktaking,
     CostAccountingRecord,
     CostCenter,
@@ -31,6 +33,7 @@ from app.models import (
     CostSequence,
     Creditor,
     Debitor,
+    GeneralLedgerAccount,
     TermOfPayment,
     VariousAddress,
 )
@@ -798,8 +801,148 @@ def _write_record(
     )
 
 
+# --- P2 write-side FK validation (architecture decision #6 + the feature
+# doc's Appendix table) ---
+#
+# One shared `_validate_reference` raises the chosen 422 status (decision
+# #6) when a write-body field references an id/number that doesn't exist in
+# either this request's scope's generated dataset (`app.scoped_data`) or
+# whatever's already been written via SQLite for that same scope --
+# exactly what a subsequent GET in the same scope would show. Every
+# "candidate set" builder below reuses `db.merge_with_stored` (the same
+# union logic every Group A GET route above already uses) instead of
+# querying SQLite directly, per the doc's explicit "don't reinvent it"
+# instruction. `None`/omitted values are always left unvalidated -- every
+# FK-shaped field below is `Optional` except `InternalCostServiceWrite
+# .cost_center_from`/`cost_center_to` and `CashRegisterPostingWrite
+# .cash_account_number`, which are already non-`None` by Pydantic's own
+# required-field enforcement before any handler body runs.
+
+
+def _validate_reference(value: Optional[Any], candidates: set, field_name: str) -> None:
+    if value is not None and value not in candidates:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{field_name}: no matching record found for {value!r} in this scope",
+        )
+
+
+def _as_int(value: Any) -> Optional[int]:
+    """Best-effort int coercion for a candidate set whose dataclass field is
+    typed `str` (e.g. `TermOfPayment.id`) but the write-body field
+    referencing it is typed `int` (e.g. `term_of_payment_id`) -- a stored
+    record whose id isn't int-parseable (e.g. a caller-supplied UUID)
+    simply never matches an int-typed reference, same as a real API
+    wouldn't match it either."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_candidates(records: list[Any], attr: str) -> set[int]:
+    coerced = (_as_int(getattr(record, attr)) for record in records)
+    return {value for value in coerced if value is not None}
+
+
+def _merged_creditors(client_id: str, fiscal_year_id: str) -> list[Creditor]:
+    return db.merge_with_stored(
+        scoped_data.get_creditors_for_scope(client_id, fiscal_year_id),
+        "accounting.creditors",
+        Creditor,
+        nil_fields=_BUSINESS_PARTNER_NIL_FIELDS,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+def _merged_debitors(client_id: str, fiscal_year_id: str) -> list[Debitor]:
+    return db.merge_with_stored(
+        scoped_data.get_debitors_for_scope(client_id, fiscal_year_id),
+        "accounting.debitors",
+        Debitor,
+        nil_fields=_BUSINESS_PARTNER_NIL_FIELDS,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+def _merged_terms_of_payment(client_id: str, fiscal_year_id: str) -> list[TermOfPayment]:
+    return db.merge_with_stored(
+        scoped_data.get_terms_of_payment_for_scope(client_id, fiscal_year_id),
+        "accounting.terms_of_payment",
+        TermOfPayment,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+def _merged_general_ledger_accounts(
+    client_id: str, fiscal_year_id: str
+) -> list[GeneralLedgerAccount]:
+    return db.merge_with_stored(
+        scoped_data.get_general_ledger_accounts_for_scope(client_id, fiscal_year_id),
+        "accounting.general_ledger_accounts",
+        GeneralLedgerAccount,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+def _merged_accounting_transaction_keys(
+    client_id: str, fiscal_year_id: str
+) -> list[AccountingTransactionKey]:
+    return db.merge_with_stored(
+        scoped_data.get_accounting_transaction_keys_for_scope(client_id, fiscal_year_id),
+        "accounting.accounting_transaction_keys",
+        AccountingTransactionKey,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+
+
+def _primary_cost_center_ids(client_id: str, fiscal_year_id: str) -> set[str]:
+    """Same "fiscal year's primary cost system" convention architecture
+    decision #4 established for `OpenItem.kost1_cost_center_id` in P1 --
+    every write-side field below validating against `CostCenter.id` with no
+    `cost_system_id` of its own in its path reuses it here."""
+    cost_systems = scoped_data.get_cost_systems_for_scope(client_id, fiscal_year_id)
+    primary_cost_system_id = cost_systems[0].id
+    merged = db.merge_with_stored(
+        scoped_data.get_cost_centers_for_scope(client_id, fiscal_year_id, primary_cost_system_id),
+        "accounting.cost_centers",
+        CostCenter,
+        client_id=client_id,
+        fiscal_year_id=fiscal_year_id,
+    )
+    return {record.id for record in merged}
+
+
+def _validate_business_partner_write(
+    body: Union[CreditorWrite, DebitorWrite], client_id: str, fiscal_year_id: str
+) -> None:
+    addressee_ids = {
+        record.id
+        for record in db.merge_with_stored(
+            data_store.list_addressees(), "master_data.addressees", Addressee
+        )
+    }
+    _validate_reference(body.addressee_id, addressee_ids, "addressee_id")
+    # business_partner_relation_id: no modeled target resource (decision #4/#6) -- left unvalidated.
+    if body.accounting_information is not None:
+        term_of_payment_ids = _int_candidates(
+            _merged_terms_of_payment(client_id, fiscal_year_id), "id"
+        )
+        _validate_reference(
+            body.accounting_information.term_of_payment_id,
+            term_of_payment_ids,
+            "accounting_information.term_of_payment_id",
+        )
+
+
 @router.post(DEBITORS_ENDPOINT, status_code=201, summary="Create a debitor")
 def post_debitor(client_id: str, fiscal_year_id: str, body: DebitorWrite) -> dict[str, Any]:
+    _validate_business_partner_write(body, client_id, fiscal_year_id)
     return _write_record(
         "accounting.debitors", body, client_id=client_id, fiscal_year_id=fiscal_year_id
     )
@@ -818,6 +961,8 @@ def post_debitor(client_id: str, fiscal_year_id: str, body: DebitorWrite) -> dic
 def put_debitors(
     client_id: str, fiscal_year_id: str, body: list[DebitorWrite]
 ) -> list[dict[str, Any]]:
+    for item in body:
+        _validate_business_partner_write(item, client_id, fiscal_year_id)
     return [
         _write_record("accounting.debitors", item, client_id=client_id, fiscal_year_id=fiscal_year_id)
         for item in body
@@ -828,6 +973,7 @@ def put_debitors(
 def put_debitor(
     client_id: str, fiscal_year_id: str, debitor_id: str, body: DebitorWrite
 ) -> dict[str, Any]:
+    _validate_business_partner_write(body, client_id, fiscal_year_id)
     return _write_record(
         "accounting.debitors",
         body,
@@ -839,6 +985,7 @@ def put_debitor(
 
 @router.post(CREDITORS_ENDPOINT, status_code=201, summary="Create a creditor")
 def post_creditor(client_id: str, fiscal_year_id: str, body: CreditorWrite) -> dict[str, Any]:
+    _validate_business_partner_write(body, client_id, fiscal_year_id)
     return _write_record(
         "accounting.creditors", body, client_id=client_id, fiscal_year_id=fiscal_year_id
     )
@@ -855,6 +1002,8 @@ def post_creditor(client_id: str, fiscal_year_id: str, body: CreditorWrite) -> d
 def put_creditors(
     client_id: str, fiscal_year_id: str, body: list[CreditorWrite]
 ) -> list[dict[str, Any]]:
+    for item in body:
+        _validate_business_partner_write(item, client_id, fiscal_year_id)
     return [
         _write_record(
             "accounting.creditors", item, client_id=client_id, fiscal_year_id=fiscal_year_id
@@ -867,6 +1016,7 @@ def put_creditors(
 def put_creditor(
     client_id: str, fiscal_year_id: str, creditor_id: str, body: CreditorWrite
 ) -> dict[str, Any]:
+    _validate_business_partner_write(body, client_id, fiscal_year_id)
     return _write_record(
         "accounting.creditors",
         body,
@@ -913,6 +1063,17 @@ def put_term_of_payment(
 def put_asset_stocktaking(
     client_id: str, fiscal_year_id: str, asset_id: str, body: AssetStocktakingWrite
 ) -> dict[str, Any]:
+    if body.general_ledger_account is not None:
+        gl_account_numbers = _int_candidates(
+            _merged_general_ledger_accounts(client_id, fiscal_year_id), "account_number"
+        )
+        _validate_reference(
+            body.general_ledger_account.account_number,
+            gl_account_numbers,
+            "general_ledger_account.account_number",
+        )
+    cost_center_ids = _primary_cost_center_ids(client_id, fiscal_year_id)
+    _validate_reference(body.kost1_cost_center_id, cost_center_ids, "kost1_cost_center_id")
     return _write_record(
         "accounting.assets_stocktakings",
         body,
@@ -1006,6 +1167,14 @@ def post_cost_accounting_record(
     cost_sequence_id: str,
     body: CostAccountingRecordWrite,
 ) -> dict[str, Any]:
+    gl_account_numbers = _int_candidates(
+        _merged_general_ledger_accounts(client_id, fiscal_year_id), "account_number"
+    )
+    _validate_reference(body.account_number, gl_account_numbers, "account_number")
+    _validate_reference(body.contra_account_number, gl_account_numbers, "contra_account_number")
+    cost_center_ids = _primary_cost_center_ids(client_id, fiscal_year_id)
+    _validate_reference(body.alternative_cost_center, cost_center_ids, "alternative_cost_center")
+    _validate_reference(body.cost_center, cost_center_ids, "cost_center")
     return _write_record(
         "accounting.cost_accounting_records",
         body,
@@ -1020,6 +1189,18 @@ def post_cost_accounting_record(
 def post_various_address(
     client_id: str, fiscal_year_id: str, body: VariousAddressWrite
 ) -> dict[str, Any]:
+    creditors = _merged_creditors(client_id, fiscal_year_id)
+    debitors = _merged_debitors(client_id, fiscal_year_id)
+    account_numbers = {record.account_number for record in creditors} | {
+        record.account_number for record in debitors
+    }
+    _validate_reference(body.account_number, account_numbers, "account_number")
+    business_partner_numbers = {record.business_partner_number for record in creditors} | {
+        record.business_partner_number for record in debitors
+    }
+    _validate_reference(
+        body.business_partner_number, business_partner_numbers, "business_partner_number"
+    )
     return _write_record(
         "accounting.various_addresses", body, client_id=client_id, fiscal_year_id=fiscal_year_id
     )
@@ -1039,6 +1220,9 @@ def post_various_address(
 def post_internal_cost_service(
     client_id: str, fiscal_year_id: str, cost_system_id: str, body: InternalCostServiceWrite
 ) -> dict[str, Any]:
+    cost_center_ids = _primary_cost_center_ids(client_id, fiscal_year_id)
+    _validate_reference(body.cost_center_from, cost_center_ids, "cost_center_from")
+    _validate_reference(body.cost_center_to, cost_center_ids, "cost_center_to")
     return _write_record(
         "accounting.internal_cost_services",
         body,
@@ -1075,6 +1259,26 @@ def post_accounting_sequence(
 def post_posting_proposals_incoming_invoices_batch(
     client_id: str, fiscal_year_id: str, body: list[IncomingInvoicePostingWrite]
 ) -> list[dict[str, Any]]:
+    transaction_keys = _int_candidates(
+        _merged_accounting_transaction_keys(client_id, fiscal_year_id), "number"
+    )
+    gl_account_numbers = _int_candidates(
+        _merged_general_ledger_accounts(client_id, fiscal_year_id), "account_number"
+    )
+    creditor_account_numbers = _int_candidates(
+        _merged_creditors(client_id, fiscal_year_id), "account_number"
+    )
+    cost_center_ids = _primary_cost_center_ids(client_id, fiscal_year_id)
+    for item in body:
+        _validate_reference(
+            item.accounting_transaction_key, transaction_keys, "accounting_transaction_key"
+        )
+        _validate_reference(item.account_number, gl_account_numbers, "account_number")
+        _validate_reference(
+            item.creditor_account_number, creditor_account_numbers, "creditor_account_number"
+        )
+        _validate_reference(item.kost1_cost_center_id, cost_center_ids, "kost1_cost_center_id")
+        _validate_reference(item.kost2_cost_center_id, cost_center_ids, "kost2_cost_center_id")
     return [
         _write_record(
             "accounting.posting_proposals_incoming_invoices",
@@ -1095,6 +1299,26 @@ def post_posting_proposals_incoming_invoices_batch(
 def post_posting_proposals_outgoing_invoices_batch(
     client_id: str, fiscal_year_id: str, body: list[OutgoingInvoicePostingWrite]
 ) -> list[dict[str, Any]]:
+    transaction_keys = _int_candidates(
+        _merged_accounting_transaction_keys(client_id, fiscal_year_id), "number"
+    )
+    gl_account_numbers = _int_candidates(
+        _merged_general_ledger_accounts(client_id, fiscal_year_id), "account_number"
+    )
+    debitor_account_numbers = _int_candidates(
+        _merged_debitors(client_id, fiscal_year_id), "account_number"
+    )
+    cost_center_ids = _primary_cost_center_ids(client_id, fiscal_year_id)
+    for item in body:
+        _validate_reference(
+            item.accounting_transaction_key, transaction_keys, "accounting_transaction_key"
+        )
+        _validate_reference(item.account_number, gl_account_numbers, "account_number")
+        _validate_reference(
+            item.debitor_account_number, debitor_account_numbers, "debitor_account_number"
+        )
+        _validate_reference(item.kost1_cost_center_id, cost_center_ids, "kost1_cost_center_id")
+        _validate_reference(item.kost2_cost_center_id, cost_center_ids, "kost2_cost_center_id")
     return [
         _write_record(
             "accounting.posting_proposals_outgoing_invoices",
@@ -1115,6 +1339,23 @@ def post_posting_proposals_outgoing_invoices_batch(
 def post_posting_proposals_cash_register_batch(
     client_id: str, fiscal_year_id: str, body: list[CashRegisterPostingWrite]
 ) -> list[dict[str, Any]]:
+    transaction_keys = _int_candidates(
+        _merged_accounting_transaction_keys(client_id, fiscal_year_id), "number"
+    )
+    gl_account_numbers = _int_candidates(
+        _merged_general_ledger_accounts(client_id, fiscal_year_id), "account_number"
+    )
+    cost_center_ids = _primary_cost_center_ids(client_id, fiscal_year_id)
+    for item in body:
+        _validate_reference(
+            item.accounting_transaction_key, transaction_keys, "accounting_transaction_key"
+        )
+        _validate_reference(item.cash_account_number, gl_account_numbers, "cash_account_number")
+        _validate_reference(
+            item.contra_account_number, gl_account_numbers, "contra_account_number"
+        )
+        _validate_reference(item.kost1_cost_center_id, cost_center_ids, "kost1_cost_center_id")
+        _validate_reference(item.kost2_cost_center_id, cost_center_ids, "kost2_cost_center_id")
     return [
         _write_record(
             "accounting.posting_proposals_cash_register",

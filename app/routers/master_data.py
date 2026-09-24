@@ -234,6 +234,38 @@ def _write_record(resource_type: str, body: Any, record_id: Optional[str] = None
     return db.upsert_record(resource_type, resolved_id, data)
 
 
+# --- P2 write-side FK validation (architecture decision #6 + the feature
+# doc's Appendix table) -- same `_validate_reference`/`merge_with_stored`-
+# reuse convention as `app/routers/accounting.py`'s own P2 block; see that
+# module's comment for the full rationale. Master data isn't scoped by
+# client_id/fiscal_year_id (P1 finding: master-data write endpoints don't
+# use that scoping either), so these candidate sets are global.
+
+
+def _validate_reference(value: Optional[Any], candidates: set, field_name: str) -> None:
+    if value is not None and value not in candidates:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{field_name}: no matching record found for {value!r}",
+        )
+
+
+def _employee_ids() -> set[str]:
+    merged = db.merge_with_stored([], "master_data.employees", Employee)
+    return {record.id for record in merged}
+
+
+def _client_resource_ids() -> set[str]:
+    merged = db.merge_with_stored(
+        data_store.list_master_data(),
+        "master_data.clients",
+        ClientResource,
+        id_field="Id",
+        field_map=_CLIENT_RESOURCE_FIELD_MAP,
+    )
+    return {record.Id for record in merged}
+
+
 @router.post(ENDPOINT, status_code=201, summary="Create a master-data client")
 def post_client(body: ClientWrite) -> dict[str, Any]:
     return _write_record("master_data.clients", body)
@@ -250,15 +282,20 @@ def put_client(client_id: str, body: ClientWrite) -> dict[str, Any]:
     description=(
         "Full-replace semantics: the given array becomes the client's "
         "complete responsibilities list, replacing whatever was stored "
-        "before. employee_id is not validated to reference a real employee "
-        "-- master-data.employees doesn't exist as a resource until P3, "
-        "and this mock's established convention is to store what's sent "
-        "without enforcing relational integrity beyond shape."
+        "before. employee_id is validated against master-data.employees "
+        "and client_id against master-data.clients (both global, P2); an "
+        "unresolvable reference is rejected with 422."
     ),
 )
 def put_client_responsibilities(
     client_id: str, body: list[ClientResponsibility]
 ) -> list[dict[str, Any]]:
+    employee_ids = _employee_ids()
+    client_resource_ids = _client_resource_ids()
+    for item in body:
+        _validate_reference(item.employee_id, employee_ids, "employee_id")
+        _validate_reference(item.client_id, client_resource_ids, "client_id")
+
     resource_type = "master_data.client_responsibilities"
     db.delete_records(resource_type, client_id=client_id)
     stored = []
