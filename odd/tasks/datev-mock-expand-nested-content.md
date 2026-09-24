@@ -126,7 +126,7 @@ of this epic's fix).
       resolution for all 3 endpoint families (decision #1). Durable
       output: an Appendix in this doc (same convention as this project's
       other epics), not just an agent's transient report.
-- [ ] P2 — `creditors`/`debitors` `expand=all`: new/promoted dataclasses
+- [x] P2 — `creditors`/`debitors` `expand=all`: new/promoted dataclasses
       (`Address`, `Communication`, promoted `addresses`/`banks`/
       `communications` types), scoped-deterministic generation, query-
       param-aware router logic, working XML + JSON rendering.
@@ -175,6 +175,46 @@ session.
   `accounting_information` sub-schemas are missing several spec fields.
   Full field tables in the new Appendix below, handed to P2/P3 as their
   implementation checklist.
+- 2026-09-24: P2 complete (delegated direct). New dataclasses per the
+  Appendix checklist (`Address`, `AddressUsageType`,
+  `BusinessPartnerBank` — deliberately distinct from the existing
+  master-data `Bank`, `Communication`, `CommunicationUsageType`,
+  `IndividualField`), `CreditorAccountingInformation`/
+  `DebitorAccountingInformation` extended to full spec parity (7→14,
+  11→35 fields). `addresses`/`banks`/`communications` promoted from
+  `Optional[str]` placeholders to real typed lists. `expand=all` wired as
+  the first query param this mock actually reads (decision #2), gated at
+  serialization in a new `_apply_expand_gate()` — default stays nil
+  exactly as before, `expand=all` populates real deterministic
+  scope-seeded content. Also fixed the real underlying XML bug
+  (`_render_field` fell through to `str(value)` for dataclasses/lists,
+  producing raw Python `repr()` inside XML — the actual reason these
+  fields were force-nilled in an earlier epic instead of properly
+  rendered) via a new recursive `_render_dataclass_fields()` helper.
+  Scope calls made and flagged by the implementer (all reasonable, none
+  requiring rework): 1 address/bank/communication per record (spec
+  doesn't mandate cardinality), no cross-reference from
+  `accounting_information.term_of_payment_id` into the scope's own
+  terms-of-payment list (nice-to-have, not required), a few
+  `DebitorAccountingInformation` enum fields use invented placeholder
+  tokens where the Appendix only documented member *counts* not exact
+  values (same precedent as this project's existing `Document
+  .document_class`).
+  Orchestrator independently re-verified: read the full diff across all
+  4 files (477 insertions), re-ran `pytest tests/ -q` (369 passed,
+  unchanged), restarted the live server to pick up the change and
+  confirmed live against real HTTP: no-`expand` request keeps
+  `addresses` absent from JSON entirely (matches pre-existing evidence-
+  backed default), `expand=all` populates real `Address`/
+  `BusinessPartnerBank` content, XML round-trips through
+  `ElementTree.parse` without error. Note: the delegation prompt
+  incorrectly referenced "18 known pre-existing failures" as a baseline
+  to preserve — that number was stale (the referential-integrity epic's
+  P3, completed earlier in this same session, had already brought the
+  suite to 369/369 green); the implementer correctly caught this
+  discrepancy rather than fabricating a reconciliation, flagged it
+  instead of guessing. Committed as `bdfb69c` (P1 doc, which had never
+  actually been committed after P1 finished) and `144cff7` (P2 code).
 
 ## Appendix — official spec field tables (P1)
 
