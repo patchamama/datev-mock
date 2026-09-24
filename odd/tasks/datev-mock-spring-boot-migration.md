@@ -28,7 +28,7 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - [x] **SB0 — Bootstrap the standalone repository** *(completed: `32725b1`)*
 - [x] **SB1 — Establish build and strict-TDD foundation**
 - [x] **SB2 — Shared DATEV contracts, XML, and format negotiation**
-- [ ] **SB3 — Deterministic mock generation and read-state composition**
+- [x] **SB3 — Deterministic mock generation and read-state composition**
 - [ ] **SB4 — SQLite overlays, validation, and reset semantics**
 - [ ] **SB5 — Master-data API parity**
 - [ ] **SB6 — Accounting read API parity**
@@ -71,7 +71,7 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - **Checks:** Deterministic-scope tests, configuration tests, and read-state/override integration tests.
 - **Route/dependency evidence:** `app/data_store.py`, `app/scoped_data.py`, `app/config.py`, `app/overrides.py`, `tests/test_data_store.py`, `tests/test_config.py`.
 - **Delivery boundary:** One mock-domain/state commit.
-- **Status:** Planned; depends on SB2.
+- **Status:** **Complete.** Ported `app/scoped_data.py`'s SHA256-seeded (`ScopeSeed`, `com.elo.datevmock.scoped`), scope-cached (`ConcurrentHashMap` + `computeIfAbsent`, so same scope key always returns the same cached list instance) deterministic generation for fiscal years, cost systems, cost centers, terms of payment, and creditors, via `ScopedDataService`. Referential-integrity cross-references are real: a fiscal year's `creditorTermOfPaymentId`/`debitorTermOfPaymentId` are backfilled from that same fiscal year's own generated terms-of-payment scope; a creditor's `addresseeId` is drawn from a global id pool (`GlobalAddresseePool` — a documented placeholder standing in for SB5's not-yet-ported real `Addressee` list, since master data is out of SB3's scope). Generated field *values* are not byte-identical to Python (different PRNGs, not a stated goal — see the class javadoc); the scoping *architecture* (stability, independence, real cross-references) is what's tested and proven, with a dedicated `ScopeSeedTest` proving true seed divergence deterministically (collision-free via SHA256) rather than asserting inequality of a downstream random field, which would carry a real if small chance of an unlucky coincidental match. Also ported the storage layer of `app/overrides.py` (`OverrideStore`/`OverrideEntry`, `com.elo.datevmock.overrides`): set/get-active/list/enable/disable/delete/clear, plus the pending-upload store/resolve flow for ambiguous fingerprint matches. Deliberately did **not** port `detect_candidates`/`detect_content_type`/`sanitize_xml` (upload-time XML-root/JSON-fingerprint detection across every DATEV resource type) or any router/multipart wiring — SB9's own scope explicitly names "multipart `file` override upload/resolve/list/update/delete", so that layer sits on top of this store later rather than being duplicated now. `app/config.py`'s `Settings`/`app/db.py`'s `merge_with_stored` were confirmed **not** needed by SB3: `datev_api_version` was already fully ported in SB2 (`MockSettings`) and isn't consulted by generation itself, only by the read-side legacy/modern gate; SQLite-backed write-overlay composition (`merge_with_stored`) is SB4's explicit scope ("SQLite overlays, validation, and reset semantics"), not SB3's — attempting it here would have duplicated that epic. `mvn test`: `Tests run: 50, Failures: 0, Errors: 0` (39 prior + 11 new override-store tests; the 9 scoped-data + 3 scope-seed tests already counted in that 39 from an earlier `test-compile`-confirmed RED). Committed on `feat/sb1-build-foundation` as `94d8664` (`feat(sb3): deterministic scoped mock generation and in-memory overrides`) in `spring-boot/.git`.
 
 ### SB4 — SQLite overlays, validation, and reset semantics
 - **Scope:** Generic SQLite persisted records, create/update validation, conflict/not-found/status behavior, restart persistence, and reset behavior separating stored data from generated data, overrides, and logs.
@@ -141,9 +141,10 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 
 - Java 21 is verified at `C:\ELO\java\bin\java.exe`: Azul OpenJDK 21.0.1, with `javac.exe` and `jar.exe`. Maven 3.9.16 is verified at `C:\apache-maven-3.9.16\\bin\\mvn.cmd` when `JAVA_HOME=C:\\ELO\\java`; it is not on the system `PATH`.
 - Maven Central is reachable and dependency resolution works against the default `~/.m2` repository; the earlier "Permission denied" report did not reproduce and is presumed to have been a transient/local environment issue in that session, not a real network restriction. No blocker remains for further epics.
-- `spring-boot/.git` exists independently, with no configured remote yet (local-only); SB0 and SB1 are committed (`32725b1`, `60bbfb2`) on branch `feat/sb1-build-foundation` with the repository-local author identity configured.
+- `spring-boot/.git` exists independently, with no configured remote yet (local-only); SB0, SB1, SB2, and SB3 are committed (`32725b1`, `60bbfb2`, `c69666d`, `94d8664`) on branch `feat/sb1-build-foundation` with the repository-local author identity configured.
 - The FastAPI root repository's own `.gitignore` now excludes `spring-boot/` so it is never swept into the FastAPI repo's index.
+- `mvn test` on `spring-boot/` currently reports `Tests run: 50, Failures: 0, Errors: 0`.
 
 ## Next action
 
-**Implement SB3 (deterministic mock generation and read-state composition) with strict TDD, using `app/data_store.py`, `app/scoped_data.py`, `app/config.py`, `app/overrides.py`, and their tests in the FastAPI project as the authoritative contract.**
+**Implement SB4 (SQLite overlays, validation, and reset semantics) with strict TDD, using `app/db.py`, the write-endpoint tests, and `tests/test_db.py` in the FastAPI project as the authoritative contract.**
