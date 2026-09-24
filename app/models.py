@@ -755,8 +755,12 @@ class GeneralLedgerAccount:
     live capture (`examples/general-ledger-accounts.xml`, JSON content) —
     the real 7-field shape is `account_number`, `additional_function`,
     `caption`, `function_extension`, `id`, `main_function`,
-    `main_function_number`; `function_description` is kept as an extra,
-    unconfirmed field (pre-existing, not contradicted by real evidence)."""
+    `main_function_number`; `function_description` was originally flagged
+    as an extra, unconfirmed field, but P1 of
+    `datev-mock-expand-nested-content.md`'s fresh official-spec extraction
+    confirmed it as a real, spec-documented field (9-field
+    `general-ledger-account` shape, not just this 7-field live-capture
+    subset)."""
 
     id: str
     account_number: int

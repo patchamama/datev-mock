@@ -147,7 +147,13 @@ def _random_timestamp(
     offset_days = active_rng.randint(0, max((end - base).days, 1))
     offset_seconds = active_rng.randint(0, 86399)
     ts = base + timedelta(days=offset_days, seconds=offset_seconds)
-    return ts.isoformat(timespec="milliseconds")
+    # RFC3339 `date-time` requires a zone offset -- a naive `datetime`'s
+    # `.isoformat()` omits it, which a strict client (e.g. Java
+    # `OffsetDateTime.parse()`) rejects (P3 of
+    # datev-mock-expand-nested-content.md's root-caused ELO failure).
+    # "+01:00" matches the fixed offset every other hardcoded timestamp
+    # literal in this file already uses.
+    return ts.isoformat(timespec="milliseconds") + "+01:00"
 
 
 def _random_date_after(iso_timestamp: str) -> str:
@@ -1030,13 +1036,21 @@ def _generate_general_ledger_accounts(
                 main_function_number=main_function_number,
                 function_extension=function_extension,
                 additional_function=additional_function,
-                # `function_description` is an unconfirmed, extra field (not
-                # part of the real 7-field shape) — left absent on the first
-                # record so it demonstrably stays optional, not silently
-                # always-populated.
+                # `function_description` is a real, spec-confirmed field
+                # (P1 of datev-mock-expand-nested-content.md) — left absent
+                # on the first record so it demonstrably stays optional,
+                # not silently always-populated (matches confirmed real
+                # DATEV evidence that optional-and-unset fields are omitted
+                # from the JSON body, never sent as explicit `null`).
                 function_description=(None if index == 0 else caption),
                 tax_rates=(
-                    [GeneralLedgerAccountTaxRate(tax_rate=19.0, valid_from="2021-01-01T00:00:00.000")]
+                    # RFC3339 `date-time` requires a zone offset (P3 of
+                    # datev-mock-expand-nested-content.md) — a bare
+                    # "...000" string with no `Z`/`+hh:mm` fails strict Java
+                    # `OffsetDateTime` parsing, the actual root cause behind
+                    # ELO's generic "Error reading entity from input
+                    # stream" for this endpoint (not a shape/null issue).
+                    [GeneralLedgerAccountTaxRate(tax_rate=19.0, valid_from="2021-01-01T00:00:00.000+01:00")]
                     if index % 2 == 0
                     else []
                 ),
@@ -1412,7 +1426,9 @@ def _generate_posting_proposal_rules(
                     tax_rate=19.0,
                 ),
                 posting_proposal_information=info_entries,
-                creation_date="2024-01-01T00:00:00.000",
+                # Same RFC3339 zone-offset fix as `tax_rates.valid_from`
+                # above (P3 of datev-mock-expand-nested-content.md).
+                creation_date="2024-01-01T00:00:00.000+01:00",
             )
         )
     return records
