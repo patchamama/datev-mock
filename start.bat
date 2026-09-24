@@ -161,7 +161,11 @@ rem returns immediately and uvicorn below still runs as the normal
 rem foreground/blocking final command, exactly as before.
 start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process 'https://127.0.0.1:%PORT%/admin'"
 
-"%PYTHON_EXE%" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem
+rem --no-access-log: app/request_log.py's middleware already logs every
+rem request in clean plain text; uvicorn's own colored access log was
+rem printing a redundant second line per request, with raw ANSI escape
+rem codes on terminals that don't render them (e.g. classic cmd.exe).
+"%PYTHON_EXE%" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem --no-access-log
 exit /b %errorlevel%
 
 rem ---------------------------------------------------------------------

@@ -39,12 +39,16 @@ def main() -> None:
     # normal `import` statement above -- a string target is resolved by
     # uvicorn at runtime via importlib, which a frozen build can't discover
     # ahead of time without extra --hidden-import bookkeeping.
+    # access_log=False: app/request_log.py's middleware already logs every
+    # request in clean plain text; uvicorn's own colored access log was
+    # printing a redundant second line per request.
     uvicorn.run(
         app,
         host=HOST,
         port=PORT,
         ssl_keyfile=str(key_path),
         ssl_certfile=str(cert_path),
+        access_log=False,
     )
 
 

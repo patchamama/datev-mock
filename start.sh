@@ -194,5 +194,9 @@ echo "[5/5] Starting the DATEV mock server on https://127.0.0.1:$PORT ..."
     xdg-open "$ADMIN_URL" >/dev/null 2>&1 || open "$ADMIN_URL" >/dev/null 2>&1 || echo "Open $ADMIN_URL in your browser."
 ) &
 
+# --no-access-log: app/request_log.py's middleware already logs every
+# request in clean plain text; uvicorn's own colored access log was
+# printing a redundant second line per request, with raw ANSI escape
+# codes on terminals that don't render them.
 exec "$PYTHON_EXE" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" \
-    --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem
+    --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem --no-access-log
