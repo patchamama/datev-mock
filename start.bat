@@ -17,7 +17,7 @@ cd /d "%~dp0"
 set "PYTHON_EXE="
 set "USE_VENV="
 
-echo [1/5] Checking for a usable system Python (>= 3.9)...
+echo [1/5] Checking for a usable system Python ^(^>= 3.9^)...
 
 call :find_system_python
 if defined SYSTEM_PYTHON_CMD (
