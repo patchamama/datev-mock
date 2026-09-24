@@ -11,7 +11,7 @@ import java.time.Instant;
  * resolution would make the bare name work either way, but the distinct
  * name is clearer).
  */
-final class OverrideEntry {
+public final class OverrideEntry {
 
     private final String content;
     private final String contentType;
@@ -27,11 +27,11 @@ final class OverrideEntry {
         this.enabled = enabled;
     }
 
-    String content() {
+    public String content() {
         return content;
     }
 
-    String contentType() {
+    public String contentType() {
         return contentType;
     }
 

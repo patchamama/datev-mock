@@ -33,7 +33,7 @@ public class OverrideStore {
         overrides.put(key, new OverrideEntry(content, contentType, filename, OverrideEntry.nowIso(), true));
     }
 
-    OverrideEntry getActiveOverride(String key) {
+    public OverrideEntry getActiveOverride(String key) {
         OverrideEntry entry = overrides.get(key);
         return entry != null && entry.enabled() ? entry : null;
     }

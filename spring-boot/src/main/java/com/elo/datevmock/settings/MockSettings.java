@@ -15,8 +15,10 @@ import java.util.Set;
 public class MockSettings {
 
     private static final Set<String> VALID_API_VERSIONS = Set.of("legacy", "modern");
+    private static final Set<String> VALID_FORMATS = Set.of("xml", "json");
 
     private String datevApiVersion = "legacy";
+    private String defaultAccountingFormat = "xml";
 
     public String getDatevApiVersion() {
         return datevApiVersion;
@@ -28,5 +30,18 @@ public class MockSettings {
                     "datev_api_version must be one of " + VALID_API_VERSIONS + ", got: " + value);
         }
         this.datevApiVersion = value;
+    }
+
+    /** Ports {@code app/config.py}'s {@code default_accounting_format} (default {@code "xml"}). */
+    public String getDefaultAccountingFormat() {
+        return defaultAccountingFormat;
+    }
+
+    public void setDefaultAccountingFormat(String value) {
+        if (!VALID_FORMATS.contains(value)) {
+            throw new IllegalArgumentException(
+                    "default_accounting_format must be one of " + VALID_FORMATS + ", got: " + value);
+        }
+        this.defaultAccountingFormat = value;
     }
 }

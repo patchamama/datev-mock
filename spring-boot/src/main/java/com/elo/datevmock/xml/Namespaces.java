@@ -22,6 +22,8 @@ public final class Namespaces {
             "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.CostCenter";
     public static final String BUSINESS_PARTNERS_NS =
             "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.BusinessPartners";
+    public static final String MASTER_DATA_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Sdd.Connect.PlugIn.Contracts.Resources";
 
     private Namespaces() {
     }

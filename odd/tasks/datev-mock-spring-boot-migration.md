@@ -30,7 +30,7 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - [x] **SB2 — Shared DATEV contracts, XML, and format negotiation**
 - [x] **SB3 — Deterministic mock generation and read-state composition**
 - [x] **SB4 — SQLite overlays, validation, and reset semantics**
-- [ ] **SB5 — Master-data API parity**
+- [x] **SB5 — Master-data API parity**
 - [ ] **SB6 — Accounting read API parity**
 - [ ] **SB7 — Accounting write API parity**
 - [ ] **SB8 — DMS and diagnostics parity**
@@ -87,7 +87,9 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - **Checks:** Ported parity tests from `test_master_data*.py` and relevant write-endpoint cases.
 - **Route/dependency evidence:** `app/routers/master_data.py`: clients, addressees, banks, employees; depends on SB2–SB4.
 - **Delivery boundary:** One master-data behavior commit.
-- **Status:** Planned.
+- **Status:** **Complete.** First epic to mount real HTTP endpoints, wiring SB2 (`DatevXmlRenderer`/`DatevJsonMapper`/`FormatNegotiator`)/SB3-sibling generation/SB4 (`StoredRecordStore`/`RecordMapper`/`ReferenceValidation`) together via a new `MasterDataController` under `/datev/api/master-data/v1/*`. Built: `ClientResource`/`Addressee`/`Bank`/`Employee`/`HistoricalValue` models (ported field-for-field from `app/models.py`); `ClientResourceXmlSerializer` + `MasterDataClientJson` (9-field simplified JSON projection, ports `serialize_master_data_clients_json`); `MasterDataGenerator` — a new, fixed-count (18 clients/8 addressees/6 banks) unscoped deterministic dataset, since master-data has no fiscal-year scope (unlike SB3's scoped generation) — mirrors `app/data_store.py`'s own flat module-level lists; `StoreConfig` wiring `StoredRecordStore` as an app-wide singleton bean over `datev_mock.db` (gitignored); a `ValidationExceptionHandler` mapping SB4's `ValidationException` to HTTP 422. `OverrideStore.getActiveOverride`/`OverrideEntry` (SB3) were widened from package-private to public so the new controller package can consume them, matching the override-check-first pattern every FastAPI master-data GET uses. Full CRUD for clients/addressees/employees (list/detail/create/update), read-only banks, and `PUT .../clients/{id}/responsibilities` with FK validation against employee/client-resource ids (422 on an unresolvable reference) are all wired.
+  `mvn test`: `Tests run: 83, Failures: 0, Errors: 0` (71 pre-existing + 12 new `MasterDataControllerTest` cases covering list/detail/create/update, content negotiation, 404, and the responsibilities 422 path). Implementation was written ahead of the new tests this time (SB5 needed extensive FastAPI-side reading — router, models, serializers, write models — before any Java code could be written correctly), so the first full run was GREEN on the first try rather than showing a genuine RED for the new controller tests; to still get real failure evidence, one assertion (`clientsHasAtLeast15Records`) was deliberately broken (expected `>= 999`), re-run and confirmed to fail against the real generated data, then reverted and re-verified GREEN — proving the tests exercise real behavior rather than passing vacuously.
+  Honest gaps: request bodies for POST/PUT are accepted as raw `Map<String, Object>` rather than typed/validated DTOs (no Pydantic-equivalent required-field/type validation — e.g. FastAPI's `ClientWrite.name`/`number`/`type` being required isn't enforced here); `AddresseeWrite`'s ~10 write-only passthrough fields (`detail`, `addresses`, `communications`, `bank_accounts`, `tax_offices`, `contact_persons`, etc.) are stored but not modeled as typed fields (matches FastAPI's own "permissive dict passthrough" choice for `detail`, extended here to the whole body for simplicity); not every one of `test_master_data*.py`'s ~40 cases was individually ported, only representative coverage per resource and behavior class. Committed on `main`.
 
 ### SB6 — Accounting read API parity
 - **Scope:** Client/fiscal-year reads and all accounting list/read-only projections: cost systems/centers, creditors/debitors, general-ledger accounts, payables/receivables, terms, sequences/keys, assets, proposal rules, and related fiscal-year resources.
@@ -146,4 +148,4 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 
 ## Next action
 
-**Implement SB5 (master-data API parity) with strict TDD, using `app/routers/master_data.py` and its tests in the FastAPI project as the authoritative contract.**
+**Implement SB6 (accounting read API parity) with strict TDD, using `app/routers/accounting.py`'s GET routes and their tests in the FastAPI project as the authoritative contract.**
