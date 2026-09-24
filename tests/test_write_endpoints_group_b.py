@@ -28,7 +28,11 @@ from app import db
 from app.routers.accounting import (
     ACCOUNTING_SEQUENCES_ENDPOINT,
     COST_CENTER_PROPERTIES_ENDPOINT,
+    COST_CENTERS_ENDPOINT,
     COST_SEQUENCES_ENDPOINT,
+    COST_SYSTEMS_ENDPOINT,
+    CREDITORS_ENDPOINT,
+    GENERAL_LEDGER_ACCOUNTS_ENDPOINT,
     INTERNAL_COST_SERVICES_ENDPOINT,
     POSTING_PROPOSALS_CASH_REGISTER_BATCH_ENDPOINT,
     POSTING_PROPOSALS_INCOMING_INVOICES_BATCH_ENDPOINT,
@@ -110,15 +114,44 @@ def test_post_cost_accounting_record_requires_account_number_and_date(client):
 
 
 def test_posted_cost_accounting_record_appears_in_get(client):
+    """P3 (odd/tasks/datev-mock-referential-integrity.md, decision #7):
+    `account_number` must now be a real value -- P2 write-side FK
+    validation rejects a bogus one (see the companion 422 test below).
+    Fetched from the same (client_id, fiscal_year_id) scope's own
+    general-ledger-accounts endpoint, the same candidate set
+    `post_cost_accounting_record` validates against."""
+    client_id, fiscal_year_id, cost_system_id = _fresh_id(), _fresh_id(), _fresh_id()
     cost_sequence_id = _fresh_id()
-    url = _cost_system_url(COST_SEQUENCES_ENDPOINT) + f"/{cost_sequence_id}/cost-accounting-records"
-    created = client.post(url, json={"account_number": 4200, "date": "2024-05-01"}).json()
+    gl_accounts = client.get(
+        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id),
+        headers=JSON_ACCEPT_HEADERS,
+    ).json()
+    account_number = gl_accounts[0]["account_number"]
+
+    url = (
+        COST_SEQUENCES_ENDPOINT.format(
+            client_id=client_id, fiscal_year_id=fiscal_year_id, cost_system_id=cost_system_id
+        )
+        + f"/{cost_sequence_id}/cost-accounting-records"
+    )
+    created = client.post(url, json={"account_number": account_number, "date": "2024-05-01"}).json()
     assert created["id"]
 
     get_resp = client.get(url, headers=JSON_ACCEPT_HEADERS)
     assert get_resp.status_code == 200
     ids = [r["id"] for r in get_resp.json()]
     assert created["id"] in ids
+
+
+def test_post_cost_accounting_record_rejects_unknown_account_number(client):
+    """Companion reject-path test (P2's write-side FK validation,
+    architecture decision #6): an account_number that resolves to no real
+    general-ledger-account in this scope must 422 -- what the old,
+    now-replaced test used to (incorrectly) expect to succeed."""
+    cost_sequence_id = _fresh_id()
+    url = _cost_system_url(COST_SEQUENCES_ENDPOINT) + f"/{cost_sequence_id}/cost-accounting-records"
+    resp = client.post(url, json={"account_number": 999999999, "date": "2024-05-01"})
+    assert resp.status_code == 422
 
 
 # --- various-addresses (POST, list GET) ---
@@ -133,6 +166,33 @@ def test_posted_various_address_appears_in_get(client):
     assert get_resp.status_code == 200
     ids = [r["id"] for r in get_resp.json()]
     assert created["id"] in ids
+
+
+def test_posted_creditor_account_number_resolves_for_various_address_write(client):
+    """New cross-reference coverage (decision #7): a SQLite-write-then-
+    cross-reference-in-a-different-endpoint case. `VariousAddressWrite
+    .account_number` is validated against the union of this scope's
+    creditors/debitors (architecture decision #6) -- a creditor POSTed
+    (and therefore only in SQLite, not the fake-generated dataset) with an
+    explicit account_number must resolve for a various-address write in
+    the same scope, proving write-side FK validation reads merged
+    SQLite-stored data, not just the fake dataset."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    account_number = 555555
+
+    creditor_url = CREDITORS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id)
+    created_creditor = client.post(
+        creditor_url, json={"caption": "SQLite Creditor", "account_number": account_number}
+    ).json()
+    assert created_creditor["account_number"] == account_number
+
+    various_address_url = VARIOUS_ADDRESSES_ENDPOINT.format(
+        client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+    resp = client.post(
+        various_address_url, json={"caption": "Warehouse", "account_number": account_number}
+    )
+    assert resp.status_code == 201
 
 
 # --- employees (POST/PUT, list + by-id GET) ---
@@ -181,9 +241,39 @@ def test_post_internal_cost_service_requires_cost_center_from_to_and_month(clien
 
 
 def test_posted_internal_cost_service_is_stored_but_not_gettable(client):
-    url = _cost_system_url(INTERNAL_COST_SERVICES_ENDPOINT)
+    """P3 (odd/tasks/datev-mock-referential-integrity.md, decision #7):
+    `cost_center_from`/`cost_center_to` must now be real cost-center ids --
+    P2 write-side FK validation rejects bogus ones (see the companion 422
+    test below). Fetched from the fiscal year's *primary* cost system's
+    cost-centers endpoint (architecture decision #4's "primary cost
+    system" convention, same one `post_internal_cost_service` validates
+    against, independent of this URL's own cost_system_id)."""
+    client_id, fiscal_year_id, cost_system_id = _fresh_id(), _fresh_id(), _fresh_id()
+
+    cost_systems = client.get(
+        COST_SYSTEMS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id),
+        headers=JSON_ACCEPT_HEADERS,
+    ).json()
+    primary_cost_system_id = cost_systems[0]["id"]
+    cost_centers = client.get(
+        COST_CENTERS_ENDPOINT.format(
+            client_id=client_id, fiscal_year_id=fiscal_year_id, cost_system_id=primary_cost_system_id
+        ),
+        headers=JSON_ACCEPT_HEADERS,
+    ).json()
+    cost_center_from = cost_centers[0]["id"]
+    cost_center_to = cost_centers[1]["id"]
+
+    url = INTERNAL_COST_SERVICES_ENDPOINT.format(
+        client_id=client_id, fiscal_year_id=fiscal_year_id, cost_system_id=cost_system_id
+    )
     resp = client.post(
-        url, json={"cost_center_from": "CC1", "cost_center_to": "CC2", "month": "2024-05"}
+        url,
+        json={
+            "cost_center_from": cost_center_from,
+            "cost_center_to": cost_center_to,
+            "month": "2024-05",
+        },
     )
     assert resp.status_code == 201
     body = resp.json()
@@ -197,7 +287,24 @@ def test_posted_internal_cost_service_is_stored_but_not_gettable(client):
     # But it IS visible via the generic stored-records mechanism (admin UI).
     stored = db.get_record("accounting.internal_cost_services", body["id"])
     assert stored is not None
-    assert stored["cost_center_from"] == "CC1"
+    assert stored["cost_center_from"] == cost_center_from
+
+
+def test_post_internal_cost_service_rejects_unknown_cost_center(client):
+    """Companion reject-path test (P2's write-side FK validation,
+    architecture decision #6): cost_center_from/cost_center_to that
+    resolve to no real cost-center in this scope must 422 -- what the old,
+    now-replaced test used to (incorrectly) expect to succeed."""
+    url = _cost_system_url(INTERNAL_COST_SERVICES_ENDPOINT)
+    resp = client.post(
+        url,
+        json={
+            "cost_center_from": "does-not-exist",
+            "cost_center_to": "also-missing",
+            "month": "2024-05",
+        },
+    )
+    assert resp.status_code == 422
 
 
 # --- accounting-sequences (POST, create-only, no GET) ---

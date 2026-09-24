@@ -45,6 +45,9 @@ from app.routers.accounting import (
     ACCOUNTS_PAYABLE_CONDENSE_ENDPOINT,
     ACCOUNTS_PAYABLE_ENDPOINT,
     ACCOUNTS_RECEIVABLE_CONDENSE_ENDPOINT,
+    COST_CENTERS_ENDPOINT,
+    COST_SYSTEMS_ENDPOINT,
+    TERMS_OF_PAYMENT_ENDPOINT,
 )
 from app.xml_serializers import OPEN_ITEM_NS
 
@@ -170,10 +173,72 @@ def test_accounts_payable_record_has_core_fields(client):
         _assert_open_item_core_fields(record)
 
 
-def test_accounts_payable_ignores_path_param_values(client):
-    first = _get(client, ACCOUNTS_PAYABLE_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
-    second = _get(client, ACCOUNTS_PAYABLE_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+def test_accounts_payable_same_ids_are_stable(client):
+    """P3 (odd/tasks/datev-mock-referential-integrity.md, decision #7):
+    replaces the old *_ignores_path_param_values test, which asserted the
+    literal opposite of the current design. Same (client_id, fiscal_year_id)
+    used twice must return identical data."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    first = _get(client, ACCOUNTS_PAYABLE_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id)
+    second = _get(client, ACCOUNTS_PAYABLE_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id)
     assert first == second
+
+
+def test_accounts_payable_different_ids_return_different_data(client):
+    first = _get(client, ACCOUNTS_PAYABLE_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+    for _ in range(3):
+        candidate = _get(
+            client, ACCOUNTS_PAYABLE_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id()
+        )
+        if candidate != first:
+            return
+    raise AssertionError("expected accounts-payable to differ across fresh scope ids")
+
+
+def test_accounts_payable_term_of_payment_id_resolves_to_scope_terms_of_payment(client):
+    """New cross-reference coverage (decision #7): architecture decision #4
+    draws OpenItem.term_of_payment_id from this same (client_id,
+    fiscal_year_id) scope's own generated TermOfPayment.id list, not
+    reinvented arithmetic -- proven here by cross-checking against the
+    terms-of-payment endpoint for the same scope."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    records = _get(client, ACCOUNTS_PAYABLE_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id)
+    records_with_term = [r for r in records if r.get("term_of_payment_id") is not None]
+    assert records_with_term, "no accounts-payable record carries term_of_payment_id"
+
+    terms = client.get(
+        TERMS_OF_PAYMENT_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id),
+        headers=JSON_ACCEPT_HEADERS,
+    ).json()
+    term_ids = {int(term["id"]) for term in terms}
+    for record in records_with_term:
+        assert record["term_of_payment_id"] in term_ids
+
+
+def test_accounts_payable_kost1_cost_center_id_resolves_to_primary_cost_system_cost_centers(client):
+    """New cross-reference coverage (decision #7): architecture decision #4
+    references the fiscal year's *primary* cost system (index 0) for
+    OpenItem.kost1_cost_center_id -- proven here by cross-checking against
+    that specific cost system's cost-centers endpoint."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    records = _get(client, ACCOUNTS_PAYABLE_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id)
+    records_with_cost_center = [r for r in records if r.get("kost1_cost_center_id") is not None]
+    assert records_with_cost_center, "no accounts-payable record carries kost1_cost_center_id"
+
+    cost_systems = client.get(
+        COST_SYSTEMS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id),
+        headers=JSON_ACCEPT_HEADERS,
+    ).json()
+    primary_cost_system_id = cost_systems[0]["id"]
+    cost_centers = client.get(
+        COST_CENTERS_ENDPOINT.format(
+            client_id=client_id, fiscal_year_id=fiscal_year_id, cost_system_id=primary_cost_system_id
+        ),
+        headers=JSON_ACCEPT_HEADERS,
+    ).json()
+    cost_center_ids = {c["id"] for c in cost_centers}
+    for record in records_with_cost_center:
+        assert record["kost1_cost_center_id"] in cost_center_ids
 
 
 # --- GET .../fiscal-years/{fiscal-year-id}/accounts-payable/condense ---
@@ -205,14 +270,31 @@ def test_accounts_payable_condense_record_has_core_fields(client):
         _assert_open_item_core_fields(record)
 
 
-def test_accounts_payable_condense_ignores_path_param_values(client):
+def test_accounts_payable_condense_same_ids_are_stable(client):
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    first = _get(
+        client, ACCOUNTS_PAYABLE_CONDENSE_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+    second = _get(
+        client, ACCOUNTS_PAYABLE_CONDENSE_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+    assert first == second
+
+
+def test_accounts_payable_condense_different_ids_return_different_data(client):
     first = _get(
         client, ACCOUNTS_PAYABLE_CONDENSE_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id()
     )
-    second = _get(
-        client, ACCOUNTS_PAYABLE_CONDENSE_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id()
-    )
-    assert first == second
+    for _ in range(3):
+        candidate = _get(
+            client,
+            ACCOUNTS_PAYABLE_CONDENSE_ENDPOINT,
+            client_id=_fresh_id(),
+            fiscal_year_id=_fresh_id(),
+        )
+        if candidate != first:
+            return
+    raise AssertionError("expected condensed accounts-payable to differ across fresh scope ids")
 
 
 # --- GET .../fiscal-years/{fiscal-year-id}/accounts-receivable/condense ---
@@ -250,14 +332,31 @@ def test_accounts_receivable_condense_record_has_core_fields(client):
         assert isinstance(record.get("has_dunning_block"), bool)
 
 
-def test_accounts_receivable_condense_ignores_path_param_values(client):
+def test_accounts_receivable_condense_same_ids_are_stable(client):
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    first = _get(
+        client, ACCOUNTS_RECEIVABLE_CONDENSE_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+    second = _get(
+        client, ACCOUNTS_RECEIVABLE_CONDENSE_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+    assert first == second
+
+
+def test_accounts_receivable_condense_different_ids_return_different_data(client):
     first = _get(
         client, ACCOUNTS_RECEIVABLE_CONDENSE_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id()
     )
-    second = _get(
-        client, ACCOUNTS_RECEIVABLE_CONDENSE_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id()
-    )
-    assert first == second
+    for _ in range(3):
+        candidate = _get(
+            client,
+            ACCOUNTS_RECEIVABLE_CONDENSE_ENDPOINT,
+            client_id=_fresh_id(),
+            fiscal_year_id=_fresh_id(),
+        )
+        if candidate != first:
+            return
+    raise AssertionError("expected condensed accounts-receivable to differ across fresh scope ids")
 
 
 # --- payable vs. condensed payable independence ---

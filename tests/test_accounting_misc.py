@@ -152,10 +152,34 @@ def _get(client, endpoint_template: str, client_id: str | None = None, fiscal_ye
     return response.json()
 
 
-def _assert_ignores_path_params(client, endpoint_template: str) -> None:
-    first = _get(client, endpoint_template, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
-    second = _get(client, endpoint_template, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+def _assert_same_ids_are_stable(client, endpoint_template: str) -> None:
+    """P3 (odd/tasks/datev-mock-referential-integrity.md, decision #7):
+    replaces the old `_assert_ignores_path_params` helper, whose assertion
+    was the literal opposite of the current design. Same
+    (client_id, fiscal_year_id) used twice must return identical data --
+    proves per-scope caching/determinism (architecture decisions #1/#3)."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    first = _get(client, endpoint_template, client_id=client_id, fiscal_year_id=fiscal_year_id)
+    second = _get(client, endpoint_template, client_id=client_id, fiscal_year_id=fiscal_year_id)
     assert first == second
+
+
+def _assert_different_ids_return_different_data(
+    client, endpoint_template: str, attempts: int = 8
+) -> None:
+    """Two different (client_id, fiscal_year_id) pairs must return
+    different data. Retries a few fresh id pairs before failing: some
+    endpoints only vary a small number of low-cardinality fields per
+    record, so two independently-random scopes could rarely coincide by
+    chance on the very first draw alone."""
+    first = _get(client, endpoint_template, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+    for _ in range(attempts):
+        candidate = _get(
+            client, endpoint_template, client_id=_fresh_id(), fiscal_year_id=_fresh_id()
+        )
+        if candidate != first:
+            return
+    raise AssertionError(f"expected {endpoint_template!r} to differ across fresh scope ids")
 
 
 # --- GET .../fiscal-years/{fiscal-year-id}/accounting-sequences-processed ---
@@ -204,8 +228,12 @@ def test_accounting_sequence_record_has_core_fields(client):
         assert record.get("mark_of_origin") in _MARK_OF_ORIGIN_VALUES
 
 
-def test_accounting_sequences_processed_ignores_path_param_values(client):
-    _assert_ignores_path_params(client, ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT)
+def test_accounting_sequences_processed_same_ids_are_stable(client):
+    _assert_same_ids_are_stable(client, ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT)
+
+
+def test_accounting_sequences_processed_different_ids_return_different_data(client):
+    _assert_different_ids_return_different_data(client, ACCOUNTING_SEQUENCES_PROCESSED_ENDPOINT)
 
 
 def test_accounting_sequences_processed_xml_root_tag_and_namespace(client):
@@ -289,8 +317,12 @@ def test_accounting_transaction_key_record_has_core_fields(client):
         assert isinstance(record.get("group"), str) and record["group"].strip()
 
 
-def test_accounting_transaction_keys_ignores_path_param_values(client):
-    _assert_ignores_path_params(client, ACCOUNTING_TRANSACTION_KEYS_ENDPOINT)
+def test_accounting_transaction_keys_same_ids_are_stable(client):
+    _assert_same_ids_are_stable(client, ACCOUNTING_TRANSACTION_KEYS_ENDPOINT)
+
+
+def test_accounting_transaction_keys_different_ids_return_different_data(client):
+    _assert_different_ids_return_different_data(client, ACCOUNTING_TRANSACTION_KEYS_ENDPOINT)
 
 
 def test_accounting_transaction_keys_xml_root_tag_and_namespace(client):
@@ -399,8 +431,34 @@ def test_stocktaking_general_ledger_account_is_nested_object(client):
         assert isinstance(account.get("caption"), str) and account["caption"].strip()
 
 
-def test_assets_stocktakings_ignores_path_param_values(client):
-    _assert_ignores_path_params(client, ASSETS_STOCKTAKINGS_ENDPOINT)
+def test_assets_stocktakings_same_ids_are_stable(client):
+    _assert_same_ids_are_stable(client, ASSETS_STOCKTAKINGS_ENDPOINT)
+
+
+def test_assets_stocktakings_different_ids_return_different_data(client):
+    _assert_different_ids_return_different_data(client, ASSETS_STOCKTAKINGS_ENDPOINT)
+
+
+def test_stocktaking_general_ledger_account_number_resolves_to_scope_general_ledger_accounts(client):
+    """New cross-reference coverage (decision #7): architecture decision #4
+    draws AssetStocktaking.general_ledger_account from the same-scope
+    GeneralLedgerAccount list, not reconstructed via matching arithmetic --
+    proven here by cross-checking against the general-ledger-accounts
+    endpoint for the same (client_id, fiscal_year_id) scope."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    records = _get(
+        client, ASSETS_STOCKTAKINGS_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id
+    )
+    records_with_account = [r for r in records if r.get("general_ledger_account")]
+    assert records_with_account, "no stocktaking record carries a populated general_ledger_account"
+
+    gl_accounts = client.get(
+        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id),
+        headers=GENERAL_LEDGER_ACCOUNTS_JSON_ACCEPT_HEADERS,
+    ).json()
+    account_numbers = {a["account_number"] for a in gl_accounts}
+    for record in records_with_account:
+        assert record["general_ledger_account"]["account_number"] in account_numbers
 
 
 # --- GET .../fiscal-years/{fiscal-year-id}/general-ledger-accounts ---
@@ -458,16 +516,32 @@ def test_general_ledger_account_main_function_values_use_hardcoded_lookup_range(
         assert record.get("main_function_number") in _MAIN_FUNCTION_NUMBER_VALUES
 
 
-def test_general_ledger_accounts_ignores_path_param_values(client):
+def test_general_ledger_accounts_same_ids_are_stable(client):
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    first = client.get(
+        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id),
+        headers=GENERAL_LEDGER_ACCOUNTS_JSON_ACCEPT_HEADERS,
+    ).json()
+    second = client.get(
+        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id),
+        headers=GENERAL_LEDGER_ACCOUNTS_JSON_ACCEPT_HEADERS,
+    ).json()
+    assert first == second
+
+
+def test_general_ledger_accounts_different_ids_return_different_data(client):
     first = client.get(
         GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
         headers=GENERAL_LEDGER_ACCOUNTS_JSON_ACCEPT_HEADERS,
     ).json()
-    second = client.get(
-        GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
-        headers=GENERAL_LEDGER_ACCOUNTS_JSON_ACCEPT_HEADERS,
-    ).json()
-    assert first == second
+    for _ in range(3):
+        candidate = client.get(
+            GENERAL_LEDGER_ACCOUNTS_ENDPOINT.format(client_id=_fresh_id(), fiscal_year_id=_fresh_id()),
+            headers=GENERAL_LEDGER_ACCOUNTS_JSON_ACCEPT_HEADERS,
+        ).json()
+        if candidate != first:
+            return
+    raise AssertionError("expected general ledger accounts to differ across fresh scope ids")
 
 
 def test_general_ledger_accounts_xml_root_tag_and_namespace(client):
@@ -560,8 +634,14 @@ def test_posting_proposal_rule_incoming_record_has_core_fields(client):
             )
 
 
-def test_posting_proposal_rules_incoming_invoices_ignores_path_param_values(client):
-    _assert_ignores_path_params(client, POSTING_PROPOSAL_RULES_INCOMING_INVOICES_ENDPOINT)
+def test_posting_proposal_rules_incoming_invoices_same_ids_are_stable(client):
+    _assert_same_ids_are_stable(client, POSTING_PROPOSAL_RULES_INCOMING_INVOICES_ENDPOINT)
+
+
+def test_posting_proposal_rules_incoming_invoices_different_ids_return_different_data(client):
+    _assert_different_ids_return_different_data(
+        client, POSTING_PROPOSAL_RULES_INCOMING_INVOICES_ENDPOINT
+    )
 
 
 def test_posting_proposal_rules_incoming_invoices_xml_root_tag_and_namespace(client):
@@ -642,8 +722,14 @@ def test_posting_proposal_rule_outgoing_record_has_core_fields(client):
             )
 
 
-def test_posting_proposal_rules_outgoing_invoices_ignores_path_param_values(client):
-    _assert_ignores_path_params(client, POSTING_PROPOSAL_RULES_OUTGOING_INVOICES_ENDPOINT)
+def test_posting_proposal_rules_outgoing_invoices_same_ids_are_stable(client):
+    _assert_same_ids_are_stable(client, POSTING_PROPOSAL_RULES_OUTGOING_INVOICES_ENDPOINT)
+
+
+def test_posting_proposal_rules_outgoing_invoices_different_ids_return_different_data(client):
+    _assert_different_ids_return_different_data(
+        client, POSTING_PROPOSAL_RULES_OUTGOING_INVOICES_ENDPOINT
+    )
 
 
 def test_posting_proposal_rules_outgoing_invoices_xml_root_tag_and_namespace(client):
@@ -741,8 +827,12 @@ def test_term_of_payment_due_type_matches_populated_variant(client):
         assert isinstance(due_date_net.get("day_of_month"), int)
 
 
-def test_terms_of_payment_ignores_path_param_values(client):
-    _assert_ignores_path_params(client, TERMS_OF_PAYMENT_ENDPOINT)
+def test_terms_of_payment_same_ids_are_stable(client):
+    _assert_same_ids_are_stable(client, TERMS_OF_PAYMENT_ENDPOINT)
+
+
+def test_terms_of_payment_different_ids_return_different_data(client):
+    _assert_different_ids_return_different_data(client, TERMS_OF_PAYMENT_ENDPOINT)
 
 
 def test_terms_of_payment_xml_root_tag_and_namespace(client):

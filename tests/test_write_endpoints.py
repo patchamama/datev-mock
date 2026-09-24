@@ -32,6 +32,7 @@ from app.routers.accounting import (
 )
 from app.routers.master_data import (
     ADDRESSEES_ENDPOINT,
+    EMPLOYEES_ENDPOINT,
     ENDPOINT as CLIENTS_ENDPOINT,
 )
 
@@ -124,6 +125,28 @@ def test_posted_creditor_appears_in_get_json_and_xml(client):
     root = ET.fromstring(xml_resp.content)
     assert root is not None  # well-formed even with a written record present
     assert created["id"] in xml_resp.text
+
+
+def test_posted_creditor_is_scoped_to_its_fiscal_year_only(client):
+    """New cross-reference coverage (decision #7): SQLite scoping
+    isolation -- a creditor POSTed under one (client_id, fiscal_year_id)
+    must not appear in GET creditors for a *different* fiscal_year_id under
+    the same client_id, proving app.db's scope-forwarding (architecture
+    decision #5) actually isolates SQLite-stored records per scope, not
+    just per client."""
+    client_id = _fresh_id()
+    fiscal_year_id_a = _fresh_id()
+    fiscal_year_id_b = _fresh_id()
+    caption = f"Scoped Creditor {_fresh_id()}"
+
+    post_url = CREDITORS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id_a)
+    created = client.post(post_url, json={"caption": caption}).json()
+
+    other_scope_url = CREDITORS_ENDPOINT.format(client_id=client_id, fiscal_year_id=fiscal_year_id_b)
+    other_scope_ids = [
+        r["id"] for r in client.get(other_scope_url, headers=JSON_ACCEPT_HEADERS).json()
+    ]
+    assert created["id"] not in other_scope_ids
 
 
 # --- terms-of-payment ---
@@ -247,7 +270,12 @@ def test_posted_client_appears_in_get_json_and_xml(client):
     assert created["id"] in xml_resp.text
 
 
-def test_put_client_responsibilities_stores_array_without_validating_employee(client):
+def test_put_client_responsibilities_rejects_unknown_employee_id(client):
+    """P3 (odd/tasks/datev-mock-referential-integrity.md, decision #7):
+    replaces the old *_stores_array_without_validating_employee test, which
+    encoded the pre-P2 lack of FK validation. An employee_id that resolves
+    to no real record (neither the fake dataset -- there is none, master
+    data employees are SQLite-only -- nor anything POSTed) must 422."""
     client_id = _fresh_id()
     url = f"{CLIENTS_ENDPOINT}/{client_id}/responsibilities"
     resp = client.put(
@@ -256,10 +284,29 @@ def test_put_client_responsibilities_stores_array_without_validating_employee(cl
             {"employee_id": "does-not-exist-yet", "area_of_responsibility_name": "Payroll"},
         ],
     )
+    assert resp.status_code == 422
+
+
+def test_put_client_responsibilities_accepts_real_employee_id(client):
+    """Companion happy-path test: an employee_id fetched from a real POST
+    to the employees endpoint must be accepted (P2's write-side FK
+    validation, architecture decision #6)."""
+    employee = client.post(
+        EMPLOYEES_ENDPOINT, json={"name": "Jane Payroll", "natural_person_id": _fresh_id()}
+    ).json()
+
+    client_id = _fresh_id()
+    url = f"{CLIENTS_ENDPOINT}/{client_id}/responsibilities"
+    resp = client.put(
+        url,
+        json=[
+            {"employee_id": employee["id"], "area_of_responsibility_name": "Payroll"},
+        ],
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert len(body) == 1
-    assert body[0]["employee_id"] == "does-not-exist-yet"
+    assert body[0]["employee_id"] == employee["id"]
 
 
 def test_put_client_responsibilities_replaces_prior_list(client):

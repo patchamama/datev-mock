@@ -40,6 +40,7 @@ from app.routers.accounting import (
     COST_CENTERS_ENDPOINT,
     COST_SYSTEMS_ENDPOINT,
     FISCAL_YEARS_ENDPOINT,
+    TERMS_OF_PAYMENT_ENDPOINT,
 )
 
 MIN_FISCAL_YEARS = 2
@@ -225,13 +226,50 @@ def test_fiscal_year_optional_fields_are_genuinely_absent_on_some_records(client
         assert absent, f"expected at least one record with {optional_field!r} absent"
 
 
-def test_fiscal_years_ignores_client_id_value(client):
-    """Locks in the cross-phase "no path-param filtering" decision as a
-    tested contract: two arbitrary client ids must return the identical
-    fake dataset."""
-    first = _get_fiscal_years(client, client_id=_fresh_id())
-    second = _get_fiscal_years(client, client_id=_fresh_id())
+def test_fiscal_years_same_client_id_is_stable(client):
+    """P3 (odd/tasks/datev-mock-referential-integrity.md, decision #7):
+    replaces the old *_ignores_client_id_value test, which asserted the
+    literal opposite of the current design. Same client_id used twice must
+    return identical data -- proves per-scope caching/determinism
+    (architecture decisions #1/#3)."""
+    client_id = _fresh_id()
+    first = _get_fiscal_years(client, client_id=client_id)
+    second = _get_fiscal_years(client, client_id=client_id)
     assert first == second
+
+
+def test_fiscal_years_different_client_id_returns_different_data(client):
+    """Two different client ids must return different data -- proves real
+    per-scope generation, not the old "always the same fixed dataset"
+    behavior. Retries a few fresh ids before failing: a couple of the
+    varying fields (e.g. base_year) are drawn from a small value set, so two
+    independently-random scopes could rarely coincide by chance on the
+    first draw alone."""
+    first = _get_fiscal_years(client, client_id=_fresh_id())
+    for _ in range(5):
+        candidate = _get_fiscal_years(client, client_id=_fresh_id())
+        if candidate != first:
+            return
+    raise AssertionError("expected fiscal years to differ across fresh client ids")
+
+
+def test_fiscal_year_creditor_term_of_payment_id_resolves_to_scope_terms_of_payment(client):
+    """New cross-reference coverage (decision #7): architecture decision #4
+    backfills FiscalYear.creditor_term_of_payment_id from that *specific*
+    fiscal year's own generated term-of-payment scope -- proven here by
+    round-tripping through the terms-of-payment endpoint for the same
+    (client_id, fiscal_year_id), not just asserting the field's shape."""
+    client_id = _fresh_id()
+    records = _get_fiscal_years(client, client_id=client_id)
+    assert records, "no fiscal-year records returned"
+
+    for record in records:
+        terms = client.get(
+            TERMS_OF_PAYMENT_ENDPOINT.format(client_id=client_id, fiscal_year_id=record["id"]),
+            headers=JSON_ACCEPT_HEADERS,
+        ).json()
+        term_ids = {int(term["id"]) for term in terms}
+        assert record["creditor_term_of_payment_id"] in term_ids
 
 
 # --- GET .../fiscal-years/{fiscal-year-id}/cost-systems ---
@@ -270,10 +308,27 @@ def test_cost_system_record_has_core_fields(client):
         assert isinstance(record.get("cost_field"), int)
 
 
-def test_cost_systems_ignores_client_and_fiscal_year_id_values(client):
-    first = _get_cost_systems(client, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
-    second = _get_cost_systems(client, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+def test_cost_systems_same_ids_are_stable(client):
+    """P3 (decision #7): replaces the old *_ignores_*_id_values test. Same
+    (client_id, fiscal_year_id) used twice must return identical data."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    first = _get_cost_systems(client, client_id=client_id, fiscal_year_id=fiscal_year_id)
+    second = _get_cost_systems(client, client_id=client_id, fiscal_year_id=fiscal_year_id)
     assert first == second
+
+
+def test_cost_systems_different_ids_return_different_data(client):
+    """Two different (client_id, fiscal_year_id) pairs must return
+    different data. Retries a few fresh id pairs before failing -- only
+    `is_activated_for_postings` (a per-record boolean) varies for this
+    endpoint, so a couple of independently-random scopes have a small but
+    non-negligible chance of coinciding on the very first draw."""
+    first = _get_cost_systems(client, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+    for _ in range(8):
+        candidate = _get_cost_systems(client, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+        if candidate != first:
+            return
+    raise AssertionError("expected cost systems to differ across fresh client/fiscal-year ids")
 
 
 # --- GET .../cost-systems/{cost-system-id}/cost-centers ---
@@ -322,14 +377,36 @@ def test_cost_center_cost_rates_use_integer_encoded_dates(client):
             assert isinstance(rate.get("rate"), (int, float))
 
 
-def test_cost_centers_ignores_client_fiscal_year_and_cost_system_id_values(client):
+def test_cost_centers_same_ids_are_stable(client):
+    """P3 (decision #7): replaces the old *_ignores_*_id_values test. Same
+    (client_id, fiscal_year_id, cost_system_id) used twice must return
+    identical data."""
+    client_id, fiscal_year_id, cost_system_id = _fresh_id(), _fresh_id(), _fresh_id()
+    first = _get_cost_centers(
+        client, client_id=client_id, fiscal_year_id=fiscal_year_id, cost_system_id=cost_system_id
+    )
+    second = _get_cost_centers(
+        client, client_id=client_id, fiscal_year_id=fiscal_year_id, cost_system_id=cost_system_id
+    )
+    assert first == second
+
+
+def test_cost_centers_different_ids_return_different_data(client):
+    """Two different (client_id, fiscal_year_id, cost_system_id) triples
+    must return different data (`responsible`/`rate` vary continuously per
+    scope, so the first fresh pair virtually always differs already)."""
     first = _get_cost_centers(
         client, client_id=_fresh_id(), fiscal_year_id=_fresh_id(), cost_system_id=_fresh_id()
     )
-    second = _get_cost_centers(
-        client, client_id=_fresh_id(), fiscal_year_id=_fresh_id(), cost_system_id=_fresh_id()
+    for _ in range(3):
+        candidate = _get_cost_centers(
+            client, client_id=_fresh_id(), fiscal_year_id=_fresh_id(), cost_system_id=_fresh_id()
+        )
+        if candidate != first:
+            return
+    raise AssertionError(
+        "expected cost centers to differ across fresh client/fiscal-year/cost-system ids"
     )
-    assert first == second
 
 
 # --- XML content negotiation (epic `datev-mock-real-data-reconciliation`,

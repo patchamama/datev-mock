@@ -40,6 +40,7 @@ import uuid
 import xml.etree.ElementTree as ET
 
 from app.routers.accounting import CREDITORS_ENDPOINT, DEBITORS_ENDPOINT
+from app.routers.master_data import ADDRESSEES_ENDPOINT
 
 MIN_CREDITORS = 3
 MIN_DEBITORS = 3
@@ -200,10 +201,39 @@ def test_creditor_eu_vat_fields_are_genuinely_optional(client):
     assert absent, "expected at least one creditor record with eu_vat_id_country_code absent"
 
 
-def test_creditors_ignores_path_param_values(client):
-    first = _get(client, CREDITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
-    second = _get(client, CREDITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+def test_creditors_same_ids_are_stable(client):
+    """P3 (odd/tasks/datev-mock-referential-integrity.md, decision #7):
+    replaces the old *_ignores_path_param_values test, which asserted the
+    literal opposite of the current design. Same (client_id, fiscal_year_id)
+    used twice must return identical data."""
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    first = _get(client, CREDITORS_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id)
+    second = _get(client, CREDITORS_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id)
     assert first == second
+
+
+def test_creditors_different_ids_return_different_data(client):
+    first = _get(client, CREDITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+    for _ in range(3):
+        candidate = _get(
+            client, CREDITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id()
+        )
+        if candidate != first:
+            return
+    raise AssertionError("expected creditors to differ across fresh scope ids")
+
+
+def test_creditor_addressee_id_resolves_to_master_data_addressees(client):
+    """New cross-reference coverage (decision #7): architecture decision #4
+    draws Creditor.addressee_id from the real global Addressee.id list --
+    proven here by cross-checking against the master-data addressees
+    endpoint, not just asserting the field's shape."""
+    records = _get(client, CREDITORS_ENDPOINT)
+    assert records, "no creditor records returned"
+
+    addressee_ids = {addressee["id"] for addressee in client.get(ADDRESSEES_ENDPOINT).json()}
+    for record in records:
+        assert record["addressee_id"] in addressee_ids
 
 
 # --- GET .../fiscal-years/{fiscal-year-id}/debitors ---
@@ -240,10 +270,22 @@ def test_debitor_dataset_contains_both_natural_and_legal_person_types(client):
     )
 
 
-def test_debitors_ignores_path_param_values(client):
-    first = _get(client, DEBITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
-    second = _get(client, DEBITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+def test_debitors_same_ids_are_stable(client):
+    client_id, fiscal_year_id = _fresh_id(), _fresh_id()
+    first = _get(client, DEBITORS_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id)
+    second = _get(client, DEBITORS_ENDPOINT, client_id=client_id, fiscal_year_id=fiscal_year_id)
     assert first == second
+
+
+def test_debitors_different_ids_return_different_data(client):
+    first = _get(client, DEBITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id())
+    for _ in range(3):
+        candidate = _get(
+            client, DEBITORS_ENDPOINT, client_id=_fresh_id(), fiscal_year_id=_fresh_id()
+        )
+        if candidate != first:
+            return
+    raise AssertionError("expected debitors to differ across fresh scope ids")
 
 
 def test_debitors_do_not_populate_accounting_information(client):
