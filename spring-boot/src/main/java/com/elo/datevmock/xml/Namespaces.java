@@ -25,6 +25,35 @@ public final class Namespaces {
     public static final String MASTER_DATA_NS =
             "http://schemas.datacontract.org/2004/07/Datev.Sdd.Connect.PlugIn.Contracts.Resources";
 
+    // --- SB6: accounting read API parity ---
+    public static final String ACCOUNTING_PRODUCTIVITIES_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.Productivities";
+    public static final String ACCOUNTING_CLIENTS_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.Clients";
+    public static final String FISCAL_YEAR_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.FiscalYear";
+    public static final String COST_SYSTEMS_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.CostSystems";
+    public static final String GENERAL_LEDGER_ACCOUNT_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.GeneralLedgerAccount";
+    public static final String OPEN_ITEM_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts.OpenItem";
+    public static final String ACCOUNTING_SEQUENCE_PROCESSED_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
+                    + "AccountingSequenceProcessed";
+    public static final String ACCOUNTING_TRANSACTION_KEY_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
+                    + "AccountingTransactionKey";
+    public static final String POSTING_PROPOSAL_RULE_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
+                    + "PostingProposalRule";
+    public static final String TERM_OF_PAYMENT_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
+                    + "TermOfPayment";
+    public static final String ASSET_STOCKTAKING_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
+                    + "AssetStocktaking";
+
     private Namespaces() {
     }
 }

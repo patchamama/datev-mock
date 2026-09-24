@@ -1,0 +1,85 @@
+package com.elo.datevmock.model;
+
+import java.util.List;
+
+/**
+ * Ports {@code app/models.py::OpenItem} -- shared shape for accounts-payable,
+ * accounts-payable/condense, and accounts-receivable/condense.
+ */
+public record OpenItem(
+        String id,
+        int accountNumber,
+        String accountingSequenceId,
+        String date,
+        String debitCreditIdentifier,
+        String documentField1,
+        String evidenceType,
+        boolean hasInterestBlock,
+        boolean isCleared,
+        boolean isCondensed,
+        double openBalanceOfItem,
+        String openItemNumber,
+        String paymentMethod,
+        String postingDescription,
+        int postingRecordNumber,
+        double taxRate,
+        double amountEntered,
+        String currencyCode,
+        Double amountCredit,
+        Double amountDebit,
+        String balancingType,
+        Integer contraAccountNumber,
+        String documentField2,
+        String dueDate,
+        Integer dueDays,
+        boolean hasDunningBlock,
+        String kost1CostCenterId,
+        Integer termOfPaymentId,
+        Integer assessmentYear,
+        String assignedDueDate,
+        String balanceType,
+        String dunningDate1,
+        String dunningDate2,
+        String dunningDate3
+) {
+
+    /** Ports {@code OPEN_ITEM_FIELD_ORDER}. */
+    public static final List<String> XML_FIELD_ORDER = List.of(
+            "id",
+            "parent",
+            "membersToSerialize",
+            "accountNumber",
+            "accountingSequenceId",
+            "amountCredit",
+            "amountDebit",
+            "amountEntered",
+            "assessmentYear",
+            "assignedDueDate",
+            "balanceType",
+            "balancingType",
+            "contraAccountNumber",
+            "currencyCode",
+            "date",
+            "debitCreditIdentifier",
+            "documentField1",
+            "documentField2",
+            "dueDate",
+            "dueDays",
+            "dunningDate1",
+            "dunningDate2",
+            "dunningDate3",
+            "evidenceType",
+            "hasDunningBlock",
+            "hasInterestBlock",
+            "isCleared",
+            "isCondensed",
+            "kost1CostCenterId",
+            "openBalanceOfItem",
+            "openItemNumber",
+            "paymentMethod",
+            "postingDescription",
+            "postingRecordNumber",
+            "taxRate",
+            "termOfPaymentId"
+    );
+}

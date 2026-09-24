@@ -1,16 +1,34 @@
 package com.elo.datevmock.model;
 
+import java.util.List;
+
 /**
- * Minimal port of {@code app/models.py::TermOfPayment} — only {@code id}
- * and {@code caption}, the two fields SB3's cross-scope backfill
- * (`FiscalYear.creditorTermOfPaymentId`) actually needs to exercise. The
- * remaining real fields ({@code dueType}/{@code dueInDays}/
- * {@code dueAsPeriod}/{@code cashDiscount*Percentage}) belong to SB6
- * (accounting read API parity), which will expand this record to full
- * fidelity when the real HTTP endpoint is ported.
+ * Ports {@code app/models.py::TermOfPayment}. {@code dueInDays}/
+ * {@code dueAsPeriod} (nested optional objects) are deliberately not
+ * modeled -- same as the Python source, they're excluded from
+ * {@code TERM_OF_PAYMENT_FIELD_ORDER} and stay JSON-only/unrendered in
+ * this mock (no real XML evidence for a nested shape).
  */
 public record TermOfPayment(
         String id,
-        String caption
+        String caption,
+        String dueType,
+        Double cashDiscount1Percentage,
+        Double cashDiscount2Percentage
 ) {
+
+    public TermOfPayment(String id, String caption) {
+        this(id, caption, "due_in_days", null, null);
+    }
+
+    /** Ports {@code TERM_OF_PAYMENT_FIELD_ORDER}. */
+    public static final List<String> XML_FIELD_ORDER = List.of(
+            "id",
+            "parent",
+            "membersToSerialize",
+            "caption",
+            "cashDiscount1Percentage",
+            "cashDiscount2Percentage",
+            "dueType"
+    );
 }
