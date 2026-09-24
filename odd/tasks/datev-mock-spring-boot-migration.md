@@ -27,7 +27,7 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 
 - [x] **SB0 — Bootstrap the standalone repository** *(completed: `32725b1`)*
 - [x] **SB1 — Establish build and strict-TDD foundation**
-- [ ] **SB2 — Shared DATEV contracts, XML, and format negotiation**
+- [x] **SB2 — Shared DATEV contracts, XML, and format negotiation**
 - [ ] **SB3 — Deterministic mock generation and read-state composition**
 - [ ] **SB4 — SQLite overlays, validation, and reset semantics**
 - [ ] **SB5 — Master-data API parity**
@@ -63,7 +63,7 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - **Checks:** Golden/black-box serializer tests and explicit content-negotiation tests.
 - **Route/dependency evidence:** `app/xml_serializers.py`, models, and JSON/XML tests; prerequisite for every public API epic.
 - **Delivery boundary:** One contract/serialization commit with fixtures and tests.
-- **Status:** Planned; depends on SB1.
+- **Status:** **Complete.** A generic, reflection-based XML rendering engine (`com.elo.datevmock.xml.DatevXmlRenderer`) ports `app/xml_serializers.py`'s DataContractSerializer conventions over Java `record` types: `i:nil="true"` for null, lowercase booleans, per-field namespace overrides (`genericNsAttrResolver`, porting `_generic_ns_attr`), and real recursion into nested records/lists via `RecordComponent` declaration order (avoiding the `toString()`-fallthrough bug class fixed in the Python renderer this session). A companion JSON projection (`DatevJsonMapper`, Jackson with `SNAKE_CASE` naming + `NON_NULL` inclusion) ports `_to_json`/`_strip_none` exactly (snake_case keys, null fields entirely absent). `FormatNegotiator` ports `_negotiate_format` (explicit unambiguous `Accept` wins; missing/wildcard/ambiguous falls back to the caller's default). Representative models: `CostCenter`+`CostRate` (with `withoutCostRates()` porting the `datev_api_version` legacy-mode gate — confirmed JSON-only, since `cost_rates` is absent from `CostCenter.XML_FIELD_ORDER` exactly as in the Python source) and `Creditor` with a nested list-of-objects field (`addresses` → `Address` → `AddressUsageType`) plus plain and common-namespace nil fields. Strict TDD: every class was RED (real compiler/missing-symbol failure observed) before GREEN. `mvn test`: `Tests run: 27, Failures: 0, Errors: 0` (26 new + the existing SB1 health test). No HTTP endpoints were added — SB2 is the shared engine other epics (SB5+) will mount controllers against; content-negotiation coverage is unit-level against `FormatNegotiator` directly. Committed on `feat/sb1-build-foundation` as `c69666d` (`feat(sb2): shared DATEV contracts, XML rendering, and format negotiation`) in the standalone `spring-boot/.git` repository (no remote configured there, so this commit is local-only, consistent with SB0/SB1).
 
 ### SB3 — Deterministic mock generation and read-state composition
 - **Scope:** Fiscal-year-scoped deterministic fake datasets, stable identifiers, configuration-driven mode/version behavior, read assembly, and in-memory overrides without persistence leakage.
@@ -146,4 +146,4 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 
 ## Next action
 
-**Implement SB2 (shared DATEV contracts, XML, and format negotiation) with strict TDD, using `app/models.py`, `app/xml_serializers.py`, and their tests in the FastAPI project as the authoritative contract.**
+**Implement SB3 (deterministic mock generation and read-state composition) with strict TDD, using `app/data_store.py`, `app/scoped_data.py`, `app/config.py`, `app/overrides.py`, and their tests in the FastAPI project as the authoritative contract.**
