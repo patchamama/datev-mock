@@ -594,3 +594,42 @@ phase.** `CostCenter`'s other 12 top-level fields also match `cost-center`
   `characteristic_id`) are currently modeled as generic `list[dict]`, not
   a typed dataclass — out of this task's required scope (only `cost_rates`
   was asked for), noted only in passing, not part of the checklist above.
+
+## Post-epic follow-ups (2026-09-24, same day, after the epic's own close)
+
+Real live ELO retesting surfaced two more issues after P4 closed. Both
+handled directly (small, well-understood, no new phase needed):
+
+1. **`BusinessPartners` (creditors) still failed after P3/P4.** Root
+   cause: `Creditor`/`Debitor.natural_person.date_of_birth` (P2's own new
+   code) was truncated to `[:10]` (date-only), but
+   `datev.natural-person.date_of_birth` is spec-typed `date-time` — same
+   RFC3339-offset bug class as P3's fix, just in a field only reachable
+   once `expand=all` actually returns nested content, so nothing earlier
+   could have caught it live. Fixed at both generation sites. Verified
+   against the *exact* client/fiscal-year scope and query string ELO's
+   own log showed still failing. Committed `64e4f9b`.
+2. **`start.bat` reported as "just closes."** Reproduced directly: a
+   leftover mock instance (from this session's own testing) was already
+   holding port 58452; the resulting uvicorn bind-error traceback flashed
+   by in a double-clicked window with nothing to read it before the
+   window closed. Both launchers now check the port before binding and
+   print a clear "already running" message (`start.bat`'s check uses a
+   PowerShell `TcpClient` probe, not `netstat` text parsing — that output
+   is locale-dependent, e.g. German Windows reports `"ABHÖREN"` not
+   `"LISTENING"`, so a text-matching check silently never fired on this
+   very machine); `start.bat` also now pauses on any abnormal uvicorn
+   exit so the window never vanishes without showing why. Committed
+   `f67c4e0`.
+3. **User-requested follow-on feature**: a persisted `datev_api_version`
+   setting (`"legacy"`/`"modern"`, default `"legacy"`), same mechanism as
+   `default_accounting_format` (`settings.json`, admin UI, `PUT
+   /admin/api/settings`, no restart needed) — `cost-centers` omits
+   `cost_rates` entirely in `"legacy"` mode (matching ELO's older
+   reference mock's shape, the actual confirmed-real DATEV spec quirk
+   from decision #1/the Root Cause section stays exactly as documented,
+   this only controls whether it's *exposed*) versus the full
+   spec-accurate shape in `"modern"` mode. New tests for both values plus
+   the admin API round-trip; 375/375. Committed `90c2cb6`.
+
+All pushed to `main`.
