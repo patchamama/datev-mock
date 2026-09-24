@@ -174,14 +174,27 @@ else
     "$PYTHON_EXE" -m pip install --quiet -r requirements.txt
 fi
 
-if [ -f "certs/cert.pem" ] && [ -f "certs/key.pem" ]; then
+# DATEV_MOCK_HTTP=1: opt out of TLS entirely and serve plain HTTP instead.
+# Off by default -- HTTPS matches the real DATEV Desktop API. Useful for
+# local integration clients (e.g. Java HTTP clients) that fight the
+# self-signed cert's trust chain; a self-signed cert here doesn't exercise
+# anything representative of production DATEV's own (publicly-trusted) cert
+# anyway, so this costs no real fidelity.
+SSL_ARGS=()
+SCHEME="https"
+if [ "${DATEV_MOCK_HTTP:-}" = "1" ]; then
+    SCHEME="http"
+    echo "[4/5] DATEV_MOCK_HTTP=1 -- skipping TLS cert (plain HTTP mode)."
+elif [ -f "certs/cert.pem" ] && [ -f "certs/key.pem" ]; then
     echo "[4/5] TLS certificate already present in certs/."
+    SSL_ARGS=(--ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem)
 else
     echo "[4/5] Generating a self-signed TLS certificate for 127.0.0.1 ..."
     "$PYTHON_EXE" certs/generate_cert.py
+    SSL_ARGS=(--ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem)
 fi
 
-echo "[5/5] Starting the DATEV mock server on https://127.0.0.1:$PORT ..."
+echo "[5/5] Starting the DATEV mock server on $SCHEME://127.0.0.1:$PORT ..."
 
 # Auto-open the default browser at /admin a couple seconds after uvicorn
 # launches, in parallel — uvicorn needs a moment to actually bind the port.
@@ -190,7 +203,7 @@ echo "[5/5] Starting the DATEV mock server on https://127.0.0.1:$PORT ..."
 # xdg-open (Linux) nor open (macOS) available.
 (
     sleep 2
-    ADMIN_URL="https://127.0.0.1:$PORT/admin"
+    ADMIN_URL="$SCHEME://127.0.0.1:$PORT/admin"
     xdg-open "$ADMIN_URL" >/dev/null 2>&1 || open "$ADMIN_URL" >/dev/null 2>&1 || echo "Open $ADMIN_URL in your browser."
 ) &
 
@@ -199,4 +212,4 @@ echo "[5/5] Starting the DATEV mock server on https://127.0.0.1:$PORT ..."
 # printing a redundant second line per request, with raw ANSI escape
 # codes on terminals that don't render them.
 exec "$PYTHON_EXE" -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" \
-    --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem --no-access-log
+    "${SSL_ARGS[@]}" --no-access-log

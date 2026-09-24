@@ -15,6 +15,9 @@ datev_mock.db-shm
 examples/
 test-datev.html
 
+# Real customer ELO/DATEV connector config and mapping references — never publish
+docs/
+
 # Local tooling cache
 .atl
 

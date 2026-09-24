@@ -1,12 +1,14 @@
 """PyInstaller entry point: runs the DATEV mock as a standalone executable.
 
 Mirrors the final `uvicorn` invocation in `start.sh`/`start.bat` (same host,
-port, and TLS cert args), but generates the self-signed cert in-process
-(via a direct function call, not a subprocess) since a frozen .exe has no
-separate Python interpreter available on the target machine.
+port, TLS cert args, and `DATEV_MOCK_HTTP` opt-out), but generates the
+self-signed cert in-process (via a direct function call, not a subprocess)
+since a frozen .exe has no separate Python interpreter available on the
+target machine.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -27,12 +29,22 @@ PORT = 58452
 
 
 def main() -> None:
-    certs_dir = base_dir() / "certs"
-    cert_path = certs_dir / "cert.pem"
-    key_path = certs_dir / "key.pem"
-
-    if not (cert_path.exists() and key_path.exists()):
-        generate_self_signed_cert()
+    # DATEV_MOCK_HTTP=1: opt out of TLS entirely and serve plain HTTP
+    # instead. Off by default -- HTTPS matches the real DATEV Desktop API.
+    # Useful for local integration clients (e.g. Java HTTP clients) that
+    # fight the self-signed cert's trust chain; a self-signed cert here
+    # doesn't exercise anything representative of production DATEV's own
+    # (publicly-trusted) cert anyway, so this costs no real fidelity.
+    ssl_kwargs: dict[str, str] = {}
+    if os.environ.get("DATEV_MOCK_HTTP") == "1":
+        print("DATEV_MOCK_HTTP=1 -- skipping TLS cert (plain HTTP mode).")
+    else:
+        certs_dir = base_dir() / "certs"
+        cert_path = certs_dir / "cert.pem"
+        key_path = certs_dir / "key.pem"
+        if not (cert_path.exists() and key_path.exists()):
+            generate_self_signed_cert()
+        ssl_kwargs = {"ssl_keyfile": str(key_path), "ssl_certfile": str(cert_path)}
 
     # Pass the ASGI app object directly (not the "app.main:app" import
     # string) so PyInstaller's static analysis picks up `app.main` via the
@@ -46,9 +58,8 @@ def main() -> None:
         app,
         host=HOST,
         port=PORT,
-        ssl_keyfile=str(key_path),
-        ssl_certfile=str(cert_path),
         access_log=False,
+        **ssl_kwargs,
     )
 
 

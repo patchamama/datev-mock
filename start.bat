@@ -136,9 +136,24 @@ if errorlevel 1 (
 goto :ensure_cert
 
 rem ---------------------------------------------------------------------
+rem DATEV_MOCK_HTTP=1: opt out of TLS entirely and serve plain HTTP instead.
+rem Off by default -- HTTPS matches the real DATEV Desktop API. Useful for
+rem local integration clients (e.g. Java HTTP clients) that fight the
+rem self-signed cert's trust chain; a self-signed cert here doesn't exercise
+rem anything representative of production DATEV's own (publicly-trusted)
+rem cert anyway, so this costs no real fidelity.
 :ensure_cert
+set "SSL_ARGS="
+set "SCHEME=https"
+if "%DATEV_MOCK_HTTP%"=="1" (
+    set "SCHEME=http"
+    echo [4/5] DATEV_MOCK_HTTP=1 -- skipping TLS cert ^(plain HTTP mode^).
+    goto :start_server
+)
+
 if exist "certs\cert.pem" if exist "certs\key.pem" (
     echo [4/5] TLS certificate already present in certs\.
+    set "SSL_ARGS=--ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem"
     goto :start_server
 )
 
@@ -148,24 +163,25 @@ if errorlevel 1 (
     echo ERROR: Failed to generate the TLS certificate.
     exit /b 1
 )
+set "SSL_ARGS=--ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem"
 
 rem ---------------------------------------------------------------------
 :start_server
 set "PORT=58452"
-echo [5/5] Starting the DATEV mock server on https://127.0.0.1:%PORT% ...
+echo [5/5] Starting the DATEV mock server on %SCHEME%://127.0.0.1:%PORT% ...
 
 rem Auto-open the default browser at /admin a couple seconds after uvicorn
 rem launches, in parallel via a detached PowerShell helper -- uvicorn needs
 rem a moment to actually bind the port. Non-blocking: this "start" call
 rem returns immediately and uvicorn below still runs as the normal
 rem foreground/blocking final command, exactly as before.
-start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process 'https://127.0.0.1:%PORT%/admin'"
+start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process '%SCHEME%://127.0.0.1:%PORT%/admin'"
 
 rem --no-access-log: app/request_log.py's middleware already logs every
 rem request in clean plain text; uvicorn's own colored access log was
 rem printing a redundant second line per request, with raw ANSI escape
 rem codes on terminals that don't render them (e.g. classic cmd.exe).
-"%PYTHON_EXE%" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem --no-access-log
+"%PYTHON_EXE%" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% %SSL_ARGS% --no-access-log
 exit /b %errorlevel%
 
 rem ---------------------------------------------------------------------
