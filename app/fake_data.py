@@ -627,9 +627,18 @@ def _generate_cost_centers(
                 id=f"KST{index + 1:03d}",
                 long_name=f"Kostenstelle {index + 1} Verwaltung",
                 short_name=f"KST{index + 1}",
-                creation_date=f"{creation_year}-01-15T00:00:00.000",
+                # RFC3339 zone offset required (`creation_date`/
+                # `date_last_modification` are spec-typed `date-time`,
+                # confirmed against `cost-center` in Accounting-1.5.0.json)
+                # -- same bug class already fixed elsewhere in this file,
+                # missed here originally since it was out of this file's
+                # earlier P3 scope (GL-accounts/posting-proposal-rules
+                # only). `creation_date` is non-optional on every
+                # CostCenter record, so this alone was enough to break
+                # every single record's deserialization.
+                creation_date=f"{creation_year}-01-15T00:00:00.000+01:00",
                 cost_rates=cost_rates,
-                date_last_modification=f"{creation_year}-06-01T00:00:00.000",
+                date_last_modification=f"{creation_year}-06-01T00:00:00.000+01:00",
                 responsible=responsible,
             )
         )
@@ -1412,7 +1421,10 @@ def _generate_asset_stocktakings(
                 inventory_name=f"Anlagegut {index + 1}",
                 price=round(500.0 + index * 120, 2),
                 quantity=1.0,
-                stocktaking_date="2024-06-01T00:00:00.000",
+                # RFC3339 offset required (spec-typed date-time, confirmed
+                # against stocktaking_record) -- same bug class as
+                # cost-centers' creation_date, fixed proactively here too.
+                stocktaking_date="2024-06-01T00:00:00.000+01:00",
                 unit="Stück",
             )
         )
