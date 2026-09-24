@@ -54,6 +54,10 @@ public final class Namespaces {
             "http://schemas.datacontract.org/2004/07/Datev.Irw.Connect.Accounting.Contracts."
                     + "AssetStocktaking";
 
+    // --- SB8: DMS and diagnostics parity ---
+    public static final String ECHO_NS =
+            "http://schemas.datacontract.org/2004/07/Datev.ApplicationHost.Server.DataObjects";
+
     private Namespaces() {
     }
 }

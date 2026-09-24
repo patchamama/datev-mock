@@ -33,7 +33,7 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - [x] **SB5 — Master-data API parity**
 - [x] **SB6 — Accounting read API parity**
 - [x] **SB7 — Accounting write API parity**
-- [ ] **SB8 — DMS and diagnostics parity**
+- [x] **SB8 — DMS and diagnostics parity**
 - [ ] **SB9 — Admin frontend/API/settings/override/log/SSE compatibility**
 - [ ] **SB10 — Contract-parity and regression verification**
 - [ ] **SB11 — Packaging and local runbook**
@@ -115,7 +115,8 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - **Checks:** Ported `test_dms.py`, `test_diagnostics.py`, and override integration tests.
 - **Route/dependency evidence:** `app/routers/dms.py`, `app/routers/diagnostics.py`; DMS is self-designed and must follow the locked test contract rather than infer an official schema.
 - **Delivery boundary:** One DMS/diagnostics commit.
-- **Status:** Planned; depends on SB2–SB3.
+- **Status:** **Complete.** `DmsController` (`/datev/api/dms/v1/domains`, `/documents`) ports `app/routers/dms.py` exactly: JSON-only bare arrays, no `Accept` negotiation, `DmsGenerator` reproducing `_generate_domains`/`_generate_documents` 1:1 (the same 6-node hand-authored `domain`/`folder`/`register` tree, 6 cycling documents referencing it). `DiagnosticsController` (`/datev/api/diagnostics/v1/echo`) ports `app/routers/diagnostics.py`: always XML, a fresh GUID `id` and `"echo at DD.MM.YYYY HH:MM:SS"` `echo_message` per call, via a small dedicated `EchoXmlSerializer` (not the generic `DatevXmlRenderer` — Echo has no DataContractSerializer preamble fields, matching `serialize_echo`'s own standalone-function shape in the Python source). Both controllers check `OverrideStore.getActiveOverride(...)` first, same call-site pattern `MasterDataController` already established in SB5 (correction to this epic's own scope note: overrides were **not** first wired here — SB5 got there first for master-data; SB8 just follows the same proven pattern for `dms.domains`/`dms.documents`/`diagnostics.echo`). `mvn test`: `Tests run: 128, Failures: 0, Errors: 0` (114 pre-existing + 14 new: 8 DMS + 6 diagnostics, full case coverage for diagnostics since it's small, representative for DMS per `tests/test_dms.py`'s own shape-only assertions). No natural RED occurred (contract was read fully before writing, same as SB5-SB7); proved real failure evidence by deliberately dropping the `"echo at "` prefix from `echo_message`, confirming `echoMessageMatchesExpectedFormat` failed against the real generated XML, then reverting and re-verifying all 128 GREEN.
+  - **Honest gaps:** None identified for this epic's actual scope — it is small and fully covered. Carried-over gaps from earlier epics (typed write-body DTOs, `expand=all`) are unrelated to SB8 and remain as previously documented.
 
 ### SB9 — Admin frontend/API/settings/override/log/SSE compatibility
 - **Scope:** Existing `/admin` frontend and `/admin/api/*`: settings; master-data/accounting management; reset; stored records; multipart `file` override upload/resolve/list/update/delete; request logs; and `/admin/api/logs/stream` SSE. Also add a frontend "API base URL" setting (scheme+host+port, e.g. `https://127.0.0.1:58452` or `https://127.0.0.1:58553`) that all frontend API calls route through instead of assuming same-origin, defaulting to same-origin; enable CORS on both FastAPI and Spring Boot backends for cross-origin calls from the admin frontend's own origin.
@@ -150,4 +151,4 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 
 ## Next action
 
-**Implement SB8 (DMS and diagnostics parity) with strict TDD, using `app/routers/dms.py`, `app/routers/diagnostics.py`, `tests/test_dms.py`, and `tests/test_diagnostics.py` as the authoritative contract.**
+**Implement SB9 (admin frontend/API/settings/override/log/SSE compatibility, plus the configurable frontend API-base-URL setting) using `app/routers/admin.py`, `app/request_log.py`, `app/overrides.py`, and `tests/test_admin_api.py` as the authoritative contract.**
