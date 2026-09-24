@@ -93,7 +93,7 @@ equivalent line is fully double-quoted, safe in bash.
       actually starts the server and serves over HTTPS with working
       SQLite persistence across two separate exe launches, before trusting
       the CI recipe.
-- [ ] P4 — `.github/workflows/release.yml` (tag-triggered build + GitHub
+- [x] P4 — `.github/workflows/release.yml` (tag-triggered build + GitHub
       Release publish), built from the verified P3 local recipe.
 - [ ] P5 — Commit the prior turn's install-script work + this epic's
       changes; create and push the `v0.1.0` tag once the workflow is
@@ -116,5 +116,24 @@ and P5 (commit/tag): direct inline, mechanical once P2/P3 are verified.
 - 2026-09-24: P2/P3 delegated to a general-purpose agent (frozen-aware
   `app/runtime_paths.py` + `config.py`/`db.py`/`certs/generate_cert.py`
   refactor, `scripts/run_server.py` launcher, local PyInstaller
-  build-and-restart verification on this real Windows machine) — in
-  progress, not yet reviewed/committed.
+  build-and-restart verification on this real Windows machine). Returned
+  verified: build succeeded with **no** `--hidden-import`/`--collect-all`
+  flags needed once `uvicorn.run()` was switched from the `"app.main:app"`
+  string form to passing the imported `app` object directly (the string
+  form built fine but failed at runtime — PyInstaller's static analysis
+  can't see a module only referenced as a runtime string). Verified live:
+  exe served HTTPS from a clean directory with no source nearby, and a
+  second launch reused the existing cert (unchanged mtime) and retained
+  both `settings.json` and a SQLite-written debitor record — full
+  persistence across an exe restart, matching this project's existing
+  `start.sh`/`start.bat` behavior. Reviewed the diff independently
+  (orchestrator), re-ran `pytest tests/ -q` independently (344 passed,
+  matches the agent's own count), confirmed no build artifacts (`dist_test/`,
+  `build_test/`) were left behind. Committed as `7406c89`.
+- 2026-09-24: P4 done. `.github/workflows/release.yml` — triggers on
+  `v*.*.*` tag pushes, builds on `windows-latest` with the exact verified
+  recipe (`pyinstaller --onefile --name datev-mock scripts/run_server.py`,
+  no extra flags), publishes a GitHub Release for the tag with
+  `dist/datev-mock.exe` attached via the pre-installed `gh` CLI (no
+  third-party release action to pin/trust). YAML validated with
+  `yaml.safe_load`.

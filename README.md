@@ -110,6 +110,12 @@ server:
 Then open `https://127.0.0.1:58452/admin` (accept the self-signed cert
 warning once) or `https://127.0.0.1:58452/docs` for Swagger.
 
+Windows only, no Python at all, don't want the source checkout? Grab the
+standalone `datev-mock.exe` from the [Releases
+page](https://github.com/patchamama/datev-mock/releases) and run it — it
+carries its own Python runtime (built with PyInstaller) and creates
+`settings.json`/`datev_mock.db`/`certs/` next to itself on first run.
+
 ## Endpoints mocked
 
 **Base API** (real-capture XML, base project — see
