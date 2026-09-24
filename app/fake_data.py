@@ -925,7 +925,14 @@ def _generate_creditors(
             natural_person = NaturalPerson(
                 firstname=firstname,
                 surname=surname,
-                date_of_birth=_random_timestamp(1950, 2000, rng=active_rng)[:10],
+                # `datev.natural-person.date_of_birth` is spec-typed
+                # `date-time` (P1 Appendix), not a bare date -- truncating
+                # to `[:10]` (as the pre-existing, unrelated Addressee
+                # date_of_birth does, a different schema not confirmed to
+                # need a time component) strips the RFC3339 offset and
+                # reproduces the exact "Error reading entity from input
+                # stream" bug already fixed elsewhere in this file.
+                date_of_birth=_random_timestamp(1950, 2000, rng=active_rng),
             )
             legal_person = None
         else:
@@ -1008,7 +1015,14 @@ def _generate_debitors(
             natural_person = NaturalPerson(
                 firstname=firstname,
                 surname=surname,
-                date_of_birth=_random_timestamp(1950, 2000, rng=active_rng)[:10],
+                # `datev.natural-person.date_of_birth` is spec-typed
+                # `date-time` (P1 Appendix), not a bare date -- truncating
+                # to `[:10]` (as the pre-existing, unrelated Addressee
+                # date_of_birth does, a different schema not confirmed to
+                # need a time component) strips the RFC3339 offset and
+                # reproduces the exact "Error reading entity from input
+                # stream" bug already fixed elsewhere in this file.
+                date_of_birth=_random_timestamp(1950, 2000, rng=active_rng),
             )
             legal_person = None
         else:
