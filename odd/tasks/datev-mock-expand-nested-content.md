@@ -132,7 +132,7 @@ of this epic's fix).
       param-aware router logic, working XML + JSON rendering.
 - [x] P3 — `general-ledger-accounts`/`posting-proposal-rules-*` field-
       shape correction per P1's findings.
-- [ ] P4 — Test suite updates (new `expand=all` coverage; updated shape
+- [x] P4 — Test suite updates (new `expand=all` coverage; updated shape
       assertions for GL-accounts/posting-proposal-rules where fields
       change) + full regression + live verification against the actual
       query strings ELO sent + README updates + commit/push per phase.
@@ -245,6 +245,54 @@ session.
   files needed updates (confirmed by the delegated agent: no test pins
   an exact date-literal string, only type/presence/enum-membership).
   Committed as `7655c0f`.
+- 2026-09-24: **Live re-test surfaced one more real bug**, found and
+  fixed before P4 closed: with the RFC3339 date fix live, the user's
+  `BusinessPartners` pool (creditors, `expand=all`) still failed with the
+  same generic error. Root cause: several `DebitorAccountingInformation`
+  enum fields P2 had populated with *invented* placeholder tokens (e.g.
+  `"dunning_procedure_option_3"`) — P1's spec research had only recorded
+  those fields' member *counts*, not their exact values, and P2 filled
+  the gap with placeholders rather than re-querying the spec. A strict
+  Java enum deserializer rejects any string that isn't one of the real
+  declared constants, exactly like the missing date offset did. Extracted
+  the real member lists directly from `datev.debitor-accounting-
+  information` in `Accounting-1.5.0.json` (`account_statement`,
+  `account_statement_text`, `direct_debit`, `dunning_procedure`,
+  `interest_calculation`, `dunning_text1-3`) and replaced every
+  placeholder pool. `dunning_period_calculation` was already correct.
+  369/369 unchanged. Committed as `ff152d9`, pushed. The user's own
+  separate report of a second remaining failure, `cost-centers`, is the
+  already-explained real DATEV integer-date spec quirk (root-caused
+  before this epic even started) — explicitly not touched, offered the
+  user a workaround if they want one, no decision made yet.
+- 2026-09-24: P4 done. Added 4 new tests (`test_accounting_partners.py`):
+  creditors' `expand=all` populates real content, is deterministic per
+  scope, and round-trips correctly through both JSON and XML (the exact
+  path P2's `repr()`-string bug would resurface in if it ever regressed);
+  a debitors companion that also directly asserts against a real
+  `dunning_procedure` enum value and against the RFC3339 offset fix (not
+  just "doesn't crash" — asserts the two actual defects found via live
+  ELO debugging stay fixed). 369 → 373 passing (caught and fixed one
+  test-authoring bug of the orchestrator's own along the way — `record["legal_person"]`
+  raised `KeyError` instead of returning `None` on a legitimately-absent
+  key; corrected to `.get()`). README updated: 11th epic entry, new
+  "Expand and nested content" and "Trusting the mock's TLS certificate
+  (Java / enterprise HTTP clients)" Key Decisions subsections (the
+  latter a direct how-to write-up of the `keytool -importcert` procedure
+  this epic's own live debugging worked out, requested separately by the
+  user mid-epic), test badge/count updated. Committed as `510768b`,
+  pushed.
+  This closes the epic: real `expand=all` nested content for creditors/
+  debitors (spec-grounded, not Java-mock-shaped), two genuine bugs found
+  via live integration debugging and fixed at their real root cause
+  (missing RFC3339 zone offsets — fixed systemically at
+  `_random_timestamp()`'s source, not just the two originally-reported
+  spots — and invented-vs-real enum values), 373/373 tests green,
+  committed across 4 phases plus 2 live-debugging follow-up fixes, all
+  pushed to `main`. One confirmed-real, deliberately-untouched item
+  remains open for the user's own call: `cost-centers`' integer-encoded
+  dates are correct per DATEV's real spec and not something this mock
+  should change to accommodate one client's gap.
 
 ## Appendix — official spec field tables (P1)
 
