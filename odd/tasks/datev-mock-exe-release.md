@@ -95,7 +95,7 @@ equivalent line is fully double-quoted, safe in bash.
       the CI recipe.
 - [x] P4 — `.github/workflows/release.yml` (tag-triggered build + GitHub
       Release publish), built from the verified P3 local recipe.
-- [ ] P5 — Commit the prior turn's install-script work + this epic's
+- [x] P5 — Commit the prior turn's install-script work + this epic's
       changes; create and push the `v0.1.0` tag once the workflow is
       committed (pushing the tag is what actually triggers the release
       build on GitHub's side).
@@ -137,3 +137,12 @@ and P5 (commit/tag): direct inline, mechanical once P2/P3 are verified.
   `dist/datev-mock.exe` attached via the pre-installed `gh` CLI (no
   third-party release action to pin/trust). YAML validated with
   `yaml.safe_load`.
+- 2026-09-24: P5 done. Pushed `1f91112` to `main`, then created and pushed
+  annotated tag `v0.1.0` — this triggers `release.yml` on GitHub's side.
+  This machine has no `gh` CLI installed, so the workflow run itself
+  couldn't be polled/verified from here; the user should check the
+  Actions tab on GitHub to confirm the build+release succeeded remotely.
+  This closes the epic: `3.9)` root cause fixed, one-line installers
+  documented, and a tag-triggered standalone-.exe release pipeline in
+  place, all committed and pushed across 4 commits (`bc7a16c`, `c5c5b4c`,
+  `7406c89`, `1f91112`) plus tag `v0.1.0`.
