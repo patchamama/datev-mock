@@ -32,10 +32,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from app.runtime_paths import base_dir
+
 # Real project-root database file (git-ignored, runtime local state; see
 # `.gitignore`). Tests override this at the module level so the real file is
 # never touched -- same precedent as `app.config.SETTINGS_PATH`.
-DB_PATH: Path = Path(__file__).resolve().parent.parent / "datev_mock.db"
+DB_PATH: Path = base_dir() / "datev_mock.db"
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS stored_records (

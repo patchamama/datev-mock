@@ -12,6 +12,8 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from app.runtime_paths import base_dir
+
 _VALID_FORMATS = {"xml", "json"}
 
 
@@ -34,7 +36,7 @@ class Settings:
 
 # Real project-root settings file (git-ignored, runtime local state). Tests
 # override this at the module level so the real file is never touched.
-SETTINGS_PATH: Path = Path(__file__).resolve().parent.parent / "settings.json"
+SETTINGS_PATH: Path = base_dir() / "settings.json"
 
 
 def load_settings() -> Settings:

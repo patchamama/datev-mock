@@ -7,20 +7,31 @@ manually running the server with uvicorn.
 
 Usage:
     python certs/generate_cert.py
-Writes `certs/cert.pem` and `certs/key.pem` next to this script.
+Writes `certs/cert.pem` and `certs/key.pem` under the runtime base dir (see
+`app.runtime_paths.base_dir`): the project root from a source checkout, or
+the folder containing the .exe when frozen.
 """
 from __future__ import annotations
 
 import datetime
 import ipaddress
+import sys
 from pathlib import Path
+
+# Allow `python certs/generate_cert.py` to find the `app` package (repo root
+# isn't on sys.path when run as a script, only certs/ is).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-CERTS_DIR = Path(__file__).resolve().parent
+from app.runtime_paths import base_dir
+
+CERTS_DIR = base_dir() / "certs"
 CERT_PATH = CERTS_DIR / "cert.pem"
 KEY_PATH = CERTS_DIR / "key.pem"
 

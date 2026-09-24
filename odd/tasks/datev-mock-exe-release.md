@@ -110,3 +110,11 @@ and P5 (commit/tag): direct inline, mechanical once P2/P3 are verified.
 ## Progress
 
 - 2026-09-24: Feature doc created. P1 done — see root-cause section above.
+  Committed and pushed in two commits: `bc7a16c` (prior turn's
+  `scripts/install.sh`/`install.bat` one-line installers + README section)
+  and `c5c5b4c` (this doc + the `start.bat` fix).
+- 2026-09-24: P2/P3 delegated to a general-purpose agent (frozen-aware
+  `app/runtime_paths.py` + `config.py`/`db.py`/`certs/generate_cert.py`
+  refactor, `scripts/run_server.py` launcher, local PyInstaller
+  build-and-restart verification on this real Windows machine) — in
+  progress, not yet reviewed/committed.
