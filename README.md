@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Pytest](https://img.shields.io/badge/tests-373%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
+[![Pytest](https://img.shields.io/badge/tests-375%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5-7952B3?logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
 [![Status](https://img.shields.io/badge/status-active-success)](#status)
 
@@ -66,7 +66,7 @@ Already have the repo cloned? See [Quick start](#quick-start) below.
 
 ## Status
 
-**GREEN — implemented and passing.** All 373 tests pass
+**GREEN — implemented and passing.** All 375 tests pass
 (`.venv\Scripts\python -m pytest tests/ -v`), and the server has been
 verified live over real HTTPS (the 23 original read-only endpoints, the 26
 new SQLite-backed write endpoints, the live request log, the Bootstrap admin
@@ -472,13 +472,37 @@ established "support a query param only when a real consumer needs it"
 principle; every other documented DATEV query param has never had a
 concrete consumer ask for it).
 
-This epic also fixed a genuine bug found via a real integration client:
-a couple of generated timestamps (and the shared `_random_timestamp()`
-helper behind most of this mock's dates) were missing their RFC3339 zone
-offset (`"...T00:00:00.000"` instead of `"...T00:00:00.000+01:00"`) —
-harmless to most JSON consumers, but a strict Java client's
-`OffsetDateTime.parse()` rejects a naive date-time string outright. Fixed
-at the source; every generated timestamp now includes the offset.
+This epic also fixed genuine bugs found via a real integration client:
+several generated timestamps (and the shared `_random_timestamp()` helper
+behind most of this mock's dates) were missing their RFC3339 zone offset
+(`"...T00:00:00.000"` instead of `"...T00:00:00.000+01:00"`), and a couple
+of `DebitorAccountingInformation` enum fields used invented placeholder
+values instead of DATEV's real spec-declared members — both harmless to
+most JSON consumers, but a strict Java client's generated model rejects
+either outright. Fixed at the source; every generated timestamp now
+includes the offset, every enum field now only emits real spec values.
+
+### Legacy vs. modern DATEV API version
+
+`cost-centers` has one field, `cost_rates[].valid_from`/`valid_to`, that's
+genuinely integer-encoded dates per DATEV's own official spec (confirmed
+directly against `Accounting-1.5.0.json` — not a bug). A real integration
+client built against ELO's older internal reference mock (which never
+sent this field at all) rejects it anyway. Rather than choose one
+behavior, the admin UI's **Settings** card has a **DATEV API version**
+toggle:
+
+- **Legacy** (the default) — `cost-centers` omits `cost_rates` entirely,
+  matching that older reference mock's shape.
+- **Modern** — the full, spec-accurate `CostCenter` including
+  `cost_rates`.
+
+Same mechanism as `default_accounting_format`: persisted in
+`settings.json`, changeable via the admin UI or
+`PUT /admin/api/settings`, takes effect on the next request (no restart
+needed). Defaults to *legacy* because that's what this mock's actual
+local integration testing has needed working out of the box — switch to
+*modern* to exercise the complete, spec-accurate contract instead.
 
 ### Trusting the mock's TLS certificate (Java / enterprise HTTP clients)
 
@@ -713,7 +737,7 @@ DATEV-Mock/
 │   ├── datev-mock-custom-overrides.md      # upload/override system: same, for that epic
 │   ├── datev-mock-real-data-reconciliation.md  # reconciled every endpoint against real DATEV data: same, for that epic
 │   └── datev-mock-write-endpoints-and-observability.md  # 26 write endpoints + SQLite + live log: same, for that epic
-├── tests/                     # full test suite — 373/373 passing
+├── tests/                     # full test suite — 375/375 passing
 ├── start.bat / start.sh       # bootstrap Python (portable if needed) + deps + run, one step
 ├── settings.json              # git-ignored, created on first settings change
 ├── datev_mock.db              # git-ignored, created on first write to any of the 26 new write endpoints
@@ -735,7 +759,7 @@ python -m venv .venv
 .venv\Scripts\python -m pytest tests/ -v
 ```
 
-All 373 tests pass.
+All 375 tests pass.
 
 ## Running the server
 

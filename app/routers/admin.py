@@ -47,6 +47,7 @@ _SSE_KEEPALIVE_SECONDS = 15.0
 class SettingsPayload(BaseModel):
     port: int
     default_accounting_format: str
+    datev_api_version: str = "legacy"
 
 
 # --- settings ---
@@ -63,7 +64,9 @@ def put_settings(payload: SettingsPayload) -> dict:
 
     try:
         new_settings = config.Settings(
-            port=payload.port, default_accounting_format=payload.default_accounting_format
+            port=payload.port,
+            default_accounting_format=payload.default_accounting_format,
+            datev_api_version=payload.datev_api_version,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -439,9 +442,26 @@ _PAGE = """<!DOCTYPE html>
         </select>
       </div>
       <div class="col-auto">
+        <label for="settings-api-version" class="form-label">DATEV API version</label>
+        <select id="settings-api-version" class="form-select">
+          <option value="legacy">Legacy (matches ELO's older reference mock)</option>
+          <option value="modern">Modern (full, spec-accurate shape)</option>
+        </select>
+      </div>
+      <div class="col-auto">
         <button id="settings-save" type="button" class="btn btn-primary">Save</button>
       </div>
     </form>
+    <div class="small text-muted mt-2">
+      <strong>DATEV API version</strong> currently only affects
+      <code>cost-centers</code>: <em>legacy</em> omits <code>cost_rates</code>
+      entirely (matching ELO's older internal reference mock, which never
+      sent this field); <em>modern</em> returns the full spec-accurate
+      shape, including <code>cost_rates</code> (whose <code>valid_from</code>/
+      <code>valid_to</code> are genuine DATEV-spec integer-encoded dates,
+      not a bug &mdash; some integration clients built against the legacy
+      shape don't handle them).
+    </div>
     <div id="settings-note" class="alert mt-3 d-none" role="alert"></div>
   </div>
 </div>
@@ -720,6 +740,7 @@ async function loadSettings() {
   const data = await res.json();
   document.getElementById("settings-port").value = data.port;
   document.getElementById("settings-format").value = data.default_accounting_format;
+  document.getElementById("settings-api-version").value = data.datev_api_version;
   state.port = data.port;
   showNote("");
 }
@@ -727,10 +748,11 @@ async function loadSettings() {
 async function saveSettings() {
   const port = parseInt(document.getElementById("settings-port").value, 10);
   const default_accounting_format = document.getElementById("settings-format").value;
+  const datev_api_version = document.getElementById("settings-api-version").value;
   const res = await fetch(SETTINGS_URL, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ port, default_accounting_format }),
+    body: JSON.stringify({ port, default_accounting_format, datev_api_version }),
   });
   if (!res.ok) {
     showNote("Failed to save settings — check port/format values.", "alert-danger");

@@ -340,6 +340,15 @@ def get_cost_centers(
         client_id=client_id,
         fiscal_year_id=fiscal_year_id,
     )
+    if config.load_settings().datev_api_version == "legacy":
+        # `cost_rates[].valid_from`/`valid_to` are genuine integer-encoded
+        # dates per DATEV's own spec (see CostRate's docstring) -- correct,
+        # but a real integration client built against ELO's older reference
+        # mock (which never sent this field at all) rejects it regardless.
+        # "legacy" mode (the settings.json default) matches that reference
+        # mock's shape for compatibility; "modern" mode returns the full,
+        # spec-accurate CostCenter including cost_rates.
+        records = [replace(record, cost_rates=None) for record in records]
     if _negotiate_format(request) == "json":
         payload = [_to_json(record) for record in records]
         return Response(content=json.dumps(payload), media_type="application/json")

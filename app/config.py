@@ -15,14 +15,28 @@ from pathlib import Path
 from app.runtime_paths import base_dir
 
 _VALID_FORMATS = {"xml", "json"}
+_VALID_API_VERSIONS = {"legacy", "modern"}
 
 
 @dataclass
 class Settings:
-    """Persisted mock settings. Validated on construction."""
+    """Persisted mock settings. Validated on construction.
+
+    `datev_api_version`: "legacy" (default) matches the shape of ELO's
+    older internal reference mock (`serve-0.1-generate.jar`, port 35000) --
+    currently only affects `cost-centers`, which omits `cost_rates`
+    entirely in that mode (its `valid_from`/`valid_to` are genuine
+    integer-encoded dates per DATEV's own spec, confirmed real, but a
+    real integration client's generated model rejected them regardless;
+    the legacy Java mock's own cost-centers never included this field at
+    all). "modern" returns the full, spec-accurate shape. Defaults to
+    "legacy" because that's what this mock's actual local consumers have
+    needed working out of the box so far -- switch to "modern" to
+    exercise the complete, spec-accurate contract instead."""
 
     port: int = 58452
     default_accounting_format: str = "xml"
+    datev_api_version: str = "legacy"
 
     def __post_init__(self) -> None:
         if not (1 <= self.port <= 65535):
@@ -31,6 +45,11 @@ class Settings:
             raise ValueError(
                 "default_accounting_format must be one of "
                 f"{sorted(_VALID_FORMATS)}, got {self.default_accounting_format!r}"
+            )
+        if self.datev_api_version not in _VALID_API_VERSIONS:
+            raise ValueError(
+                f"datev_api_version must be one of {sorted(_VALID_API_VERSIONS)}, "
+                f"got {self.datev_api_version!r}"
             )
 
 
@@ -48,6 +67,7 @@ def load_settings() -> Settings:
     return Settings(
         port=data.get("port", 58452),
         default_accounting_format=data.get("default_accounting_format", "xml"),
+        datev_api_version=data.get("datev_api_version", "legacy"),
     )
 
 

@@ -36,6 +36,7 @@ import re
 import uuid
 import xml.etree.ElementTree as ET
 
+from app import config
 from app.routers.accounting import (
     COST_CENTERS_ENDPOINT,
     COST_SYSTEMS_ENDPOINT,
@@ -362,10 +363,17 @@ def test_cost_center_record_has_core_fields(client):
         assert isinstance(record.get("creation_date"), str) and record["creation_date"].strip()
 
 
-def test_cost_center_cost_rates_use_integer_encoded_dates(client):
+def test_cost_center_cost_rates_use_integer_encoded_dates(client, tmp_path, monkeypatch):
     """`cost_rates[].valid_from`/`valid_to` are documented as integer-encoded
     dates (e.g. `20161201`), not date-time strings — an explicit epic-doc
-    quirk, tested here rather than just noted."""
+    quirk, tested here rather than just noted. Only visible in "modern"
+    `datev_api_version` mode (epic `datev-mock-expand-nested-content`
+    follow-up): "legacy" (the default) omits `cost_rates` entirely to match
+    ELO's older reference mock, since a real integration client's generated
+    model rejects this genuinely-spec-correct field regardless."""
+    monkeypatch.setattr(config, "SETTINGS_PATH", tmp_path / "settings.json")
+    config.save_settings(config.Settings(datev_api_version="modern"))
+
     records = _get_cost_centers(client)
     records_with_rates = [r for r in records if r.get("cost_rates")]
     assert records_with_rates, "no cost-center record carries a populated cost_rates entry"
@@ -375,6 +383,23 @@ def test_cost_center_cost_rates_use_integer_encoded_dates(client):
             assert isinstance(rate.get("valid_from"), int) and _YYYYMMDD_RE.match(str(rate["valid_from"]))
             assert isinstance(rate.get("valid_to"), int) and _YYYYMMDD_RE.match(str(rate["valid_to"]))
             assert isinstance(rate.get("rate"), (int, float))
+
+
+def test_cost_center_cost_rates_are_omitted_in_legacy_mode_by_default(client, tmp_path, monkeypatch):
+    """The flip side of the test above: with no settings.json override (the
+    real default for a fresh install), `datev_api_version` defaults to
+    "legacy" and `cost_rates` must be entirely absent from every record —
+    not `null`, not `[]`, genuinely absent, matching what ELO's older
+    reference mock (`serve-0.1-generate.jar`) actually sends. Isolated to a
+    fresh, never-written `tmp_path` settings file (not just "no local
+    settings.json happens to exist right now") so this stays deterministic
+    regardless of what a developer's own machine-local settings.json says."""
+    monkeypatch.setattr(config, "SETTINGS_PATH", tmp_path / "settings.json")
+
+    records = _get_cost_centers(client)
+    assert records, "no cost-center records returned"
+    for record in records:
+        assert "cost_rates" not in record
 
 
 def test_cost_centers_same_ids_are_stable(client):

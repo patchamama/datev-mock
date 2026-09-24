@@ -183,6 +183,28 @@ def test_get_settings_returns_defaults(client):
     body = response.json()
     assert body["port"] == DEFAULT_PORT
     assert body["default_accounting_format"] == DEFAULT_FORMAT
+    assert body["datev_api_version"] == "legacy"
+
+
+def test_put_settings_changing_api_version_takes_effect_immediately(client):
+    """`datev_api_version` (epic `datev-mock-expand-nested-content`
+    follow-up) round-trips through the same admin settings endpoint as
+    `default_accounting_format`, with the same "no restart needed"
+    behavior — it's read fresh on every `cost-centers` request, not cached
+    at process startup."""
+    response = client.put(
+        SETTINGS_ENDPOINT,
+        json={
+            "port": DEFAULT_PORT,
+            "default_accounting_format": DEFAULT_FORMAT,
+            "datev_api_version": "modern",
+        },
+    )
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["datev_api_version"] == "modern"
+    assert body["restart_required"] is False
 
 
 def test_put_settings_changing_port_signals_restart_required(client):
