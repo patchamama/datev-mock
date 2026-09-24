@@ -1,5 +1,7 @@
 name: Deploy static demo to GitHub Pages
 
+# Pages source set to "GitHub Actions" in repo settings on 2026-09-24;
+# this push also serves to trigger the first deployment run.
 on:
   push:
     branches: [main]
