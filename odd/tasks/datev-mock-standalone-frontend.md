@@ -93,7 +93,7 @@ was asked about in this session before implementation started.
   timeout (sec) — persisted per-browser alongside today's API-base setting,
   and actually applied to every outbound call (auth header/timeout wiring),
   not just stored.
-- [ ] **F3 — `start_java_datev_mock.bat` / `.sh`**: detect an existing Java
+- [x] **F3 — `start_java_datev_mock.bat` / `.sh`**: detect an existing Java
   21 install (check the ELO default location first, then other common system
   locations, then `JAVA_HOME`/`PATH`) before falling back to downloading a
   portable, project-local JDK used only by this launcher — never silently
@@ -223,5 +223,132 @@ epic, per the user's own established checkpoint-rhythm preference.
   `frontend/admin.html` (self-contained static page with baked-in
   `CATALOG`/`OVERRIDE_ENDPOINT_PATHS` and its own `NOTE` comment).
 - **Delivery boundary:** One work-unit commit for F1; not committed by the
+  implementer per explicit instruction — left for the user's own review and
+  commit.
+
+### F3 — `start_java_datev_mock.bat` / `.sh`
+
+- **Scope:** two new, top-level, Java-specific launcher scripts —
+  `start_java_datev_mock.bat` (Windows) and `start_java_datev_mock.sh`
+  (Linux/macOS) — that detect a usable Java 21+ install, download a portable
+  JDK 21 only if none is found, build `spring-boot/target/datev-mock-*.jar`
+  if it doesn't exist yet, and launch it. Neither script touches the
+  existing root `start.bat`/`start.sh` (the *Python* FastAPI mock's own
+  launchers), `app/routers/admin.py`, or `frontend/` — those are F1's scope,
+  worked concurrently by another agent this session.
+- **Detection order (both scripts, first hit wins):**
+  1. `.bat`: `C:\ELO\java\bin\java.exe` (this project's documented default,
+     per `spring-boot/RUNBOOK.md` and `odd/tasks/datev-mock-spring-boot-migration.md`).
+     `.sh`: this step is **skipped** — a repo-wide grep for "ELO" + "java"
+     mentions across README/RUNBOOK/task docs turned up no equivalent
+     well-known default install location documented for Linux/macOS
+     anywhere in this repo, so nothing was invented.
+  2. `JAVA_HOME` env var, if it points at a working `java`.
+  3. `java` resolvable on `PATH` (`where java` / `command -v java`).
+  4. Common OS-default locations: Windows `C:\Program Files\Java\*`,
+     `C:\Program Files\Eclipse Adoptium\*`, `C:\Program Files\Zulu\*`;
+     Linux `/usr/lib/jvm/*`, then `update-alternatives --list java`; macOS
+     `/Library/Java/JavaVirtualMachines/*/Contents/Home`, then
+     `/usr/libexec/java_home -v 21`.
+  Every candidate is version-checked (`java -version`, parsed for major
+  version — handles both `"21.0.1"`-style and legacy `"1.8.0_211"`-style
+  strings) before being accepted; the first Java **21+** hit in priority
+  order wins, not an exhaustive best-of-all-candidates scan, per spec.
+- **Portable-JDK fallback (only if nothing above is Java 21+):** downloads
+  Eclipse Temurin from the Adoptium API
+  (`https://api.adoptium.net/v3/binary/latest/21/ga/<os>/<arch>/jdk/hotspot/normal/eclipse`
+  — the "latest" endpoint, not a version-pinned URL, so it won't go stale)
+  into the project-local, gitignored `spring-boot/.jdk21-portable/`, reusing
+  a previously-bootstrapped one if present. Never touches the system's real
+  Java, `PATH`, or `JAVA_HOME` outside the script's own process. Windows
+  uses `Invoke-WebRequest`/`Expand-Archive`; `.sh` uses `curl`/`tar` and
+  correctly handles the fact that Adoptium's macOS tarball nests the JVM one
+  level deeper (`jdk-*/Contents/Home/bin/java`) than Linux's
+  (`jdk-*/bin/java`) by searching for `bin/java` after extraction instead of
+  assuming a fixed depth.
+- **Build step:** if `spring-boot/target/datev-mock-*.jar` doesn't exist,
+  builds it first with the resolved Java as `JAVA_HOME`. `.bat` mirrors
+  `RUNBOOK.md`'s documented invocation exactly (`.\mvnw.cmd clean package`
+  via an explicit relative path, per RUNBOOK's own
+  `NoDefaultCurrentDirectoryInExePath` note). **Honest gap:** this repo only
+  commits the Windows Maven Wrapper (`spring-boot/mvnw.cmd`); there is no
+  committed POSIX `mvnw`/`mvnw.sh`. Rather than shelling out to a
+  nonexistent script, `.sh` invokes the same wrapper jar directly
+  (`java -classpath .mvn/wrapper/maven-wrapper.jar ... org.apache.maven.wrapper.MavenWrapperMain clean package`),
+  which is exactly what `mvnw.cmd` itself does under the hood (confirmed by
+  reading `mvnw.cmd`'s own last line), including self-downloading the
+  wrapper jar from `maven-wrapper.properties`' `wrapperUrl` if it's missing,
+  same as `mvnw.cmd` does.
+- **Launch:** `java -jar <jar> --server.port=<port>`, default port `58553`
+  (matching `RUNBOOK.md`'s own example port), overridable via `--port PORT`
+  or the `DATEV_MOCK_JAVA_PORT` env var — documented in both scripts' own
+  `--help`-style usage output and in `RUNBOOK.md`. Both scripts print the
+  resolved Java version/path, jar path, and port before launching.
+- **Real bug found and fixed during live verification:** the first working
+  draft's `check_java_version` used the standard
+  `for /f ... in ('"%CANDIDATE%" -version 2^>^&1 ^| findstr ...')` idiom to
+  parse `java -version` output. This **failed with a spurious "the filename,
+  directory name, or volume label syntax is incorrect" error** and silently
+  produced an empty version string, because in `cmd.exe`, `FOR /F`'s
+  `('...')` command-string delimiter is a *plain* single quote with no
+  special protection from the outer parser — nesting a `"..."`-quoted
+  executable path (required for paths containing spaces, e.g.
+  `"C:\Program Files\Java\...\java.exe"`) inside it clashes with the pipe/
+  redirection escaping needed for the same command string. Reproduced this
+  in isolation with a minimal test script before fixing it. **Fix:** redirect
+  `-version`'s output to a temp file first, then `for /f` over
+  `findstr` against that file — no nested quoting, no pipe, works correctly
+  for paths with spaces. This is the actually-shipped implementation.
+- **Verified live, on this machine (Windows Server 2022):**
+  - Confirmed via `java -version`, `where java`, and `echo %JAVA_HOME%`
+    before testing: `C:\ELO\java\bin\java.exe` exists (OpenJDK 21.0.1, Zulu),
+    `JAVA_HOME` was unset, and no `java` was on `PATH` — so the ELO-default
+    branch was the only real candidate available.
+  - Ran `start_java_datev_mock.bat --port 58601` end-to-end: log showed
+    `Found Java 21 at C:\ELO\java (this project's ELO default location).`
+    with **no download attempted**; found the existing
+    `spring-boot/target/datev-mock-0.1.0-SNAPSHOT.jar` (no rebuild needed);
+    launched Spring Boot; `curl http://127.0.0.1:58601/actuator/health` →
+    `{"status":"UP"}`. Found the bound PID via
+    `netstat -ano | grep :58601` (PID 4452) and stopped it with
+    `taskkill //PID 4452 //F`; confirmed the port stopped responding
+    afterward.
+  - Repeated the full run a second time on port `58602` with identical
+    result (`Found Java 21 at C:\ELO\java...`, health check `{"status":"UP"}`),
+    then stopped it the same way (PID 664).
+  - **Fallback-branch verification (inspection-only, clearly labeled):** to
+    avoid touching the real environment, made a throwaway copy of the `.bat`
+    script with only the ELO-path literal repointed at a nonexistent path
+    (`C:\ELO\java_FAKE_NONEXISTENT`), then ran it with `JAVA_HOME` set to a
+    nonexistent path and a minimal `PATH` (no `java`). Observed log:
+    `No usable Java 21+ install found anywhere on this machine.` →
+    `Bootstrapping a portable, project-local JDK 21...` →
+    `Downloading portable JDK 21 (x64) from Eclipse Temurin/Adoptium ...` →
+    `https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse`.
+    This confirms the not-found detection correctly falls through every
+    check (including the common-locations scan) and constructs a correct,
+    real Adoptium URL for the actual OS/arch (`windows/x64`). The download
+    itself was **not completed** — the throwaway test copy's restricted
+    `PATH` also removed `powershell.exe`, causing the download call to fail
+    immediately (by design, to avoid consuming bandwidth on a real
+    multi-hundred-MB JDK download). The real, unmodified script (normal
+    `PATH` intact) would proceed to actually download and extract. Deleted
+    the throwaway test copy and its log afterward; confirmed the real
+    `C:\ELO\java\bin\java.exe` was never touched.
+  - `.sh`: **not executed live** in this Windows session (no POSIX shell
+    with a real Linux/macOS Java environment available here). Verified by
+    careful manual read-through instead: POSIX-compatible syntax throughout
+    (`[ ]` tests, no bashisms beyond `local`-style `candidate=`/array-free
+    variable use already accepted elsewhere in this repo's own `start.sh`),
+    correct `set -e` + `|| true` guarding around pipelines that are allowed
+    to fail (version-probing a non-Java binary), no Windows-only assumptions,
+    and the same detection order/fallback/port logic as the `.bat` script.
+- **Files touched:** new `start_java_datev_mock.bat`, new
+  `start_java_datev_mock.sh` (both at repo root, executable bit set on the
+  `.sh`); `spring-boot/.gitignore` (added `.jdk21-portable/`);
+  `spring-boot/RUNBOOK.md` (new "Recommended: one-command launchers" section
+  pointing at these two scripts, ahead of the existing manual build/run
+  instructions, which are unchanged and remain valid).
+- **Delivery boundary:** One work-unit commit for F3; not committed by the
   implementer per explicit instruction — left for the user's own review and
   commit.

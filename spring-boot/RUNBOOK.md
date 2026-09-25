@@ -5,6 +5,30 @@ entirely under `spring-boot/`. It builds and runs independently of the
 root FastAPI application — no root-level file needs to change to build, run,
 or configure it.
 
+## Recommended: one-command launchers
+
+The repo root ships `start_java_datev_mock.bat` (Windows) and
+`start_java_datev_mock.sh` (Linux/macOS) as the recommended way to start this
+backend without doing the steps below by hand. Each script: detects a usable
+Java 21+ install (this project's own `C:\ELO\java` default on Windows, then
+`JAVA_HOME`, then `PATH`, then common OS-default install locations),
+downloads a portable, project-local JDK 21 (Eclipse Temurin, into the
+gitignored `spring-boot/.jdk21-portable/`) only if none is found anywhere
+else, builds `target/datev-mock-*.jar` if it doesn't exist yet, and launches
+it on port `58553` by default (override with `--port PORT` or the
+`DATEV_MOCK_JAVA_PORT` environment variable). Run from the repo root:
+
+```
+start_java_datev_mock.bat            # Windows
+./start_java_datev_mock.sh           # Linux/macOS
+```
+
+These are separate, Java-specific launchers -- they never touch the root
+`start.sh`/`start.bat`, which start the *Python* FastAPI mock instead. The
+manual build/run steps below remain valid for anyone who wants direct
+control (e.g. `-DskipTests`, a custom `JAVA_HOME`, or running the full test
+suite).
+
 ## Prerequisite: Java 21
 
 A JDK 21 is required (the Maven Wrapper and `pom.xml` both target it).

@@ -8,6 +8,11 @@ target/
 .mvn/wrapper/maven-wrapper.jar
 .mvn/wrapper/dists/
 
+# Portable JDK 21 bootstrapped by the root start_java_datev_mock.bat/.sh
+# launchers when no usable system Java 21+ is found (project-local, never
+# installed system-wide)
+.jdk21-portable/
+
 # IDE metadata
 .idea/
 *.iml
