@@ -82,6 +82,23 @@ equivalent line is fully double-quoted, safe in bash.
 
 ## Phases
 
+- [x] **P6 — Also attach a downloadable Java build to the release** (user
+  request, 2026-09-25): the "Excluded root work" rule in
+  `datev-mock-spring-boot-migration.md` said not to touch
+  `.github/workflows/release.yml` — that exclusion is explicitly lifted now
+  by this direct request, for this one file, for this one purpose. New job
+  in `release.yml`, `needs: build-and-release` (so it only runs once the
+  existing Python exe job has created the GitHub Release for the tag — the
+  existing fragile job itself is left untouched, only appended to),
+  `runs-on: ubuntu-latest` (a jar is cross-platform; Java CI doesn't need
+  `windows-latest` or this repo's own `mvnw.cmd`-on-Windows quirks —
+  `actions/setup-java` + the runner's preinstalled `mvn` is simpler and
+  avoids all of that). Builds `spring-boot/` with `mvn -B clean package`,
+  renames the jar from `datev-mock-0.1.0-SNAPSHOT.jar` to something
+  tag-based (e.g. `datev-mock-java-${{ github.ref_name }}.jar`) without
+  touching `pom.xml`'s own version, zips it together with
+  `start_java_datev_mock.bat`/`.sh` for a usable one-download package, and
+  `gh release upload`s it to the same release.
 - [x] P1 — `3.9)` root cause found, reproduced against real `cmd.exe`,
       fixed in `start.bat`, stray file removed from the repo root.
 - [ ] P2 — Frozen-aware path helper (`app/runtime_paths.py`) +
@@ -146,3 +163,41 @@ and P5 (commit/tag): direct inline, mechanical once P2/P3 are verified.
   documented, and a tag-triggered standalone-.exe release pipeline in
   place, all committed and pushed across 4 commits (`bc7a16c`, `c5c5b4c`,
   `7406c89`, `1f91112`) plus tag `v0.1.0`.
+- 2026-09-25: P6 done. Added a new `build-and-release-java` job to
+  `.github/workflows/release.yml`, `needs: build-and-release` (runs only
+  after the existing Python `.exe` job has published the GitHub Release
+  for the tag), `runs-on: ubuntu-latest`. Steps: `actions/checkout@v4` →
+  `actions/setup-java@v4` (`temurin`, `21`) → `mvn -B -f spring-boot/pom.xml
+  clean package` → locate `spring-boot/target/datev-mock-*.jar`, copy/rename
+  it to `datev-mock-java-${{ github.ref_name }}.jar` (verified against
+  `spring-boot/pom.xml`: `artifactId` is `datev-mock`, version
+  `0.1.0-SNAPSHOT`, default jar packaging via `spring-boot-maven-plugin` —
+  no `pom.xml` version bump) → zip that renamed jar with
+  `start_java_datev_mock.bat`/`.sh` from the repo root into
+  `datev-mock-java-${{ github.ref_name }}.zip` → `gh release upload` it to
+  the same release, same `gh`/`GITHUB_TOKEN` style as the existing job. The
+  existing `build-and-release` job's steps are untouched (only appended
+  to). Evidence:
+  - YAML validated: `.venv/Scripts/python.exe -c "import yaml;
+    yaml.safe_load(open('.github/workflows/release.yml'))"` → OK, both
+    jobs (`build-and-release`, `build-and-release-java`) present.
+  - Local dry-run build (this machine, Java 21 at `C:\ELO\java`, Maven via
+    the project's own wrapper since no system `mvn` is installed here —
+    equivalent artifact to the CI's `mvn clean package`): `BUILD SUCCESS`,
+    produced `spring-boot/target/datev-mock-0.1.0-SNAPSHOT.jar`.
+  - Local dry-run rename+zip (fake tag `v0.0.0-test`, since a real tag
+    push wasn't triggered): copied the jar to
+    `datev-mock-java-v0.0.0-test.jar`, zipped it with
+    `start_java_datev_mock.bat`/`.sh` (used PowerShell `Compress-Archive`
+    locally in place of the `zip` CLI, which isn't installed on this
+    Windows box — `zip` is preinstalled on GitHub's `ubuntu-latest`
+    runners, so the workflow itself is unaffected). Verified zip contents
+    via `System.IO.Compression.ZipFile`: exactly 3 entries —
+    `datev-mock-java-v0.0.0-test.jar` (36,915,334 bytes),
+    `start_java_datev_mock.bat` (9,946 bytes), `start_java_datev_mock.sh`
+    (10,887 bytes).
+  - All test artifacts deleted afterward (`datev-mock-java-v0.0.0-test.jar`,
+    `.zip`, helper scripts, `spring-boot/target/`) — confirmed via
+    `git status --short` that no stray files remain from this work.
+  - No git commands run (no add/commit/push) — changes left for the user
+    to review and commit.

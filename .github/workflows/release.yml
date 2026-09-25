@@ -51,3 +51,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.ref_name }}" dist/datev-mock.exe
+
+  build-and-release-java:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Build Java jar
+        run: mvn -B -f spring-boot/pom.xml clean package
+
+      - name: Package Java release archive
+        run: |
+          set -euo pipefail
+          jar_path=$(ls spring-boot/target/datev-mock-*.jar | head -n 1)
+          renamed_jar="datev-mock-java-${{ github.ref_name }}.jar"
+          cp "$jar_path" "$renamed_jar"
+          zip "datev-mock-java-${{ github.ref_name }}.zip" "$renamed_jar" start_java_datev_mock.bat start_java_datev_mock.sh
+
+      - name: Upload Java asset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" "datev-mock-java-${{ github.ref_name }}.zip"
