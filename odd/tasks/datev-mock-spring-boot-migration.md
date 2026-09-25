@@ -36,7 +36,7 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - [x] **SB8 — DMS and diagnostics parity**
 - [x] **SB9 — Admin frontend/API/settings/override/log/SSE compatibility**
 - [x] **SB10 — Contract-parity and regression verification**
-- [ ] **SB11 — Packaging and local runbook**
+- [x] **SB11 — Packaging and local runbook**
 
 ## Epics
 
@@ -150,7 +150,8 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 - **Checks:** Clean package, JAR launch, local health request, and documented startup smoke test.
 - **Route/dependency evidence:** SB1 launcher and SB10 parity result; depends on SB10.
 - **Delivery boundary:** One packaging/runbook commit.
-- **Status:** Planned.
+- **Status:** **Complete.** `spring-boot/RUNBOOK.md` documents the full standalone build/run/configure/smoke-test cycle, verified live rather than just described: `.\mvnw.cmd clean package` from `spring-boot/` (using the direct-path form documented in the runbook itself, since this environment has `NoDefaultCurrentDirectoryInExePath=1` set, which makes a bare `mvnw.cmd` invocation fail with "command not found" even though the file is present — a real environment quirk hit and worked around this session, now recorded so the next person doesn't rediscover it blind) ran the full 151-test suite GREEN and produced `target/datev-mock-0.1.0-SNAPSHOT.jar`. The jar was launched standalone (`java -jar ... --server.port=58601`), and both `GET /actuator/health` (`{"status":"UP"}`) and a real business route (`GET /datev/api/dms/v1/domains`) returned HTTP 200 before the process was stopped. The runbook documents: the Java 21 prerequisite, the wrapper path quirk above, that there is no committed `application.properties` (every setting is either a Spring Boot default or a `--server.port=` override), where the gitignored runtime state files (`datev_mock.db*`, `settings.json`) land and how to reset them, and `CorsConfig`'s allowed-origin list for pointing the shared `/admin` frontend's configurable API-base-URL setting at this backend. No FastAPI root file was touched to do any of this, satisfying the epic's own acceptance bar directly.
+  - **Honest gaps:** no HTTPS/TLS parity with the FastAPI mock's self-signed cert (out of this epic's scope, already implicit from SB9's own gap list); the runbook's own smoke test covers 2 routes as a documented example, not an exhaustive endpoint-by-endpoint check (that's `PARITY.md`'s job, from SB10).
 
 ## Current evidence and blockers
 
@@ -161,6 +162,6 @@ The FastAPI inventory contains 29 public GET routes, 25 public POST/PUT routes, 
 
 ## Next action
 
-**SB10 is complete** (route inventory matrix in `spring-boot/PARITY.md` + both test suites green + all 12 route-count differences traced to pre-existing, already-documented gaps; no undocumented gaps found). Note: the optional "retrofit `AdminDataStore` as the shared backing store for SB5/SB6's public read endpoints" idea floated in this section previously was deliberately **not** done during SB10 — it would have been a production-code change, outside SB10's read-only verification/reporting scope — and remains an open item for the user to decide on (a future epic, or folded into SB11, or left as a permanently accepted gap).
+**The dependency-ordered epic checklist (SB0–SB11) is now fully complete.** `spring-boot/` builds, tests (151/151), packages, and runs standalone with a documented smoke test (`spring-boot/RUNBOOK.md`), and its contract parity against the FastAPI original is verified and documented (`spring-boot/PARITY.md`), with every known difference traced to an already-accepted, explicitly-recorded gap.
 
-**Implement SB11 (packaging and local runbook): repeatable standalone JAR build/run instructions, configuration/port guidance, the Java 21 prerequisite, and a local smoke-test procedure, per that epic's own scope/acceptance criteria above.**
+**One open item remains, by deliberate choice rather than oversight:** SB9's `AdminDataStore` still doesn't share state with SB5's/SB6's public read endpoints (each keeps its own independent generator/state, mirroring FastAPI's own router-level independence). Retrofitting a shared backing store was floated during both SB9 and SB10 and intentionally left alone each time, since it's a production-code change and neither of those epics' briefs called for one. There is no further planned epic in this roadmap — this is now a standalone decision for the user: accept it as a permanent, documented architectural gap, or scope a new epic (SB12) to unify it.
