@@ -190,6 +190,16 @@ was asked about in this session before implementation started.
   testing external tools, not a live API. Fails gracefully (a short inline
   message, no uncaught error) if the manifest fetch doesn't succeed.
 
+- [x] **F8 — Full i18n (English/German/Spanish) + light/dark theme toggle**
+  (user request, 2026-09-25, `frontend/admin.html` only): a flat,
+  dot-namespaced `I18N` dictionary covering every significant user-facing
+  string on the page (card headers, labels, buttons, placeholders, help/
+  popover text, table headers, badges, alerts, and every dynamically
+  generated string built in JS), a navbar language `<select>` persisted in
+  `localStorage` (default: best match of `navigator.language(s)`, else
+  English), and a Bootstrap 5.3 native `data-bs-theme="dark"/"light"` toggle
+  persisted in `localStorage` (default: `prefers-color-scheme`).
+
 ## Architecture decision (resolved)
 
 Asked and answered in conversation: **direct browser calls only** — no relay
@@ -1272,6 +1282,203 @@ epic, per the user's own established checkpoint-rhythm preference.
   implementer per explicit instruction ("do NOT run any git command") —
   left for the user's own review and commit.
 
+### F8 — Full i18n (English/German/Spanish) + light/dark theme toggle
+
+- **Scope:** Two independent, additive features on `frontend/admin.html`
+  only (no backend change): (1) a translation layer covering the entire
+  visible page in English/German/Spanish with a navbar language selector,
+  and (2) a light/dark theme toggle using Bootstrap 5.3's native
+  `data-bs-theme` mechanism. No `.py`/`.java` file touched (confirmed via
+  `git status --porcelain` throughout: only `frontend/admin.html` modified).
+
+- **i18n architecture:** a single flat, dot-namespaced `const I18N = { en:
+  {...}, de: {...}, es: {...} }` object (one section per card/area — `nav.*`,
+  `settings.*`, `conn.*`, `staticDemo.*`, `masterData.*`, `accounting.*`,
+  `reset.*`, `overrides.*`, `catalog.*`, `testRunner.*`, `requestLog.*`,
+  `storedRecords.*`, `common.*` for cross-card labels like Edit/Delete/
+  Export CSV) so the dictionary stays navigable at this file's size instead
+  of one deep nested tree, per the task's own suggestion. A `t(key, vars)`
+  helper looks up `I18N[currentLang][key]`, falls back to `I18N.en[key]`,
+  then to the raw key string if genuinely missing anywhere, and substitutes
+  `{varName}` tokens for interpolated values (counts, error messages, URLs).
+  Static HTML uses `data-i18n="key"` (sets `innerHTML`, so a value can carry
+  inline markup like the original `<code>`/`<strong>`/`<em>` did), plus
+  `data-i18n-placeholder`/`data-i18n-title`/`data-i18n-aria-label` for the
+  respective attribute, and `data-i18n-popover-title`/
+  `data-i18n-popover-content` for the two Bootstrap popovers (which read
+  `data-bs-title`/`data-bs-content` once, at construction time, and cache
+  them — `translateStaticDom()` runs before the `new bootstrap.Popover(...)`
+  calls on first load, and a later language switch explicitly disposes
+  +reconstructs both popover instances via `reinitPopover()` so they pick up
+  the new text). One `applyTranslations`-equivalent function,
+  `translateStaticDom(lang)`, walks all five `data-i18n*` attribute kinds.
+- **Dynamically-generated content also fully covered, not just the static
+  DOM walk (per the task's own explicit instruction):** every JS function
+  that builds markup via `innerHTML`/`textContent` — `renderMasterDataRow`/
+  `renderAccountingRow` (Edit/Delete buttons, `prompt()` text),
+  `showImportResult`/CSV "choose a file" messages, the entire overrides flow
+  (`overrideMatchedResultHtml`, `renderOverrideRow`, `renderAmbiguousChoiceForm`,
+  `uploadOverrideFile`, `importOverrideFolder`'s multi-part summary with
+  real singular/plural key pairs), the catalog (`buildCatalogEntry`,
+  `renderCatalog`'s doc-link text, `renderJsonSample`, `fetchSample`'s
+  Table/Raw tabs and error states, `copyCurl`'s "Copied!"/"Copy failed"),
+  the endpoint test runner (`appendTestRunnerRow`'s Pass/Fail/Skipped
+  badges, `testSingleEndpoint`'s Timeout/network-error classification text,
+  `runEndpointTests`' button-label swap and final summary line), the
+  request log (`buildLogDetailHtml`'s Request/Response detail labels,
+  `renderLogRow`'s UNMATCHED badge, `connectRequestLogStream`'s Live/
+  Disconnected status text), stored records (`renderStoredRecordsTable`,
+  the type-`<select>`'s "no stored records yet" fallback), and the F7
+  static-demo panel (`renderStaticDemoExamples`) — all call `t(key, vars)`
+  directly at render time instead of relying on the static DOM walk.
+- **Pure-render refactor needed for a correct language switch (found while
+  implementing, not just "nice to have"):** several `load*()` functions
+  (`loadMasterData`, `loadAccounting`, `loadOverrides`) previously fetched
+  *and* rendered in one step, with no way to re-render already-fetched data
+  in a new language without an extra, unnecessary network round-trip.
+  Extracted pure `renderMasterDataTable()`/`renderAccountingTable()`/
+  `renderOverridesTable(data)` (plus a new `lastOverridesData` module
+  variable) and a pure `renderStaticDemoExamples()` (plus a new
+  `staticDemoState = {baseUrl, manifest, error}` holding F7's own last
+  manifest fetch outcome) — each `load*()` now calls its matching pure
+  renderer, and a new `refreshDynamicContent()` calls all of them (plus the
+  already-pure `renderCatalog()`/`renderRequestLogTable()`/
+  `renderStoredRecordsTable()`) on every language switch, so switching
+  languages re-labels already-rendered tables/badges/buttons without
+  re-fetching anything from the backend.
+- **Language selector + persistence:** a navbar `<select id="language-select">`
+  (English/Deutsch/Español — language *names* deliberately left untranslated,
+  standard practice for a language picker) next to the version badge.
+  `loadLanguage()` reads `localStorage["datevMockLanguage"]`; if absent,
+  `detectDefaultLanguage()` checks `navigator.languages`/`navigator.language`
+  for the first two-letter match against `en`/`de`/`es`, else English.
+  `switchLanguage(lang)` (called on the select's `change` event) saves to
+  `localStorage`, re-runs `translateStaticDom()`, reinitializes both
+  popovers, and calls `refreshDynamicContent()`.
+- **Translation quality — real, natural text, not machine-placeholder
+  copy:** every German/Spanish string was hand-written for this task,
+  matching the register `README.de.md`/`README.es.md` already established
+  (informal-imperative instructional tone, e.g. German "Lasse ... leer",
+  Spanish "Deja ... vacío"). Deliberately left untranslated, consistent with
+  how the READMEs handle the same tension: endpoint paths, HTTP
+  methods/header names (`GET`, `POST`, `Content-Type`), `NTLM`/`Basic` as
+  auth-scheme names, `JSON`/`XML`/`CSV`/`SQLite`, and the `Status`/`Type`
+  `<option>` *values* actually sent to the backend as literal strings
+  (`active`/`inactive`/`legal_person`/`natural_person` — translating their
+  displayed text would risk it being mistaken for the value itself, since
+  this page renders the raw value as its own option label).
+- **Honest, deliberately-skipped long-tail strings (per the task's own
+  "realistic scope" note):** code comments (never rendered to a user), the
+  `<title>` element's static fallback markup (superseded by
+  `document.title = t("nav.titlePlain")` at runtime, so the fallback is only
+  ever seen with JS disabled — an edge case this static page doesn't support
+  in any other respect either), and already-completed endpoint-test-runner
+  result rows from *before* a language switch (they keep whatever language
+  they were rendered in; a fresh "Test all endpoints" run after switching
+  renders correctly in the new language — re-translating historical,
+  already-rendered test output in place was judged not worth the complexity).
+
+- **Theme toggle:** Bootstrap 5.3's native `data-bs-theme="dark"/"light"`
+  attribute on `<html>` (per Bootstrap's own color-modes docs), not a
+  hand-rolled parallel dark stylesheet — every Bootstrap-driven color
+  already on this page (cards, tables, badges, alerts, form controls)
+  adapts automatically. A single navbar button (`#theme-toggle-btn`, icon +
+  the name of the mode it will switch *to*, e.g. "🌙 Dark mode" while
+  currently light) toggles `data-bs-theme` and persists the choice in
+  `localStorage["datevMockTheme"]`; `detectDefaultTheme()` falls back to
+  `window.matchMedia("(prefers-color-scheme: dark)")`, then to `"light"` if
+  `matchMedia` itself is unavailable.
+- **Hardcoded-color audit (grepped the whole file for `#[0-9a-fA-F]{3,6}`/
+  `background`/`color:` — exactly one hit, not assumed):** the page's own
+  `<style>` block had `body { background: #f8f9fa; }`, a hardcoded light
+  color that stayed light even under `data-bs-theme="dark"` (Bootstrap's
+  dark-mode CSS variables never override a plain inline/embedded
+  `background` declaration) — this would have produced a light body behind
+  dark cards, a real broken-looking regression, not a cosmetic nitpick.
+  Fixed by switching to `background-color: var(--bs-body-bg, #f8f9fa)`,
+  which follows `data-bs-theme` automatically like every other
+  Bootstrap-driven color on the page, with the same `#f8f9fa` as a
+  no-Bootstrap-loaded fallback. No other hardcoded color/style was found —
+  every other visual affordance (`.bg-light`/`.table-light` on code-sample
+  `<pre>` blocks, badges, alerts) already uses Bootstrap's own
+  theme-participating or intentionally-fixed-light utility classes, and
+  `highlight.js`'s light-only "default" code theme (loaded via CDN,
+  unchanged by this epic) stays readable in both modes precisely because
+  its `.bg-light`/`.table-light` containers are *not* theme-adaptive in
+  Bootstrap 5.3 (fixed light backgrounds by design), so dark-on-dark text
+  never occurs there.
+
+- **Verification, given the same confirmed no-browser-automation constraint
+  noted by F1-F7:**
+  1. `node --check` on the extracted inline `<script>` block — exit 0,
+     confirms the whole script (including all of F8's new code) is
+     syntactically valid JavaScript.
+  2. Structural sanity: `<div>` open/close balanced (164/164), `<script>`
+     open/close balanced (5/5), file starts with `<!DOCTYPE html>` and ends
+     with `</html>`, zero leftover `__CATALOG_JSON__`/`__OVERRIDE_PATHS_JSON__`
+     placeholders.
+  3. **Standalone Node key-parity test (the task's own "single most
+     valuable automated check"):** brace-matched extraction of the real
+     `const I18N = {...}` object verbatim from the live file (same
+     technique as F2/F4/F5/F6/F7's own const-extraction scripts), then
+     asserted programmatically: every key in `I18N.en` exists in `I18N.de`
+     and `I18N.es` and vice versa (zero missing/extra in either direction);
+     all three languages have the exact same key count (**183 keys each**);
+     no empty/whitespace-only translation value in `de`/`es`; no
+     byte-identical-to-English string in `de`/`es` outside a small, explicit,
+     justified allow-list of genuinely-identical technical terms (`Basic`,
+     `NTLM`, `Port`, `Status`, `Id`, `Name`, `JSON`, `XML`, `Endpoint`,
+     `Content-Type`, `Live` as a German tech loanword, `Hostname / IP`);
+     every `{placeholder}` token present in an English value also appears
+     in the matching `de`/`es` value (catches a translator silently
+     dropping a variable); the `t()` substitution algorithm itself
+     (re-implemented verbatim from the extracted source) correctly
+     interpolates single and multiple placeholders in all three languages;
+     and the `overrides.skippedNote*`/`overrides.importSummary*`
+     singular/plural key pairs are genuinely distinct text in all three
+     languages, not accidental duplicates. **All 451 assertions passed.**
+  4. `.venv\Scripts\python -m pytest tests/ -q` — **386 passed**, identical
+     to F6/F7's own baseline; confirms zero Python-side regression (this
+     epic touched no `.py` file).
+  - **Honest limitation, same class as every prior epic:** the actual
+    rendered *appearance* of the language switch and dark theme (real fonts,
+    contrast, layout reflow) could not be visually confirmed — no working
+    Chrome browser automation is available in this environment. What *is*
+    proven: full, exact key-parity and placeholder-safety across all three
+    languages, that the extracted `t()`/`translateStaticDom()`/theme logic
+    is syntactically valid and internally consistent, and that the one real
+    dark-mode color hazard found by the hardcoded-color audit was fixed.
+
+- **Real, honest coverage estimate:** **183 distinct translation keys**,
+  covering essentially all of the page's user-read text: every card header,
+  section paragraph, form label, placeholder, popover, alert/warning
+  message, table column header, badge, and button label, plus every
+  dynamically-generated string in JS (table row actions, CSV/override
+  import outcomes, catalog sample viewer states, test-runner results and
+  summary, request-log detail panel, stored-records empty state). Rough,
+  honest estimate: this covers on the order of **95%+ of the page's visible
+  UI text** — the deliberate, disclosed gaps are exactly the long-tail items
+  listed above (code comments, the no-JS `<title>` fallback, and
+  already-rendered historical test-runner rows from before a language
+  switch), none of which are a whole untranslated card or section.
+
+- **Files touched:** `frontend/admin.html` only — the `<style>` block's one
+  hardcoded-color fix; the navbar (language `<select>`, theme toggle
+  button); `data-i18n`/`data-i18n-placeholder`/`data-i18n-title`/
+  `data-i18n-aria-label`/`data-i18n-popover-title`/`data-i18n-popover-content`
+  attributes added throughout every card's markup; the new `I18N`
+  dictionary, `t()`, `translateStaticDom()`, `reinitPopover()`,
+  `refreshDynamicContent()`, `switchLanguage()`, `detectDefaultLanguage()`/
+  `loadLanguage()`/`saveLanguage()`, `detectDefaultTheme()`/`loadTheme()`/
+  `saveTheme()`/`applyTheme()`; new pure-render functions
+  `renderMasterDataTable()`/`renderAccountingTable()`/`renderOverridesTable()`/
+  `renderStaticDemoExamples()` (plus `lastOverridesData`/`staticDemoState`);
+  every render function touched to call `t(key, vars)` for its dynamic
+  strings. `odd/tasks/datev-mock-standalone-frontend.md` (this write-up).
+- **Delivery boundary:** One work-unit commit for F8; not committed by the
+  implementer per explicit instruction ("do NOT run any git command") —
+  left for the user's own review and commit.
+
 ## Current evidence and blockers
 
 - All four epics (F1-F4) touch only their documented files; each epic's own
@@ -1295,14 +1502,17 @@ epic, per the user's own established checkpoint-rhythm preference.
   unrelated pre-existing flaky test, not a regression — see F5's own
   write-up; F6 and F7 each re-ran the full suite again, both clean at 386).
 - `spring-boot`'s `mvnw.cmd test` went **160 → 168 → 169 passed** with F5 and
-  F6 (F1-F4 and F7 touched no Java code) — no Java-side regression.
-- None of F1-F7's commits have been made by the implementing agent(s); each
+  F6 (F1-F4, F7, and F8 touched no Java code) — no Java-side regression.
+- `.venv\Scripts\python -m pytest tests/ -q` **stayed at 386** through F8 as
+  well (touched no `.py` file, confirmed via `git status --porcelain`
+  showing only `frontend/admin.html` modified).
+- None of F1-F8's commits have been made by the implementing agent(s); each
   epic's changes are left uncommitted for the user's own review, per
   explicit instruction repeated in every epic.
 
 ## Next action
 
-**The full epic checklist for this feature bundle (F1-F7) is now complete,**
+**The full epic checklist for this feature bundle (F1-F8) is now complete,**
 with one explicitly pre-authorized honest gap (Java-side NTLM, F5). The
 admin frontend is extracted into a standalone static file (F1) with
 structured, per-browser DATEV connection settings actually wired into every
@@ -1312,16 +1522,19 @@ endpoint against whichever backend is currently configured with a live
 progress bar (F4), both backends expose a local relay endpoint for
 no-CORS/NTLM real-DATEV targets (F5), opening the standalone frontend from
 either backend's own launch flow shows the connection-settings card already
-filled in with that backend's real details (F6), and — following up on the
-user's own request to close the loop on the GH-Pages-hosted copy
-specifically — that same self-detect now also recognizes the GH-Pages
-`/app/` path (showing its own real `hostname`/`protocol` there too), and a
-new conditional "External access parameters" panel points visitors of that
-GH-Pages copy at the sibling static demo's own real, live-fetched
-`data/manifest.json`-derived example resources, framed explicitly as a
-read-only static data source, not a live API (F7).
+filled in with that backend's real details (F6), that same self-detect also
+recognizes the GH-Pages `/app/` path with a conditional "External access
+parameters" panel pointing at the sibling static demo's own real,
+live-fetched `data/manifest.json`-derived example resources (F7), and — most
+recently — the entire page is now available in English/German/Spanish via a
+navbar language selector (**183 translation keys, full key-parity verified
+across all three languages by a standalone Node test, 451/451 assertions
+passing**) plus a persisted light/dark theme toggle using Bootstrap 5.3's
+native `data-bs-theme` mechanism, with the one hardcoded-color dark-mode
+hazard found by an explicit audit fixed (F8).
 
 **There is no further planned epic in this bundle.** Any additional work —
 including a future Java-side NTLM implementation (Apache HttpClient 4.x +
-jcifs-ng, or a hand-written raw-socket client) — starts as its own new
-epic/decision, not a continuation of this checklist.
+jcifs-ng, or a hand-written raw-socket client), or extending i18n to any new
+future strings — starts as its own new epic/decision, not a continuation of
+this checklist.
