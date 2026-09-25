@@ -41,8 +41,28 @@ app = FastAPI(
 # from a different origin -- e.g. the Spring Boot mock's own /admin page
 # pointed here, or vice versa. Local-only dev tool, not internet-facing, so
 # a permissive localhost/127.0.0.1-any-port allow-list is appropriate.
+#
+# F6 (odd/tasks/datev-mock-standalone-frontend.md): also allow the literal
+# "null" origin. A browser sending a request from a `file://`-opened page
+# (e.g. frontend/admin.html double-clicked, or opened by
+# start_java_datev_mock.bat/.sh's own post-launch browser-open) sets
+# `Origin: null` on its fetch() calls -- there is no way to express that as
+# part of the regex above (it isn't a URL), and Starlette's CORSMiddleware
+# only ORs allow_origin_regex with a separate allow_origins list (verified by
+# reading CORSMiddleware.is_allowed_origin() in
+# .venv/Lib/site-packages/starlette/middleware/cors.py: it returns True if
+# allow_all_origins, OR allow_origin_regex.fullmatch(origin), OR
+# `origin in allow_origins` -- allow_origins and allow_origin_regex are both
+# consulted, not mutually exclusive), so allow_origins=["null"] is added
+# alongside the existing regex rather than trying to fold "null" into it.
+# Accepted, deliberate local-dev-tool tradeoff, not an oversight: any
+# `file://` page on this machine could in principle call this API, but this
+# is a local mock a developer runs against their own machine, not a hosted
+# multi-tenant service -- the same "real risk, explicitly called out, not
+# over-engineered" pattern already used for F5's relay SSRF note.
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=["null"],
     allow_origin_regex=r"https?://(127\.0\.0\.1|localhost)(:\d+)?",
     allow_credentials=False,
     allow_methods=["*"],

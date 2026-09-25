@@ -559,7 +559,82 @@ function composeApiBase(settings) {
   return `${proto}://${settings.hostname}${port}${prefix}`;
 }
 
-const CONNECTION_SETTINGS = loadConnectionSettings();
+// F6 (odd/tasks/datev-mock-standalone-frontend.md): resolves which
+// connection settings this particular page load should use, in priority
+// order -- always falling through to loadConnectionSettings()'s own
+// unchanged behavior (today's default) when none of the special cases below
+// apply, so this is purely additive, not a rewrite of F2's own logic:
+//
+//   1. Explicit query params (?protocol=&host=&port=&prefix=) always win.
+//      start_java_datev_mock.bat/.sh's own post-launch browser-open passes
+//      these on the file:// URL it opens, to tell this page which backend
+//      it just started -- an explicit "you were opened pointed at X" signal
+//      that must override even previously saved settings. Saved to
+//      localStorage (so a reload doesn't need the query string again) and
+//      the URL bar is cleaned via history.replaceState so it doesn't linger
+//      (the saved settings remain either way).
+//   2. A genuine first-ever visit (no settings saved under either the
+//      current or the legacy key) opened as FastAPI's own /admin route
+//      (http(s) origin, path ending in /admin, never file://) -- pure
+//      client-side self-detection from window.location itself, so opening
+//      FastAPI's own /admin "just works" pre-filled with zero server-side
+//      change. Narrow on purpose: never fires for the GH-Pages-hosted /app/
+//      copy, a file:// open, or once any setting has ever been saved.
+//   3. Otherwise: today's unchanged behavior.
+function resolveConnectionSettingsForThisLoad() {
+  const params = new URLSearchParams(window.location.search);
+  const queryKeys = ["protocol", "host", "port", "prefix"];
+  const hasQueryParams = queryKeys.some((key) => params.has(key));
+
+  if (hasQueryParams) {
+    const base = loadConnectionSettings();
+    const resolved = Object.assign({}, base, {
+      protocol: params.has("protocol") ? params.get("protocol") : base.protocol,
+      hostname: params.has("host") ? params.get("host") : base.hostname,
+      port: params.has("port") ? params.get("port") : base.port,
+      prefix: params.has("prefix") ? params.get("prefix") : base.prefix,
+    });
+    saveConnectionSettings(resolved);
+    try {
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, document.title, cleanUrl);
+    } catch (err) {
+      // History API unavailable in this embedder -- settings are already
+      // saved above, so a reload still resolves correctly even if the query
+      // string keeps showing in the address bar.
+    }
+    return resolved;
+  }
+
+  let hasSavedSettings;
+  try {
+    hasSavedSettings = Boolean(
+      localStorage.getItem(CONNECTION_SETTINGS_KEY) || localStorage.getItem(LEGACY_API_BASE_KEY)
+    );
+  } catch (err) {
+    // localStorage unavailable (private mode, blocked site data, ...) --
+    // treat this like settings already exist so self-detection never
+    // re-fires on every single load; loadConnectionSettings() below already
+    // degrades safely (its own defaults) when storage isn't readable.
+    hasSavedSettings = true;
+  }
+
+  const isHttpOrigin = window.location.protocol.startsWith("http");
+  const isAdminPath = /\/admin\/?$/.test(window.location.pathname);
+  if (!hasSavedSettings && isHttpOrigin && isAdminPath) {
+    const resolved = Object.assign({}, defaultConnectionSettings(), {
+      protocol: window.location.protocol.replace(":", ""),
+      hostname: window.location.hostname,
+      port: window.location.port,
+    });
+    saveConnectionSettings(resolved);
+    return resolved;
+  }
+
+  return loadConnectionSettings();
+}
+
+const CONNECTION_SETTINGS = resolveConnectionSettingsForThisLoad();
 const API_BASE = composeApiBase(CONNECTION_SETTINGS).replace(/[/]$/, "");
 function apiUrl(path) {
   return API_BASE + path;

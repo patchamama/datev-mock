@@ -31,8 +31,17 @@ cd /d "%~dp0"
 set "REPO_ROOT=%CD%"
 set "SPRING_DIR=%REPO_ROOT%\spring-boot"
 
-set "PORT=58553"
-if defined DATEV_MOCK_JAVA_PORT set "PORT=%DATEV_MOCK_JAVA_PORT%"
+rem F6 (odd/tasks/datev-mock-standalone-frontend.md): default changed from
+rem 58553 to 53000. PORT_EXPLICIT tracks whether the caller asked for a
+rem specific port (--port or DATEV_MOCK_JAVA_PORT) -- only the *default*
+rem ever falls back to 53001 below; an explicit request is always respected
+rem as-is, never silently overridden.
+set "PORT=53000"
+set "PORT_EXPLICIT=0"
+if defined DATEV_MOCK_JAVA_PORT (
+    set "PORT=%DATEV_MOCK_JAVA_PORT%"
+    set "PORT_EXPLICIT=1"
+)
 
 set "JAVA_EXE="
 set "JAVA_HOME_RESOLVED="
@@ -41,6 +50,7 @@ set "JAVA_HOME_RESOLVED="
 if "%~1"=="" goto :args_done
 if /i "%~1"=="--port" (
     set "PORT=%~2"
+    set "PORT_EXPLICIT=1"
     shift
     shift
     goto :parse_args
@@ -212,12 +222,40 @@ if not defined JAR_PATH (
     echo       Found existing jar: %JAR_PATH%
 )
 
+rem F6: only check/fall back on the *default* port -- never when the caller
+rem explicitly asked for one via --port/DATEV_MOCK_JAVA_PORT. Exactly one
+rem fallback level (53000 -> 53001), not an open-ended scan. Reuses this
+rem repo's own existing Get-NetTCPConnection technique (already used by
+rem start.bat) but only to *check* here, never to kill anything -- a
+rem different, explicit design choice from start.bat's own kill-and-reuse
+rem behavior for the Python mock.
+if "%PORT_EXPLICIT%"=="0" (
+    powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue) { exit 1 } else { exit 0 }"
+    if errorlevel 1 (
+        echo       Port %PORT% is already in use -- falling back to port 53001.
+        set "PORT=53001"
+    )
+)
+
 echo [4/4] Starting the Java DATEV mock ...
 echo       Java:    %JAVA_EXE% ^(version !JAVA_MAJOR!^)
 echo       Jar:     %JAR_PATH%
 echo       Port:    %PORT%
 echo       ^(override the port with --port PORT or the DATEV_MOCK_JAVA_PORT env var^)
 echo.
+echo Starting the DATEV mock server on http://127.0.0.1:%PORT% ...
+
+rem F6: auto-open the default browser a couple seconds after launch, the
+rem same non-blocking Start-Process pattern start.bat already uses for the
+rem Python mock -- but pointed at this repo's standalone frontend.html via a
+rem file:// URL (Java doesn't serve /admin itself, per F1's own documented
+rem decision), passing the resolved connection details as query params so
+rem the frontend's own self-detect/query-param logic (F6) pre-fills and
+rem saves them -- see frontend/admin.html's resolveConnectionSettingsForThisLoad().
+set "FRONTEND_HTML=%REPO_ROOT%\frontend\admin.html"
+set "FRONTEND_URL_PATH=%FRONTEND_HTML:\=/%"
+set "BROWSER_URL=file:///%FRONTEND_URL_PATH%?protocol=http&host=127.0.0.1&port=%PORT%"
+start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process '%BROWSER_URL%'"
 
 "%JAVA_EXE%" -jar "%JAR_PATH%" --server.port=%PORT%
 set "JAVA_EXIT=%errorlevel%"

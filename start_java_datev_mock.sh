@@ -36,12 +36,24 @@ cd "$(dirname "${BASH_SOURCE[0]:-$0}")"
 REPO_ROOT="$(pwd)"
 SPRING_DIR="$REPO_ROOT/spring-boot"
 
-PORT="${DATEV_MOCK_JAVA_PORT:-58553}"
+# F6 (odd/tasks/datev-mock-standalone-frontend.md): default changed from
+# 58553 to 53000. PORT_EXPLICIT tracks whether the caller asked for a
+# specific port (--port or DATEV_MOCK_JAVA_PORT) -- only the *default* ever
+# falls back to 53001 below; an explicit request is always respected as-is,
+# never silently overridden.
+PORT_EXPLICIT=0
+if [ -n "${DATEV_MOCK_JAVA_PORT:-}" ]; then
+    PORT="$DATEV_MOCK_JAVA_PORT"
+    PORT_EXPLICIT=1
+else
+    PORT=53000
+fi
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --port)
             PORT="$2"
+            PORT_EXPLICIT=1
             shift 2
             ;;
         *)
@@ -270,11 +282,46 @@ else
     echo "      Found existing jar: $JAR_PATH"
 fi
 
+# F6: only check/fall back on the *default* port -- never when the caller
+# explicitly asked for one via --port/DATEV_MOCK_JAVA_PORT. Exactly one
+# fallback level (53000 -> 53001), not an open-ended scan. Uses `lsof` if
+# available (checking only, never killing -- a different, explicit design
+# choice from start.sh's own kill-and-reuse behavior for the Python mock);
+# if `lsof` isn't installed, this mirrors start.sh's own fallback-message
+# pattern for that case and proceeds with the port as-is rather than
+# silently guessing.
+if [ "$PORT_EXPLICIT" -eq 0 ]; then
+    if command -v lsof >/dev/null 2>&1; then
+        if lsof -i ":$PORT" >/dev/null 2>&1; then
+            echo "      Port $PORT is already in use -- falling back to port 53001."
+            PORT=53001
+        fi
+    else
+        echo "      Cannot check whether port $PORT is already in use ('lsof' isn't"
+        echo "      available) -- proceeding with port $PORT as-is."
+    fi
+fi
+
 echo "[4/4] Starting the Java DATEV mock..."
 echo "      Java:    $JAVA_EXE (version $JAVA_MAJOR)"
 echo "      Jar:     $JAR_PATH"
 echo "      Port:    $PORT"
 echo "      (override the port with --port PORT or the DATEV_MOCK_JAVA_PORT env var)"
 echo ""
+echo "Starting the DATEV mock server on http://127.0.0.1:$PORT ..."
+
+# F6: auto-open the default browser a couple seconds after launch, the same
+# pattern start.sh already uses for the Python mock -- but pointed at this
+# repo's standalone frontend.html via a file:// URL (Java doesn't serve
+# /admin itself, per F1's own documented decision), passing the resolved
+# connection details as query params so the frontend's own
+# self-detect/query-param logic (F6) pre-fills and saves them -- see
+# frontend/admin.html's resolveConnectionSettingsForThisLoad().
+(
+    sleep 2
+    FRONTEND_HTML="$REPO_ROOT/frontend/admin.html"
+    BROWSER_URL="file://$FRONTEND_HTML?protocol=http&host=127.0.0.1&port=$PORT"
+    xdg-open "$BROWSER_URL" >/dev/null 2>&1 || open "$BROWSER_URL" >/dev/null 2>&1 || echo "Open $BROWSER_URL in your browser."
+) &
 
 exec "$JAVA_EXE" -jar "$JAR_PATH" --server.port="$PORT"

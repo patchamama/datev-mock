@@ -129,6 +129,49 @@ was asked about in this session before implementation started.
   documented gap (explicitly pre-authorized by this checklist item itself)
   — see the F5 epic write-up below for exactly what was and wasn't proven.**
 
+- [x] **F6 — Backend self-detection auto-fill, Java default port 53000/53001,
+  and CLI/browser parity with the Python launcher** (user request,
+  2026-09-25): opening the standalone frontend from either backend's own
+  launch flow should show the "Backend target & DATEV connection settings"
+  card already filled in with that backend's real connection details, not
+  blank defaults. Two different mechanisms are needed since only FastAPI
+  serves the page itself (Java deliberately doesn't, per F1's own
+  documented decision):
+  - **FastAPI (`/admin`)**: the page is served from the real backend's own
+    origin, so `window.location.protocol/hostname/port` already *is* the
+    answer — pure client-side self-detection, no server change needed. Only
+    fires on first-ever visit (no saved settings yet) and only when the
+    path is `/admin` on an http(s) origin (never on the GH-Pages-hosted
+    `/app/` copy, never on a `file://` open) — a deliberate, narrow trigger
+    so it can't misfire.
+  - **Java (`start_java_datev_mock.bat`/`.sh`)**: since Java can't serve the
+    page from its own origin, the launcher opens the browser at a local
+    `file://.../frontend/admin.html?protocol=http&host=127.0.0.1&port=<n>`
+    URL after starting — the frontend reads these query params (if present)
+    and pre-fills/persists the connection settings from them, taking
+    priority over both the self-detect heuristic and any previously saved
+    settings (an explicit "you were opened pointed at X" signal).
+  - **Real technical snag found while scoping this (verified, not assumed):
+    a `file://`-opened page's `fetch()` calls send `Origin: null`**, which
+    neither backend's current CORS config matches (`allow_origin_regex`
+    in `app/main.py`, the enumerated pattern list in `CorsConfig.java`) —
+    without fixing this, the very feature being requested (open the
+    frontend, have it already talk to the backend that opened it) would
+    silently fail via a CORS block the moment it tried its first request.
+    Fix: add the literal `null` origin to both backends' CORS allow-lists,
+    documented plainly as an accepted local-dev-tool tradeoff (the same
+    "real risk, explicitly called out, not over-engineered" pattern already
+    used for F5's relay SSRF note).
+  - **Java port**: default changes from `58553` to **`53000`**; if that's
+    already bound, fall back to **`53001`** (exactly one fallback level, not
+    an open-ended scan) — but only when using the *default* (an explicit
+    `--port`/`DATEV_MOCK_JAVA_PORT` request is respected as-is, never
+    silently overridden). The launcher prints the resolved port clearly
+    before starting, mirroring `start.bat`'s own
+    `Starting the DATEV mock server on <scheme>://127.0.0.1:<port> ...`
+    line, and auto-opens the browser a few seconds after launch, the same
+    pattern `start.bat`/`start.sh` already use for the Python backend.
+
 ## Architecture decision (resolved)
 
 Asked and answered in conversation: **direct browser calls only** — no relay
@@ -888,6 +931,220 @@ epic, per the user's own established checkpoint-rhythm preference.
   implementer per explicit instruction ("do NOT run any git command") —
   left for the user's own review and commit.
 
+### F6 — Backend self-detection auto-fill, Java default port 53000/53001, and CLI/browser parity
+
+- **Frontend self-detect + query-param prefill (`frontend/admin.html`
+  only):** new `resolveConnectionSettingsForThisLoad()`, inserted right
+  above the existing `const CONNECTION_SETTINGS = loadConnectionSettings();`
+  line (now calls the new function instead), in priority order:
+  1. **Query params win over everything**, including previously saved
+     settings: if `window.location.search` has any of
+     `protocol`/`host`/`port`/`prefix`, they override the corresponding
+     fields on top of `loadConnectionSettings()`'s own result (so an
+     unset param falls back to whatever was already saved, not to a hard
+     default), the result is saved via the existing `saveConnectionSettings()`,
+     and the URL bar is cleaned via `history.replaceState(...)` (search
+     stripped, pathname/hash kept) so a reload doesn't need the query
+     string again while the saved settings persist. Wrapped in try/catch —
+     an embedder without a working History API still gets the settings
+     saved, just with the query string lingering visibly.
+  2. **Self-detect on a genuine first-ever visit**: only when *both*
+     `CONNECTION_SETTINGS_KEY` and the legacy `LEGACY_API_BASE_KEY` are
+     absent from `localStorage` (checked with raw `localStorage.getItem()`
+     calls, not via `loadConnectionSettings()`, which would return
+     indistinguishable default-shaped data for "never saved" and "saved,
+     but happens to equal defaults") **and** `window.location.protocol`
+     starts with `"http"` **and** `window.location.pathname` matches
+     `/\/admin\/?$/` (exactly `/admin` or ending in `/admin/`, never
+     `/app/...` or a `file://` path) — pre-fills from
+     `window.location.protocol/hostname/port` directly and saves it.
+  3. **Otherwise**: falls through to `loadConnectionSettings()` unchanged —
+     zero behavior change for the GH-Pages `/app/` copy, a `file://` open,
+     or any visit after settings already exist.
+  A localStorage read failure (private mode, blocked site data) is treated
+  as "settings already exist" (conservative — never re-fires self-detect on
+  every load) rather than as "no settings", since `loadConnectionSettings()`
+  itself already degrades safely when storage isn't readable.
+  The pre-existing field-rendering code (`document.getElementById("conn-protocol").value = CONNECTION_SETTINGS.protocol`,
+  etc., added by F2) already runs after this resolution and was **not**
+  touched — since it reads from the same `CONNECTION_SETTINGS` constant,
+  the visible form fields automatically reflect whatever got resolved above,
+  satisfying "the form fields themselves must visibly show the real values"
+  with no separate rendering change needed.
+- **Java launcher port defaults + CLI/browser parity
+  (`start_java_datev_mock.bat`/`.sh` only):** default port changed from
+  `58553` to `53000` in both scripts. A new `PORT_EXPLICIT` flag (set only
+  when `--port` or `DATEV_MOCK_JAVA_PORT` was actually given) gates a new
+  check, placed right before the `[4/4] Starting...` banner: `.bat` reuses
+  this repo's own `Get-NetTCPConnection -LocalPort <port> -State Listen`
+  technique (already used by `start.bat`) but only to *check* — never to
+  kill, a deliberate difference from `start.bat`'s own kill-and-reuse
+  behavior for the Python mock, per this epic's own scope; `.sh` uses
+  `lsof -i :<port>` if available, else prints a message and proceeds with
+  the port as-is (mirroring `start.sh`'s own not-available message pattern
+  for the same tool, adapted since this script only checks, never kills).
+  On a hit, falls back to `53001` exactly once (not an open-ended scan) and
+  prints `Port <default> is already in use -- falling back to port 53001.`.
+  Both scripts then print `Starting the DATEV mock server on
+  http://127.0.0.1:<resolved-port> ...` (mirroring `start.bat`/`start.sh`'s
+  own line for the Python mock) before launching the jar, and — new in this
+  epic — auto-open the default browser ~2 seconds after launch (`.bat`:
+  the same non-blocking `start "" /min powershell ... Start-Sleep -Seconds 2; Start-Process ...`
+  pattern `start.bat` already uses; `.sh`: a backgrounded `( sleep 2; ...
+  xdg-open ... || open ... || echo ... )` subshell, same as `start.sh`'s own
+  pattern) at a `file://` URL for `frontend/admin.html` (resolved from
+  `$REPO_ROOT`/`%REPO_ROOT%`, already computed by both scripts) with
+  `?protocol=http&host=127.0.0.1&port=<resolved-port>` appended — feeding
+  piece 1's query-param handling above. `spring-boot/RUNBOOK.md`'s
+  "Recommended: one-command launchers" section (added by F3) was updated to
+  describe the new default port, the one-level fallback, and the new
+  auto-open-with-prefill behavior.
+- **CORS `null`-origin support (both backends):** verified Starlette's
+  `CORSMiddleware.is_allowed_origin()` (read directly from
+  `.venv/Lib/site-packages/starlette/middleware/cors.py`) before deciding
+  the mechanism: it returns `True` if `allow_all_origins`, **or**
+  `allow_origin_regex.fullmatch(origin)`, **or** `origin in allow_origins` —
+  `allow_origins` and `allow_origin_regex` are ORed together, not mutually
+  exclusive, confirming the literal `"null"` origin can simply be added via
+  `allow_origins=["null"]` alongside the existing `allow_origin_regex`
+  without touching the regex itself. Applied to `app/main.py`'s
+  `CORSMiddleware` call, with a comment explaining the `file://` use case
+  and stating it as an accepted local-dev-tool tradeoff (same pattern as
+  F5's relay SSRF note). Java: added the literal `"null"` string to
+  `CorsConfig.java`'s `ALLOWED_ORIGIN_PATTERNS` list, same rationale
+  comment. RED-then-GREEN proven on both sides (see Tests below).
+- **Tests, RED-then-GREEN:**
+  - Python: new `tests/test_cors.py` (3 tests: null-origin gets a matching
+    `Access-Control-Allow-Origin: null` header; the pre-existing
+    localhost-origin allow-list still works unchanged alongside it; an
+    unrelated origin is still rejected). RED confirmed first by temporarily
+    reverting `app/main.py`'s `allow_origins=["null"]` addition and
+    re-running just this file: `1 failed, 2 passed` (the null-origin test
+    failed with a `KeyError` for the missing header, the other two — which
+    don't depend on the fix — already passed). Restored the fix: `3 passed`.
+  - Java: extended `CorsConfigTest.java` with
+    `allowsTheLiteralNullOriginOnASimpleRequest` (asserts `200` +
+    `Access-Control-Allow-Origin: null`). RED confirmed first by temporarily
+    removing `"null"` from `ALLOWED_ORIGIN_PATTERNS` and running just this
+    test class: `Tests run: 5, Failures: 1` — the response was a genuine
+    `403 Invalid CORS request` (Spring's `CorsFilter` actively rejects a
+    disallowed origin outright for a simple request, not merely omitting
+    the header the way Starlette does — a real behavioral asymmetry between
+    the two stacks' CORS implementations, noted here since it wasn't
+    previously documented). Restored the fix: the same test passes.
+  - Full suites, both green: `.venv\Scripts\python -m pytest tests/ -q` —
+    **386 passed** (383 F1-F5 baseline + 3 new `test_cors.py` tests).
+    `mvnw.cmd test` (via this session's documented direct-wrapper-jar
+    invocation, `RUNBOOK.md`'s workaround) — **169 passed, 0 failures/errors**
+    (168 F1-F5 baseline + 1 new `CorsConfigTest` test), `CorsConfigTest`
+    itself: 5/5, `RelayControllerTest`: 8/8 (unaffected).
+- **Verification, given the same confirmed no-browser-automation
+  constraint noted by F1-F5:**
+  1. `node --check` on the extracted inline `<script>` block — exit 0.
+  2. Structural sanity checks: `<div>` open/close balanced (158/158,
+     unchanged from F5 — this epic added no new markup), `<script>`
+     open/close balanced (5/5), file still starts with `<!DOCTYPE html>`
+     and ends with `</html>`.
+  3. A standalone Node test (same technique F2/F4/F5 used): the real
+     `defaultConnectionSettings()`/`loadConnectionSettings()`/
+     `saveConnectionSettings()`/`composeApiBase()`/
+     `resolveConnectionSettingsForThisLoad()` functions were extracted
+     verbatim (brace-matched, not regex-truncated) from `frontend/admin.html`
+     and run in a Node `vm` sandbox with fake `window.location`/
+     `localStorage`/`window.history`/`URL`/`URLSearchParams` globals.
+     **17 assertions passed**, covering exactly what was asked: query-param
+     priority over saved settings (a saved `already-saved.example` host is
+     overridden by `?host=9.9.9.9`, the resolved value is persisted, and
+     `history.replaceState` is called exactly once with the query string
+     stripped); self-detect firing for a bare `/admin` and a trailing-slash
+     `/admin/` path on `http`/`https` with no saved settings; self-detect
+     **not** firing for a fake `/app/admin.html` path (GH-Pages shape); self-detect
+     **not** firing for `protocol: "file:"` even at an `/admin`-like path;
+     previously-saved settings (both the current key and the legacy-key
+     migration path) taking priority over self-detect on a subsequent
+     visit. One harness bug was found and fixed during this verification
+     (not a bug in the shipped code): the first sandbox run omitted the
+     global `URL` constructor, which made the legacy-key-migration branch's
+     `new URL(legacy)` throw inside the sandbox and silently fall through to
+     defaults — adding `URL` to the sandbox globals fixed the test, no
+     production code changed.
+  4. Java/Python full-suite runs and the dedicated CORS RED/GREEN checks
+     above.
+- **Launcher scripts verified live, on this machine (Windows Server 2022,
+  same ELO-default Java 21 install F3 already verified):**
+  - Built `spring-boot/target/datev-mock-0.1.0-SNAPSHOT.jar` once via the
+    documented wrapper-jar workaround (`mvn package -DskipTests`) so the
+    launcher's own "found existing jar" branch would be exercised rather
+    than a slow rebuild on every run.
+  - **Happy path:** ran `start_java_datev_mock.bat` with no arguments
+    (`cmd.exe` itself is stubbed/non-functional as a direct subprocess in
+    this sandboxed shell — confirmed by a plain `cmd.exe /c "echo test"`
+    printing only the console banner and nothing else; worked around by
+    invoking the exact same `.bat` file via `powershell.exe -Command "& '.\start_java_datev_mock.bat'"`
+    instead, which executes cmd's own batch interpreter correctly under the
+    hood). Observed log: `Found Java 21 at C:\ELO\java ...` → `Found
+    existing jar: ...` → `Port: 53000` → **`Starting the DATEV mock server
+    on http://127.0.0.1:53000 ...`** (the exact required line) → Spring Boot
+    started, `Tomcat started on port 53000`. `netstat` confirmed
+    `0.0.0.0:53000 LISTENING` (PID 6768); `curl http://127.0.0.1:53000/actuator/health`
+    → `{"status":"UP"}`. Stopped via `taskkill //PID 6768 //F`.
+  - **Browser-open command, confirmed issued without erroring:** isolated
+    the exact `Start-Process 'file:///.../frontend/admin.html?protocol=http&host=127.0.0.1&port=53000'`
+    call (same shape embedded in the `.bat`) in a standalone `.ps1` and ran
+    it directly — returned `START_PROCESS_OK` with no exception, proving
+    Windows' `ShellExecute`-based URL handoff accepts a `file://` URL whose
+    query string contains a literal `&` without erroring (the character
+    that could plausibly have caused a `cmd.exe` parsing problem, since `&`
+    is normally a command separator there — confirmed harmless here because
+    the whole string stays inside one already-balanced pair of double quotes
+    on the actual `start "" /min powershell ... -Command "..."` line, so
+    `cmd.exe` never sees it outside a quoted context). Chrome was already
+    running in this shared VM, consistent with a successful hand-off (a
+    already-running default browser typically opens a new tab in the
+    existing process rather than a distinguishable new one, so this is the
+    limit of what could be confirmed without a full display session).
+  - **Fallback-to-53001 path:** bound port `53000` with a throwaway
+    `System.Net.Sockets.TcpListener` (a small `.ps1`, released afterward),
+    then re-ran the same `.bat` unmodified. Observed log: **`Port 53000 is
+    already in use -- falling back to port 53001.`** → `Port: 53001` →
+    `Starting the DATEV mock server on http://127.0.0.1:53001 ...` → Spring
+    Boot started, `Tomcat started on port 53001`; `curl
+    http://127.0.0.1:53001/actuator/health` → `{"status":"UP"}`. This
+    proves the fallback fires only because the check found the *default*
+    port bound (not because of any explicit `--port`, which was not passed).
+  - **Cleanup:** stopped both the throwaway listener and the fallback
+    Spring Boot process via `taskkill //PID <pid> //F` for each; confirmed
+    via `netstat` that no `LISTENING` socket remained on either `53000` or
+    `53001` afterward (two harmless leftover `WARTEND`/`TIME_WAIT`-style
+    entries with PID `0` remained momentarily, which the OS clears on its
+    own and are not actual bound listeners).
+  - `.sh`: **not executed live**, same documented limitation as F3
+    (`start_java_datev_mock.sh`'s own live-run precedent) — no POSIX shell
+    with a real Linux/macOS Java environment available in this Windows
+    session. Verified instead by careful read-through: the `PORT_EXPLICIT`
+    gating, the `lsof`-based check-only port probe (with the documented
+    not-available fallback message), the resolved-port startup line, and
+    the backgrounded `xdg-open`/`open` browser-open subshell all mirror the
+    `.bat` script's logic and `start.sh`'s own existing conventions.
+- **Files touched:** `frontend/admin.html` (new
+  `resolveConnectionSettingsForThisLoad()`, and the `const CONNECTION_SETTINGS = ...`
+  line now calls it); `start_java_datev_mock.bat`, `start_java_datev_mock.sh`
+  (default port, `PORT_EXPLICIT` tracking, the port-conflict check, the
+  resolved-port startup line, and the post-launch browser-open); `app/main.py`
+  (`allow_origins=["null"]` + explanatory comment); new `tests/test_cors.py`;
+  `spring-boot/src/main/java/com/elo/datevmock/config/CorsConfig.java`
+  (`"null"` pattern + explanatory comment);
+  `spring-boot/src/test/java/com/elo/datevmock/config/CorsConfigTest.java`
+  (new test); `spring-boot/RUNBOOK.md` (updated launcher description);
+  `odd/tasks/datev-mock-standalone-frontend.md` (this write-up).
+- **Delivery boundary:** One work-unit commit for F6 (spanning all four
+  connected pieces, since they only become useful together — the launcher's
+  query-param URL is meaningless without the frontend reading it, and
+  neither backend's `null`-origin fix matters until a `file://`-opened page
+  actually tries to call it); not committed by the implementer per explicit
+  instruction ("do NOT run any git command") — left for the user's own
+  review and commit.
+
 ## Current evidence and blockers
 
 - All four epics (F1-F4) touch only their documented files; each epic's own
@@ -904,37 +1161,39 @@ epic, per the user's own established checkpoint-rhythm preference.
   scripts for pure-JS-logic verification (`composeApiBase()`/auth-header
   logic for F2; `isTemplateOnlyEntry()`/`testSingleEndpoint()` classification
   for F4).
-- `.venv\Scripts\python -m pytest tests/ -q` went **375 → 383 passed**
-  across F1, F2, F4, and F5 (F3 added no Python code) — no epic in this
+- `.venv\Scripts\python -m pytest tests/ -q` went **375 → 383 → 386 passed**
+  across F1, F2, F4, F5, and F6 (F3 added no Python code) — no epic in this
   bundle introduced a Python-side regression (F5's own run also surfaced
   one unrelated pre-existing flaky test, not a regression — see F5's own
-  write-up).
-- `spring-boot`'s `mvnw.cmd test` went **160 → 168 passed** with F5 (F1-F4
-  touched no Java code) — no Java-side regression.
-- None of F1-F5's commits have been made by the implementing agent(s); each
+  write-up; F6 re-ran the full suite twice more, both clean at 386).
+- `spring-boot`'s `mvnw.cmd test` went **160 → 168 → 169 passed** with F5 and
+  F6 (F1-F4 touched no Java code) — no Java-side regression.
+- None of F1-F6's commits have been made by the implementing agent(s); each
   epic's changes are left uncommitted for the user's own review, per
   explicit instruction repeated in every epic.
 
 ## Next action
 
-**The full epic checklist for this feature bundle (F1-F5) is now complete,**
-with one explicitly pre-authorized honest gap. The admin frontend is
-extracted into a standalone static file (F1) with structured, per-browser
-DATEV connection settings actually wired into every outbound call (F2), the
-Java mock has one-command launcher scripts with Java 21 auto-detection (F3),
-the frontend can E2E-test every catalog endpoint against whichever backend
-is currently configured with a live progress bar (F4), and — following up
-on the item F1-F4 explicitly deferred rather than abandoned — both backends
-now expose a local relay endpoint (`POST /admin/api/relay`) that makes real
-outbound calls server-side, letting the frontend actually reach no-CORS/
-NTLM real-DATEV targets when its new "Route through local relay" toggle is
-switched on, default OFF (F5). NTLM itself works through the Python/FastAPI
-relay (`requests-ntlm`); the Java/Spring Boot relay handles None/Basic auth
-correctly but returns a clear `501 Not Implemented` for NTLM, a documented
-gap rather than a fragile/unverifiable implementation (see F5's write-up
-for the specific technical reason: NTLM needs a connection-pinned handshake
-that `java.net.http.HttpClient`'s connection pooling doesn't expose control
-over).
+**The full epic checklist for this feature bundle (F1-F6) is now complete,**
+with one explicitly pre-authorized honest gap (Java-side NTLM, F5). The
+admin frontend is extracted into a standalone static file (F1) with
+structured, per-browser DATEV connection settings actually wired into every
+outbound call (F2), the Java mock has one-command launcher scripts with
+Java 21 auto-detection (F3), the frontend can E2E-test every catalog
+endpoint against whichever backend is currently configured with a live
+progress bar (F4), both backends expose a local relay endpoint for
+no-CORS/NTLM real-DATEV targets (F5), and — following up on the user's own
+request to close the loop on connection-setup friction — opening the
+standalone frontend from either backend's own launch flow now shows the
+connection-settings card already filled in with that backend's real
+details: FastAPI's own `/admin` route self-detects from
+`window.location` on a genuine first visit, and the Java launcher scripts
+open the frontend at a `file://` URL carrying `?protocol=&host=&port=`
+query params that take top priority over everything else, with both
+backends' CORS configs now also accepting the literal `null` origin that a
+`file://`-opened page's `fetch()` calls actually send (F6). The Java
+launchers' default port also moved from `58553` to `53000`, falling back to
+`53001` exactly once if the default is already bound.
 
 **There is no further planned epic in this bundle.** Any additional work —
 including a future Java-side NTLM implementation (Apache HttpClient 4.x +

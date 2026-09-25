@@ -29,6 +29,17 @@ import java.util.List;
  * SB9 "same frontend, configurable backend URL" admin page (served by
  * FastAPI) call this backend's {@code /admin/api/*} endpoints cross-origin
  * when its configurable API base URL points here.
+ *
+ * <p>F6 (odd/tasks/datev-mock-standalone-frontend.md) added the literal
+ * {@code "null"} origin: a browser sending a request from a
+ * {@code file://}-opened page (e.g. {@code frontend/admin.html}
+ * double-clicked, or opened by {@code start_java_datev_mock.bat/.sh}'s own
+ * post-launch browser-open) sets {@code Origin: null} on its fetch() calls,
+ * which none of the concrete host/scheme patterns above can match. Accepted,
+ * deliberate local-dev-tool tradeoff, not an oversight -- mirrors the same
+ * "null" origin addition made to {@code app/main.py}'s CORS config and the
+ * same "real risk, explicitly called out, not over-engineered" pattern
+ * already used for F5's relay SSRF note.
  */
 @Configuration
 public class CorsConfig {
@@ -41,7 +52,8 @@ public class CorsConfig {
             "http://localhost:*",
             "https://localhost:*",
             "http://127.0.0.1:*",
-            "https://127.0.0.1:*");
+            "https://127.0.0.1:*",
+            "null");
 
     @Bean
     public CorsFilter corsFilter() {

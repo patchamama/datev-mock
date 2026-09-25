@@ -55,4 +55,21 @@ class CorsConfigTest {
         mockMvc.perform(get("/admin/api/settings").header(HttpHeaders.ORIGIN, "https://evil.example.com"))
                 .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
     }
+
+    /**
+     * F6 (odd/tasks/datev-mock-standalone-frontend.md): a browser sending a
+     * request from a {@code file://}-opened page (e.g. {@code
+     * frontend/admin.html} double-clicked, or opened by {@code
+     * start_java_datev_mock.bat/.sh}'s own post-launch browser-open) sets
+     * {@code Origin: null} on its fetch() calls -- proves the literal
+     * {@code "null"} pattern added to {@code ALLOWED_ORIGIN_PATTERNS} now
+     * gets a matching {@code Access-Control-Allow-Origin} response header,
+     * mirroring the equivalent {@code app/main.py} CORS change.
+     */
+    @Test
+    void allowsTheLiteralNullOriginOnASimpleRequest() throws Exception {
+        mockMvc.perform(get("/admin/api/settings").header(HttpHeaders.ORIGIN, "null"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "null"));
+    }
 }

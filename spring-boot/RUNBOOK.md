@@ -15,8 +15,11 @@ Java 21+ install (this project's own `C:\ELO\java` default on Windows, then
 downloads a portable, project-local JDK 21 (Eclipse Temurin, into the
 gitignored `spring-boot/.jdk21-portable/`) only if none is found anywhere
 else, builds `target/datev-mock-*.jar` if it doesn't exist yet, and launches
-it on port `58553` by default (override with `--port PORT` or the
-`DATEV_MOCK_JAVA_PORT` environment variable). Run from the repo root:
+it on port `53000` by default (falling back to `53001` if `53000` is
+already bound -- only when the default is used, never when `--port` or
+`DATEV_MOCK_JAVA_PORT` was explicitly given), then auto-opens the standalone
+frontend (`frontend/admin.html`, F6) pointed at whichever port was actually
+used. Run from the repo root:
 
 ```
 start_java_datev_mock.bat            # Windows
