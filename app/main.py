@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import db, request_log, windows_proactor_noise
-from app.routers import accounting, admin, diagnostics, dms, master_data
+from app.routers import accounting, admin, diagnostics, dms, master_data, relay
 
 
 @asynccontextmanager
@@ -62,3 +62,7 @@ app.include_router(dms.router)
 # editable datasets, custom overrides).
 if os.environ.get("DATEV_MOCK_NON_WEB") != "1":
     app.include_router(admin.router)
+    # F5: local relay for NTLM/no-CORS real-DATEV targets (see
+    # app/routers/relay.py's own docstring). Gated the same as the rest of
+    # the admin API since it's only useful alongside the admin frontend.
+    app.include_router(relay.router)

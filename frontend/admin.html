@@ -131,7 +131,33 @@
       transparently via Integrated Windows Authentication, using the OS's
       own logged-in identity). This option exists for future/manual use
       only; selecting it does <strong>not</strong> attempt any NTLM
-      handshake, and no NTLM header is added to requests.
+      handshake, and no NTLM header is added to requests. Check
+      <strong>"Route through local relay"</strong> below to actually send
+      NTLM credentials to the target &mdash; the relay makes the real
+      handshake server-side, where it's a solved problem.
+    </div>
+
+    <div class="row mt-3">
+      <div class="col-auto">
+        <div class="form-check">
+          <input id="conn-use-relay" class="form-check-input" type="checkbox">
+          <label for="conn-use-relay" class="form-check-label">
+            Route through local relay
+            <button type="button" id="conn-relay-help" class="btn btn-sm btn-outline-secondary py-0 px-1"
+                    data-bs-toggle="popover" data-bs-trigger="focus" data-bs-html="true"
+                    data-bs-title="Local relay &mdash; why and when"
+                    data-bs-content="OFF (default): this page calls the target directly from your browser &mdash; works for this project's own two mock backends, but a real DATEV Desktop API without CORS headers will be blocked by the browser, and NTLM can never be completed from browser JS at all. ON: every call this page makes is sent instead to this page's own backend's &lt;code&gt;POST /admin/api/relay&lt;/code&gt;, which makes the real outbound call server-side (no CORS problem, real NTLM support) and returns the result. Requires the backend you're pointed at (Protocol/Hostname/Port above) to actually be running and reachable from wherever that backend process is, and for that backend to be one of this project's own two (FastAPI or Java) &mdash; a real DATEV instance has no relay endpoint of its own to call."
+                    aria-label="Help: local relay, why and when">?</button>
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="small text-muted mt-1">
+      Security note: the relay endpoint accepts an arbitrary target
+      URL/method/headers and makes that real outbound call from wherever
+      this project's backend runs &mdash; an SSRF-shaped capability by design.
+      Accepted here because this is a local developer tool run against your
+      own machine/network, not a hosted multi-tenant service.
     </div>
 
     <div class="row mt-2">
@@ -463,6 +489,9 @@ function defaultConnectionSettings() {
     password: "",
     connectTimeoutSec: 10,
     readTimeoutSec: 30,
+    // F5: default OFF -- zero regression for anyone who doesn't check it.
+    // See RELAY_URL/relayFetch()/appFetch() below.
+    useRelay: false,
   };
 }
 
@@ -612,11 +641,101 @@ async function fetchWithTimeouts(url, options, connectTimeoutSec, readTimeoutSec
   });
 }
 
+// F5 (odd/tasks/datev-mock-standalone-frontend.md): this page's own backend
+// (whichever one CONNECTION_SETTINGS currently points at) exposes
+// `POST /admin/api/relay`, which makes the *real* outbound call server-side
+// and returns `{status, headers, body}` -- see app/routers/relay.py's (and
+// RelayController.java's) own docstrings for the full problem statement
+// (CORS + NTLM being real browser-platform limitations, not gaps in this
+// page's own JS). This page's own backend is always same-origin/CORS-safe
+// to call directly, whether or not the *target* (CONNECTION_SETTINGS) is.
+//
+// Requires the backend behind CONNECTION_SETTINGS to be one of this
+// project's own two mocks (FastAPI/Java) -- a real DATEV Desktop API has no
+// relay endpoint of its own; you'd point this page's relay-capable backend
+// (e.g. this FastAPI instance) *at* the real DATEV target instead.
+async function relayFetch(targetUrl, options) {
+  const opts = options || {};
+
+  // FormData/Blob bodies (the overrides file-upload call site) can't be
+  // forwarded as the relay's plain-text `body` field without reimplementing
+  // multipart encoding -- an explicitly scoped-out limitation (see
+  // app/routers/relay.py's docstring: binary/non-text bodies are out of
+  // scope for this pass on the *target* side; multipart *request* bodies
+  // through the relay itself are the same class of limitation). Rather than
+  // silently mis-encode or drop the upload, fall back to the direct path for
+  // just this case -- uploads to this page's own backend still work even
+  // with the relay toggle on.
+  if (opts.body && typeof opts.body !== "string") {
+    return fetchWithTimeouts(
+      targetUrl,
+      opts,
+      CONNECTION_SETTINGS.connectTimeoutSec,
+      CONNECTION_SETTINGS.readTimeoutSec
+    );
+  }
+
+  const authType = CONNECTION_SETTINGS.authType || "none";
+  const auth =
+    authType === "none"
+      ? { type: "none" }
+      : { type: authType, username: CONNECTION_SETTINGS.username, password: CONNECTION_SETTINGS.password };
+
+  const relayRequestBody = {
+    method: (opts.method || "GET").toUpperCase(),
+    url: targetUrl,
+    headers: Object.assign({}, opts.headers || {}),
+    body: opts.body != null ? opts.body : undefined,
+    auth,
+  };
+
+  const relayUrl = `${window.location.origin}/admin/api/relay`;
+  const relayResponse = await fetch(relayUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(relayRequestBody),
+  });
+
+  if (!relayResponse.ok) {
+    // The relay call itself failed (this page's own backend unreachable,
+    // 502 from a real connection/timeout failure against the target, or a
+    // 422 for a malformed relay request) -- surface it as a failed Response
+    // so existing res.ok/res.status-based call sites classify it the same
+    // way they already classify any other failure.
+    let detail = "";
+    try {
+      detail = await relayResponse.text();
+    } catch (err) {
+      // ignore -- fall through with empty detail
+    }
+    return new Response(detail || `Relay call failed: HTTP ${relayResponse.status}`, {
+      status: relayResponse.status,
+      statusText: relayResponse.statusText,
+    });
+  }
+
+  // {status, headers, body} from the relay's own real outbound call --
+  // unwrapped into a genuine Response so every existing call site's
+  // res.ok/res.status/res.json()/res.text() usage keeps working unchanged,
+  // with no call site needing to know the relay was involved at all.
+  const relayResult = await relayResponse.json();
+  return new Response(relayResult.body, {
+    status: relayResult.status,
+    headers: relayResult.headers || {},
+  });
+}
+
 // Thin convenience wrapper so every call site below reads "appFetch(...)"
 // instead of repeating CONNECTION_SETTINGS.connectTimeoutSec/readTimeoutSec
-// at every call -- still goes through fetchWithTimeouts() every time, so
-// auth headers and both timeouts are applied uniformly everywhere.
+// at every call. Branches once, here, between the direct path
+// (fetchWithTimeouts(), unchanged, still applies auth headers + both
+// timeouts) and the F5 relay path (relayFetch()) -- every call site stays
+// identical either way, per instruction ("a thin adapter inside appFetch
+// itself", not scattered per-call-site changes).
 function appFetch(url, options) {
+  if (CONNECTION_SETTINGS.useRelay) {
+    return relayFetch(url, options);
+  }
   return fetchWithTimeouts(
     url,
     options,
@@ -781,11 +900,13 @@ document.getElementById("conn-username").value = CONNECTION_SETTINGS.username;
 document.getElementById("conn-password").value = CONNECTION_SETTINGS.password;
 document.getElementById("conn-connect-timeout").value = CONNECTION_SETTINGS.connectTimeoutSec;
 document.getElementById("conn-read-timeout").value = CONNECTION_SETTINGS.readTimeoutSec;
+document.getElementById("conn-use-relay").checked = Boolean(CONNECTION_SETTINGS.useRelay);
 
 // Bootstrap 5 popovers need explicit opt-in per element (no page-wide
-// auto-init) -- this is the page's only help affordance, used for the URL
-// path prefix field's worked example.
+// auto-init) -- used for the URL path prefix field's worked example and
+// (F5) the local relay toggle's own explanation.
 new bootstrap.Popover(document.getElementById("conn-prefix-help"));
+new bootstrap.Popover(document.getElementById("conn-relay-help"));
 
 function updateAuthFieldsVisibility() {
   const authType = document.getElementById("conn-auth-type").value;
@@ -806,6 +927,7 @@ document.getElementById("conn-settings-save").addEventListener("click", () => {
     password: document.getElementById("conn-password").value,
     connectTimeoutSec: parseInt(document.getElementById("conn-connect-timeout").value, 10) || 10,
     readTimeoutSec: parseInt(document.getElementById("conn-read-timeout").value, 10) || 30,
+    useRelay: document.getElementById("conn-use-relay").checked,
   };
   saveConnectionSettings(settings);
   location.reload();
