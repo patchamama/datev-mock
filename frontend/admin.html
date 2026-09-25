@@ -17,7 +17,10 @@
 <body>
 <nav class="navbar navbar-dark bg-dark mb-4">
   <div class="container-fluid d-flex justify-content-between align-items-center" style="max-width: 64rem; margin: 0 auto;">
-    <span class="navbar-brand mb-0 h1">DATEV Mock &mdash; Admin</span>
+    <span class="navbar-brand mb-0 h1">
+      DATEV Mock &mdash; Admin
+      <span id="frontend-version-badge" class="badge text-bg-secondary align-middle" style="font-size: 0.6em;" title="Standalone frontend version"></span>
+    </span>
     <a href="/docs" target="_blank" rel="noopener" class="btn btn-outline-light btn-sm">API Docs (Swagger)</a>
   </div>
 </nav>
@@ -464,6 +467,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/languages/xml.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/languages/json.min.js"></script>
 <script>
+// This standalone frontend's own version -- shown in the navbar badge next
+// to the title so a screenshot/bug report/support question always carries
+// it. Kept in lockstep with this repo's release tags (see
+// .github/workflows/release.yml and odd/tasks/datev-mock-exe-release.md) by
+// hand, since this is a plain static file with no build step to inject it
+// automatically -- bump this string as part of cutting a new tag, the same
+// deliberate manual-sync discipline already used for CATALOG (F1's own
+// documented duplication note).
+const FRONTEND_VERSION = "0.3.0";
+document.getElementById("frontend-version-badge").textContent = `v${FRONTEND_VERSION}`;
+
 // Structured DATEV connection settings this page targets for every
 // fetch/EventSource call below -- per-browser (localStorage). Leaving
 // Hostname/IP empty means "this page's own origin" (today's default,
