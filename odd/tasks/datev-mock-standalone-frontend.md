@@ -82,7 +82,7 @@ was asked about in this session before implementation started.
 
 ## Scope (epics)
 
-- [ ] **F1 — Extract the admin frontend into a standalone static app**, kept
+- [x] **F1 — Extract the admin frontend into a standalone static app**, kept
   byte-behavior-compatible with today's embedded `/admin` page, servable
   without FastAPI running at all (a plain static file, or a tiny static
   server/script), while FastAPI (and optionally Java) can keep serving the
@@ -132,3 +132,96 @@ Each epic (F1-F4) is its own reviewable work-unit commit, following this
 repo's established TDD-mandatory, evidence-based epic pattern (see
 `datev-mock-spring-boot-migration.md` for the house style). Push after each
 epic, per the user's own established checkpoint-rhythm preference.
+
+## Epics
+
+### F1 — Extract the admin frontend into a standalone static app
+
+- **Scope:** Move the admin page's HTML/CSS/JS out of the `_PAGE` Python
+  triple-quoted string in `app/routers/admin.py` (~lines 403-1876 before this
+  change) into a new, genuinely self-contained top-level file,
+  `frontend/admin.html`, and make `GET /admin` serve that file's bytes
+  instead of building the page at request time.
+- **Extraction method (mechanical, not a rewrite):** ran the live module
+  in-process — `_PAGE.replace("__CATALOG_JSON__", json.dumps(CATALOG)).replace("__OVERRIDE_PATHS_JSON__", json.dumps(OVERRIDE_ENDPOINT_PATHS))`
+  — the exact same substitution `admin_page()` used to perform — and wrote
+  the resulting string straight to `frontend/admin.html`. This sidesteps a
+  correctness trap: several lines inside `_PAGE` contain Python-source
+  double-backslash escapes (`\\r`, `\\n`, e.g. the CSV helpers' `/[",\\r\\n]/`
+  regex and `"\\r\\n"` join) that are single backslashes in the actual
+  runtime string value; copying the *Python source lines* verbatim instead of
+  the *evaluated string* would have doubled those backslashes and silently
+  broken the CSV import/export JS. Using the real runtime value guarantees
+  the extracted file matches what was actually being served, byte for byte.
+- **Baked-in data:** the two runtime placeholders are now literal JS values
+  in `frontend/admin.html`: `const CATALOG = [...]` (23 entries) and
+  `const OVERRIDE_ENDPOINT_PATHS = {...}` (22 keys), both the exact current
+  values of `app/routers/admin.py`'s `CATALOG` (line ~302, after the new
+  sync-comment) and `OVERRIDE_ENDPOINT_PATHS` (line ~377) at extraction time.
+  No `__CATALOG_JSON__`/`__OVERRIDE_PATHS_JSON__` tokens remain in either
+  file (`grep -c` returned `0` in both).
+- **`app/routers/admin.py` changes:** removed the `_PAGE` string and its
+  request-time `.replace()` calls entirely. Added `FRONTEND_ADMIN_HTML_PATH`
+  (`Path(__file__).resolve().parent.parent.parent / "frontend" / "admin.html"`)
+  and `_load_admin_page_html()`, which reads the file once and caches it in
+  module-level `_ADMIN_PAGE_CACHE` for the process's lifetime (read-once-
+  and-cache, not read-per-request — documented in a comment above the
+  loader; a process restart is required to pick up hand edits to
+  `frontend/admin.html`). `admin_page()` (`GET /admin`, unchanged route path,
+  method, and `response_class=HTMLResponse`) now just returns
+  `HTMLResponse(content=_load_admin_page_html())`. `CATALOG` and
+  `OVERRIDE_ENDPOINT_PATHS` themselves are untouched (still Python source of
+  truth, still used server-side by `admin_page()`'s former substitution logic
+  — now nowhere in Python — and, per the module docstring, referenced only
+  by the JS at runtime; confirmed via `grep -rn CATALOG\|OVERRIDE_ENDPOINT_PATHS app tests` that neither name is used in any other server-side
+  validation logic in this repo, so nothing else needed touching).
+- **Honest duplication gap (accepted, not silently fixed):** `CATALOG`'s and
+  `OVERRIDE_ENDPOINT_PATHS`' Python definitions in `app/routers/admin.py` each
+  now carry a `NOTE (F1, ...)` comment stating their current values are
+  hand-baked into `frontend/admin.html` and will **not** auto-update if the
+  Python values change; `frontend/admin.html` carries a matching `NOTE`
+  comment immediately above its `const CATALOG =` line pointing back at
+  `app/routers/admin.py`. This is a real, accepted risk: a future edit to
+  either Python structure requires a manual re-sync (or regeneration) of
+  `frontend/admin.html` until a later epic automates it. F1's job was
+  extraction, not building that sync pipeline.
+- **Java:** confirmed via `spring-boot/PARITY.md` (line 74: `GET /admin (HTML admin page) | ✓ | absent — by design`) that Java has, and is meant to
+  have, no `/admin` HTML route. Left untouched, as instructed.
+- **Byte-behavior parity, verified with real evidence:**
+  - Captured the pre-change served output in-process (same substitution
+    `admin_page()` used to run) as a baseline, 65,680 bytes.
+  - Started the real server (`.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 58499 --ssl-keyfile certs/key.pem --ssl-certfile certs/cert.pem`,
+    per the README's "Running the server" section, not the one-line
+    installer) **after** applying the F1 change, and ran
+    `curl -sk https://127.0.0.1:58499/admin`: `HTTP/1.1 200 OK`,
+    `content-type: text/html; charset=utf-8`, 66,088 bytes.
+  - `diff` of the live response against `frontend/admin.html`: **identical**
+    — proves `GET /admin` now serves exactly the static file's bytes, no
+    more, no less.
+  - `diff` of the live response against the pre-change baseline: the only
+    delta is the 6-line `NOTE` comment added above `const CATALOG` (408
+    bytes, accounting for the full 65,680 → 66,088 size difference) — a JS
+    comment, invisible to the rendered page and inert at runtime. No other
+    byte differs; the catalog data, override-paths mapping, settings form,
+    master-data/accounting CRUD tables, and every other section render from
+    the exact same embedded data as before.
+  - Opened/grepped `frontend/admin.html` standalone: valid
+    `<!DOCTYPE html>`...`</html>` document, `CATALOG`/`OVERRIDE_ENDPOINT_PATHS`
+    literally present as JS array/object data, self-contained (Bootstrap/
+    highlight.js via CDN `<link>`/`<script src>` as before — same as the
+    original page, no new external dependency), openable via `file://` or
+    any static file server with zero backend involvement to render its
+    shell.
+- **Tests:** `.venv\Scripts\python -m pytest tests/ -q` — **375 passed**, no
+  regressions (same count as documented in the README before this change).
+  `tests/test_admin_api.py`'s `/admin`-facing assertions (CSV buttons, CSV
+  helper functions, `OVERRIDE_ENDPOINT_PATHS` embedding, XML-table
+  conversion, etc.) all still pass unmodified against the file-served page.
+- **Files touched:** `app/routers/admin.py` (removed `_PAGE`, added
+  `FRONTEND_ADMIN_HTML_PATH`/`_load_admin_page_html()`, added the two
+  sync-gap `NOTE` comments, rewrote `admin_page()`); new top-level
+  `frontend/admin.html` (self-contained static page with baked-in
+  `CATALOG`/`OVERRIDE_ENDPOINT_PATHS` and its own `NOTE` comment).
+- **Delivery boundary:** One work-unit commit for F1; not committed by the
+  implementer per explicit instruction — left for the user's own review and
+  commit.

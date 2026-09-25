@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DATEV Mock — Admin</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/styles/default.min.css" rel="stylesheet">
+<style>
+  body { padding-bottom: 3rem; background: #f8f9fa; }
+  main { max-width: 64rem; margin: 0 auto; padding: 1.5rem 1rem; }
+  code { word-break: break-all; }
+  .scroll-table { max-height: 24rem; overflow: auto; }
+  .catalog-sample { max-height: 18rem; overflow: auto; }
+</style>
+</head>
+<body>
+<nav class="navbar navbar-dark bg-dark mb-4">
+  <div class="container-fluid d-flex justify-content-between align-items-center" style="max-width: 64rem; margin: 0 auto;">
+    <span class="navbar-brand mb-0 h1">DATEV Mock &mdash; Admin</span>
+    <a href="/docs" target="_blank" rel="noopener" class="btn btn-outline-light btn-sm">API Docs (Swagger)</a>
+  </div>
+</nav>
+
+<main>
+
+<div class="card mb-4">
+  <div class="card-header">Settings</div>
+  <div class="card-body">
+    <form id="settings-form" class="row gy-2 gx-3 align-items-end">
+      <div class="col-auto">
+        <label for="settings-port" class="form-label">Port</label>
+        <input id="settings-port" type="number" min="1" max="65535" class="form-control">
+      </div>
+      <div class="col-auto">
+        <label for="settings-format" class="form-label">Default accounting format</label>
+        <select id="settings-format" class="form-select">
+          <option value="xml">xml</option>
+          <option value="json">json</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label for="settings-api-version" class="form-label">DATEV API version</label>
+        <select id="settings-api-version" class="form-select">
+          <option value="legacy">Legacy (matches ELO's older reference mock)</option>
+          <option value="modern">Modern (full, spec-accurate shape)</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <button id="settings-save" type="button" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+    <div class="small text-muted mt-2">
+      <strong>DATEV API version</strong> currently only affects
+      <code>cost-centers</code>: <em>legacy</em> omits <code>cost_rates</code>
+      entirely (matching ELO's older internal reference mock, which never
+      sent this field); <em>modern</em> returns the full spec-accurate
+      shape, including <code>cost_rates</code> (whose <code>valid_from</code>/
+      <code>valid_to</code> are genuine DATEV-spec integer-encoded dates,
+      not a bug &mdash; some integration clients built against the legacy
+      shape don't handle them).
+    </div>
+    <div id="settings-note" class="alert mt-3 d-none" role="alert"></div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">Backend target</div>
+  <div class="card-body">
+    <div class="row gy-2 gx-3 align-items-end">
+      <div class="col-auto" style="min-width: 22rem;">
+        <label for="api-base-input" class="form-label">API base URL</label>
+        <input id="api-base-input" type="text" class="form-control"
+               placeholder="Same origin as this page (default)">
+      </div>
+      <div class="col-auto">
+        <button id="api-base-save" type="button" class="btn btn-primary">Save &amp; reload</button>
+      </div>
+    </div>
+    <div class="small text-muted mt-2">
+      This page's own JavaScript always makes every API call (settings,
+      master-data/accounting, overrides, stored records, the live request
+      log, and everything in the catalog below) against this base URL
+      instead of assuming it's hosted next to its backend. Leave empty to
+      use this page's own origin (today's default behavior, e.g. this
+      FastAPI mock). Point it at another local instance
+      (e.g. <code>https://127.0.0.1:58452</code> for the FastAPI mock or
+      <code>https://127.0.0.1:58553</code> for the Spring Boot mock, or
+      whatever port that backend is running on), the real DATEV API, a
+      DATEV test endpoint, or any other DATEV-compatible mock &mdash; no
+      code changes needed, only that target's own auth/TLS/CORS posture
+      applies. Stored per-browser (not synced to the server); saving
+      reloads the page so every card re-fetches from the new target.
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-start gap-2">
+    <div>
+      Master-data clients
+      <div class="small text-muted mt-1">
+        Real endpoint: <code>GET /datev/api/master-data/v1/clients</code> (XML). This table
+        edits via the JSON admin endpoint <code>/admin/api/clients/master-data</code> instead
+        &mdash; two different things.
+        <a href="https://developer.datev.de/de/product-detail/client-master-data/1.7.0/reference/reference-overview/client-master-data" target="_blank" rel="noopener">DATEV docs</a>
+      </div>
+    </div>
+    <button id="md-export-csv" type="button" class="btn btn-sm btn-outline-secondary text-nowrap">Export CSV</button>
+  </div>
+  <div class="card-body">
+    <div class="table-responsive scroll-table">
+      <table class="table table-sm table-striped align-middle" id="master-data-table">
+        <thead class="table-light"><tr><th>Id</th><th>Name</th><th>Number</th><th>Status</th><th>Type</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <fieldset class="border rounded p-3 mt-2">
+      <legend class="float-none w-auto px-2 fs-6">Add master-data client</legend>
+      <div class="row g-2 align-items-end">
+        <div class="col-auto"><input id="md-name" class="form-control form-control-sm" placeholder="Name"></div>
+        <div class="col-auto"><input id="md-number" type="number" class="form-control form-control-sm" placeholder="Number"></div>
+        <div class="col-auto">
+          <select id="md-status" class="form-select form-select-sm">
+            <option value="active">active</option>
+            <option value="inactive">inactive</option>
+          </select>
+        </div>
+        <div class="col-auto">
+          <select id="md-type" class="form-select form-select-sm">
+            <option value="legal_person">legal_person</option>
+            <option value="natural_person">natural_person</option>
+          </select>
+        </div>
+        <div class="col-auto"><button id="md-add" type="button" class="btn btn-sm btn-success">Add</button></div>
+      </div>
+    </fieldset>
+    <fieldset class="border rounded p-3 mt-2">
+      <legend class="float-none w-auto px-2 fs-6">Import master-data clients (CSV)</legend>
+      <div class="row g-2 align-items-end">
+        <div class="col-auto"><input id="md-import-file" type="file" accept=".csv" class="form-control form-control-sm"></div>
+        <div class="col-auto"><button id="md-import-btn" type="button" class="btn btn-sm btn-primary">Import CSV</button></div>
+      </div>
+      <div class="small text-muted mt-2">Columns used: <code>Name</code>, <code>Number</code>, <code>Status</code>, <code>Type</code> (other columns are ignored).</div>
+      <div id="md-import-result" class="mt-2"></div>
+    </fieldset>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-start gap-2">
+    <div>
+      Accounting clients
+      <div class="small text-muted mt-1">
+        Real endpoint: <code>GET /datev/api/accounting/v1/clients</code> (XML by default, JSON
+        with <code>Accept: application/json</code>). This table edits via the JSON admin
+        endpoint <code>/admin/api/clients/accounting</code> instead &mdash; two different things.
+        <a href="https://developer.datev.de/de/product-detail/accounting/1.7.4/reference/reference-overview/accounting" target="_blank" rel="noopener">DATEV docs</a>
+      </div>
+    </div>
+    <button id="ac-export-csv" type="button" class="btn btn-sm btn-outline-secondary text-nowrap">Export CSV</button>
+  </div>
+  <div class="card-body">
+    <div class="table-responsive scroll-table">
+      <table class="table table-sm table-striped align-middle" id="accounting-table">
+        <thead class="table-light"><tr><th>Id</th><th>Name</th><th>Number</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <fieldset class="border rounded p-3 mt-2">
+      <legend class="float-none w-auto px-2 fs-6">Add accounting client</legend>
+      <div class="row g-2 align-items-end">
+        <div class="col-auto"><input id="ac-name" class="form-control form-control-sm" placeholder="Name"></div>
+        <div class="col-auto"><input id="ac-number" type="number" class="form-control form-control-sm" placeholder="Number"></div>
+        <div class="col-auto"><button id="ac-add" type="button" class="btn btn-sm btn-success">Add</button></div>
+      </div>
+    </fieldset>
+    <fieldset class="border rounded p-3 mt-2">
+      <legend class="float-none w-auto px-2 fs-6">Import accounting clients (CSV)</legend>
+      <div class="row g-2 align-items-end">
+        <div class="col-auto"><input id="ac-import-file" type="file" accept=".csv" class="form-control form-control-sm"></div>
+        <div class="col-auto"><button id="ac-import-btn" type="button" class="btn btn-sm btn-primary">Import CSV</button></div>
+      </div>
+      <div class="small text-muted mt-2">Columns used: <code>Name</code>, <code>Number</code> (other columns are ignored).</div>
+      <div id="ac-import-result" class="mt-2"></div>
+    </fieldset>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">Reset</div>
+  <div class="card-body">
+    <button id="reset-btn" type="button" class="btn btn-outline-danger">Reset all data to defaults</button>
+  </div>
+</div>
+
+<div class="card mb-4" id="overrides-card">
+  <div class="card-header">Custom Examples (Overrides)</div>
+  <div class="card-body">
+    <p class="text-muted small">
+      Upload an XML or JSON file to temporarily override a mocked endpoint's
+      response with your own example data. The endpoint is detected
+      automatically from the file's structure &mdash; nothing is persisted to
+      disk, and overrides are lost on restart.
+    </p>
+    <form id="override-upload-form" class="row gy-2 gx-3 align-items-end">
+      <div class="col-auto">
+        <label for="override-file" class="form-label">XML or JSON file</label>
+        <input id="override-file" type="file" accept=".xml,.json" class="form-control form-control-sm">
+      </div>
+      <div class="col-auto">
+        <button id="override-upload-btn" type="button" class="btn btn-sm btn-primary">Upload &amp; Detect</button>
+      </div>
+      <div class="col-auto">
+        <label for="override-folder-input" class="form-label">Folder (XML/JSON files)</label>
+        <input id="override-folder-input" type="file" webkitdirectory multiple class="form-control form-control-sm">
+      </div>
+      <div class="col-auto">
+        <button id="override-folder-import-btn" type="button" class="btn btn-sm btn-primary">Import Folder</button>
+      </div>
+    </form>
+    <div id="override-upload-result" class="mt-3"></div>
+    <div id="override-folder-import-result" class="mt-3"></div>
+    <div class="table-responsive scroll-table mt-3">
+      <table class="table table-sm table-striped align-middle" id="overrides-table">
+        <thead class="table-light">
+          <tr><th>Endpoint</th><th>Filename</th><th>Type</th><th>Uploaded</th><th>Enabled</th><th>Actions</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div id="overrides-empty" class="text-muted small d-none">No custom overrides uploaded yet.</div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">API Catalog</div>
+  <div class="card-body">
+    <p class="text-muted small">
+      Every mocked GET endpoint, grouped by area. Sample data is fetched on
+      demand (click &ldquo;View sample data&rdquo;) &mdash; nothing here loads
+      automatically. Accounting path values (<code>example-client-id</code>,
+      <code>example-fiscal-year-id</code>, <code>example-cost-system-id</code>)
+      are illustrative only: this mock returns the same data regardless of
+      the values supplied.
+    </p>
+    <div class="accordion" id="catalog-accordion"></div>
+  </div>
+</div>
+
+<div class="card mb-4" id="request-log-card">
+  <div class="card-header d-flex justify-content-between align-items-start gap-2">
+    <div>
+      Live Request Log
+      <div class="small text-muted mt-1">
+        Every request this mock receives, live via Server-Sent Events &mdash;
+        newest first. A row with a
+        <span class="badge text-bg-danger">UNMATCHED</span> badge hit no
+        registered route at all (a real gap in this mock's coverage) &mdash;
+        different from a route that matched and legitimately returned an
+        error on its own (e.g. addressee-by-id for an unknown id). Click a
+        row to see the full request/response detail.
+      </div>
+    </div>
+    <span id="request-log-status" class="badge text-bg-secondary text-nowrap">Connecting&hellip;</span>
+  </div>
+  <div class="card-body">
+    <div class="row g-2 align-items-end mb-3">
+      <div class="col-auto">
+        <label for="request-log-filter" class="form-label">Filter by path</label>
+        <input id="request-log-filter" type="text" class="form-control form-control-sm" placeholder="e.g. addressees">
+      </div>
+      <div class="col-auto">
+        <div class="form-check form-switch mt-4">
+          <input id="request-log-unmatched-only" class="form-check-input" type="checkbox" role="switch">
+          <label class="form-check-label" for="request-log-unmatched-only">Unmatched/errors only</label>
+        </div>
+      </div>
+      <div class="col-auto ms-auto">
+        <button id="request-log-clear" type="button" class="btn btn-sm btn-outline-secondary">Clear view</button>
+      </div>
+    </div>
+    <div class="table-responsive scroll-table">
+      <table class="table table-sm table-striped align-middle mb-0" id="request-log-table">
+        <thead class="table-light"><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>Duration</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div id="request-log-empty" class="text-muted small mt-2">No requests captured yet.</div>
+  </div>
+</div>
+
+<div class="card mb-4" id="stored-records-card">
+  <div class="card-header">
+    Stored records
+    <div class="small text-muted mt-1">
+      Records written via the new write endpoints (POST/PUT), persisted in
+      SQLite (<code>datev_mock.db</code>) and visible here read-only &mdash;
+      survives a server restart, unlike every other dataset on this page.
+      A matching resource's real GET endpoint returns these merged with
+      the fake dataset (a written record with an existing id replaces the
+      fake one; a new id is added).
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="row g-2 align-items-end mb-3">
+      <div class="col-auto">
+        <label for="stored-records-type" class="form-label">Resource type</label>
+        <select id="stored-records-type" class="form-select form-select-sm"></select>
+      </div>
+      <div class="col-auto">
+        <button id="stored-records-refresh" type="button" class="btn btn-sm btn-outline-secondary">Refresh</button>
+      </div>
+    </div>
+    <div class="table-responsive scroll-table">
+      <table class="table table-sm table-striped align-middle mb-0" id="stored-records-table">
+        <thead class="table-light"><tr><th>Record id</th><th>Created</th><th>Updated</th><th>Data</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div id="stored-records-empty" class="text-muted small mt-2">No stored records for this resource type yet.</div>
+  </div>
+</div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/languages/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/languages/json.min.js"></script>
+<script>
+// API base URL this page targets for every fetch/EventSource call below --
+// per-browser (localStorage), empty means "this page's own origin" (today's
+// default, zero-regression behavior). See the "Backend target" card.
+function loadApiBase() {
+  try {
+    return localStorage.getItem("datevMockApiBase") || "";
+  } catch (err) {
+    return "";
+  }
+}
+const API_BASE = loadApiBase().replace(/[/]$/, "");
+function apiUrl(path) {
+  return API_BASE + path;
+}
+
+const SETTINGS_URL = `${API_BASE}/admin/api/settings`;
+const MASTER_DATA_URL = `${API_BASE}/admin/api/clients/master-data`;
+const ACCOUNTING_URL = `${API_BASE}/admin/api/clients/accounting`;
+const RESET_URL = `${API_BASE}/admin/api/reset`;
+const STORED_RECORDS_URL = `${API_BASE}/admin/api/stored-records`;
+const OVERRIDES_URL = `${API_BASE}/admin/api/overrides`;
+const OVERRIDES_RESOLVE_URL = `${API_BASE}/admin/api/overrides/resolve`;
+// NOTE: CATALOG and OVERRIDE_ENDPOINT_PATHS below are a one-time, hand-baked
+// copy of the Python source of truth in app/routers/admin.py (`CATALOG` /
+// `OVERRIDE_ENDPOINT_PATHS`, F1 of odd/tasks/datev-mock-standalone-frontend.md).
+// They do NOT update automatically — if those Python values change, this
+// file must be regenerated/updated by hand to match, until/unless a later
+// epic automates it.
+const CATALOG = [{"area": "Diagnostics", "name": "Echo probe", "path": "/datev/api/diagnostics/v1/echo", "note": "Single XML object (not a list) \u2014 a diagnostics ping."}, {"area": "Base clients", "name": "Master-data clients", "path": "/datev/api/master-data/v1/clients", "note": "XML. The CRUD table above uses the JSON admin endpoint /admin/api/clients/master-data."}, {"area": "Base clients", "name": "Accounting clients", "path": "/datev/api/accounting/v1/clients", "note": "XML by default, JSON with Accept: application/json. The CRUD table above uses the JSON admin endpoint /admin/api/clients/accounting."}, {"area": "Master data", "name": "Addressees", "path": "/datev/api/master-data/v1/addressees"}, {"area": "Master data", "name": "Addressee by id", "path": "/datev/api/master-data/v1/addressees/{addressee_id}", "example_only": true, "note": "Path template only \u2014 fetch Addressees above and use a real Id."}, {"area": "Master data", "name": "Banks", "path": "/datev/api/master-data/v1/banks"}, {"area": "Accounting", "name": "Fiscal years", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years"}, {"area": "Accounting", "name": "Cost systems", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/cost-systems"}, {"area": "Accounting", "name": "Cost centers", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/cost-systems/example-cost-system-id/cost-centers"}, {"area": "Accounting", "name": "Creditors", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/creditors"}, {"area": "Accounting", "name": "Debitors", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/debitors"}, {"area": "Accounting", "name": "General ledger accounts", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/general-ledger-accounts"}, {"area": "Accounting", "name": "Accounts payable", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/accounts-payable"}, {"area": "Accounting", "name": "Accounts payable (condensed)", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/accounts-payable/condense"}, {"area": "Accounting", "name": "Accounts receivable (condensed)", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/accounts-receivable/condense"}, {"area": "Accounting", "name": "Accounting sequences processed", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/accounting-sequences-processed"}, {"area": "Accounting", "name": "Accounting transaction keys", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/accounting-transaction-keys"}, {"area": "Accounting", "name": "Asset stocktakings", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/assets/stocktakings"}, {"area": "Accounting", "name": "Posting proposal rules (incoming invoices)", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/posting-proposal-rules-incoming-invoices"}, {"area": "Accounting", "name": "Posting proposal rules (outgoing invoices)", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/posting-proposal-rules-outgoing-invoices"}, {"area": "Accounting", "name": "Terms of payment", "path": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/terms-of-payment"}, {"area": "DMS", "name": "Domains", "path": "/datev/api/dms/v1/domains"}, {"area": "DMS", "name": "Documents", "path": "/datev/api/dms/v1/documents"}];
+const OVERRIDE_ENDPOINT_PATHS = {"diagnostics.echo": "/datev/api/diagnostics/v1/echo", "master_data.clients": "/datev/api/master-data/v1/clients", "accounting.clients": "/datev/api/accounting/v1/clients", "master_data.addressees": "/datev/api/master-data/v1/addressees", "master_data.banks": "/datev/api/master-data/v1/banks", "accounting.fiscal_years": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years", "accounting.cost_systems": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/cost-systems", "accounting.cost_centers": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/cost-systems/example-cost-system-id/cost-centers", "accounting.creditors": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/creditors", "accounting.debitors": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/debitors", "accounting.general_ledger_accounts": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/general-ledger-accounts", "accounting.accounts_payable": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/accounts-payable", "accounting.accounts_payable_condense": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/accounts-payable/condense", "accounting.accounts_receivable_condense": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/accounts-receivable/condense", "accounting.accounting_sequences_processed": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/accounting-sequences-processed", "accounting.accounting_transaction_keys": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/accounting-transaction-keys", "accounting.assets_stocktakings": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/assets/stocktakings", "accounting.posting_proposal_rules_incoming": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/posting-proposal-rules-incoming-invoices", "accounting.posting_proposal_rules_outgoing": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/posting-proposal-rules-outgoing-invoices", "accounting.terms_of_payment": "/datev/api/accounting/v1/clients/example-client-id/fiscal-years/example-fiscal-year-id/terms-of-payment", "dms.domains": "/datev/api/dms/v1/domains", "dms.documents": "/datev/api/dms/v1/documents"};
+
+// Confirmed DATEV documentation URLs, per catalog area (see
+// odd/tasks/datev-mock-admin-ui-polish.md "Follow-on" section). Diagnostics
+// and DMS intentionally have no confirmed URL and are omitted here.
+const AREA_DOCS = {
+  "Master data": "https://developer.datev.de/de/product-detail/client-master-data/1.7.0/reference/reference-overview/client-master-data",
+  "Accounting": "https://developer.datev.de/de/product-detail/accounting/1.7.4/reference/reference-overview/accounting",
+};
+
+const state = { port: 58452 };
+let masterDataRecords = [];
+let accountingRecords = [];
+let ambiguousQueue = [];
+
+function showNote(message, kind) {
+  const note = document.getElementById("settings-note");
+  note.classList.remove("d-none", "alert-warning", "alert-danger", "alert-success");
+  if (!message) {
+    note.classList.add("d-none");
+    note.textContent = "";
+    return;
+  }
+  note.classList.add(kind || "alert-warning");
+  note.textContent = message;
+}
+
+async function loadSettings() {
+  const res = await fetch(SETTINGS_URL);
+  const data = await res.json();
+  document.getElementById("settings-port").value = data.port;
+  document.getElementById("settings-format").value = data.default_accounting_format;
+  document.getElementById("settings-api-version").value = data.datev_api_version;
+  state.port = data.port;
+  showNote("");
+}
+
+async function saveSettings() {
+  const port = parseInt(document.getElementById("settings-port").value, 10);
+  const default_accounting_format = document.getElementById("settings-format").value;
+  const datev_api_version = document.getElementById("settings-api-version").value;
+  const res = await fetch(SETTINGS_URL, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ port, default_accounting_format, datev_api_version }),
+  });
+  if (!res.ok) {
+    showNote("Failed to save settings — check port/format values.", "alert-danger");
+    return;
+  }
+  const data = await res.json();
+  state.port = data.port;
+  showNote(
+    data.restart_required ? "Restart the server for the new port to take effect." : ""
+  );
+}
+
+function renderMasterDataRow(record) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td>${record.Id}</td>
+    <td>${record.Name}</td>
+    <td>${record.Number}</td>
+    <td>${record.Status}</td>
+    <td>${record.Type}</td>
+    <td>
+      <button class="btn btn-sm btn-outline-secondary" data-action="edit">Edit</button>
+      <button class="btn btn-sm btn-outline-danger" data-action="delete">Delete</button>
+    </td>`;
+  tr.querySelector('[data-action="edit"]').addEventListener("click", async () => {
+    const name = prompt("New name?", record.Name);
+    if (name === null) return;
+    await fetch(`${MASTER_DATA_URL}/${record.Id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ Name: name }),
+    });
+    loadMasterData();
+  });
+  tr.querySelector('[data-action="delete"]').addEventListener("click", async () => {
+    await fetch(`${MASTER_DATA_URL}/${record.Id}`, { method: "DELETE" });
+    loadMasterData();
+  });
+  return tr;
+}
+
+async function loadMasterData() {
+  const res = await fetch(MASTER_DATA_URL);
+  const records = await res.json();
+  masterDataRecords = records;
+  const tbody = document.querySelector("#master-data-table tbody");
+  tbody.innerHTML = "";
+  records.forEach((record) => tbody.appendChild(renderMasterDataRow(record)));
+}
+
+function renderAccountingRow(record) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td>${record.Id}</td>
+    <td>${record.Name}</td>
+    <td>${record.Number}</td>
+    <td>
+      <button class="btn btn-sm btn-outline-secondary" data-action="edit">Edit</button>
+      <button class="btn btn-sm btn-outline-danger" data-action="delete">Delete</button>
+    </td>`;
+  tr.querySelector('[data-action="edit"]').addEventListener("click", async () => {
+    const name = prompt("New name?", record.Name);
+    if (name === null) return;
+    await fetch(`${ACCOUNTING_URL}/${record.Id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ Name: name }),
+    });
+    loadAccounting();
+  });
+  tr.querySelector('[data-action="delete"]').addEventListener("click", async () => {
+    await fetch(`${ACCOUNTING_URL}/${record.Id}`, { method: "DELETE" });
+    loadAccounting();
+  });
+  return tr;
+}
+
+async function loadAccounting() {
+  const res = await fetch(ACCOUNTING_URL);
+  const records = await res.json();
+  accountingRecords = records;
+  const tbody = document.querySelector("#accounting-table tbody");
+  tbody.innerHTML = "";
+  records.forEach((record) => tbody.appendChild(renderAccountingRow(record)));
+}
+
+document.getElementById("settings-save").addEventListener("click", saveSettings);
+
+document.getElementById("api-base-input").value = API_BASE;
+document.getElementById("api-base-save").addEventListener("click", () => {
+  const value = document.getElementById("api-base-input").value.trim().replace(/[/]$/, "");
+  try {
+    if (value) {
+      localStorage.setItem("datevMockApiBase", value);
+    } else {
+      localStorage.removeItem("datevMockApiBase");
+    }
+  } catch (err) {
+    // localStorage unavailable (private mode, blocked site data, ...) --
+    // nothing to persist, but don't block the reload below.
+  }
+  location.reload();
+});
+
+document.getElementById("md-add").addEventListener("click", async () => {
+  const Name = document.getElementById("md-name").value;
+  const Number = parseInt(document.getElementById("md-number").value, 10) || 0;
+  const Status = document.getElementById("md-status").value;
+  const Type = document.getElementById("md-type").value;
+  await fetch(MASTER_DATA_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ Name, Number, Status, Type }),
+  });
+  loadMasterData();
+});
+
+document.getElementById("ac-add").addEventListener("click", async () => {
+  const Name = document.getElementById("ac-name").value;
+  const Number = parseInt(document.getElementById("ac-number").value, 10) || 0;
+  await fetch(ACCOUNTING_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ Name, Number }),
+  });
+  loadAccounting();
+});
+
+document.getElementById("reset-btn").addEventListener("click", async () => {
+  await fetch(RESET_URL, { method: "POST" });
+  loadMasterData();
+  loadAccounting();
+});
+
+// --- CSV export/import (client-side only; no new backend endpoints) ---
+
+function csvQuoteField(value) {
+  const text = value === null || value === undefined ? "" : String(value);
+  if (/[",\r\n]/.test(text)) {
+    return '"' + text.replace(/"/g, '""') + '"';
+  }
+  return text;
+}
+
+function toCsv(rows) {
+  if (!rows.length) return "";
+  const columns = [];
+  const seen = new Set();
+  rows.forEach((row) => {
+    Object.keys(row).forEach((key) => {
+      if (!seen.has(key)) {
+        seen.add(key);
+        columns.push(key);
+      }
+    });
+  });
+  const lines = [columns.map(csvQuoteField).join(",")];
+  rows.forEach((row) => {
+    lines.push(columns.map((col) => csvQuoteField(row[col])).join(","));
+  });
+  return lines.join("\r\n");
+}
+
+// RFC4180-aware parser: handles quoted fields with embedded commas,
+// quotes ("" for an escaped quote) and newlines. First row is the header.
+function fromCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i += 1;
+        continue;
+      }
+      field += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = true;
+      i += 1;
+      continue;
+    }
+    if (ch === ",") {
+      row.push(field);
+      field = "";
+      i += 1;
+      continue;
+    }
+    if (ch === "\r") {
+      i += 1;
+      continue;
+    }
+    if (ch === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      i += 1;
+      continue;
+    }
+    field += ch;
+    i += 1;
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  if (!rows.length) return [];
+  const header = rows[0];
+  const records = [];
+  for (let r = 1; r < rows.length; r += 1) {
+    const values = rows[r];
+    if (values.length === 1 && values[0] === "") continue; // skip blank/trailing line
+    const record = {};
+    header.forEach((col, idx) => {
+      record[col] = values[idx] !== undefined ? values[idx] : "";
+    });
+    records.push(record);
+  }
+  return records;
+}
+
+// Every top-level key that holds an object (e.g. accounting's `company_data`)
+// on ANY record gets flattened to `parent.child` columns; a record where
+// that same key is null simply leaves those columns empty for its row.
+function collectObjectKeys(records) {
+  const objectKeys = new Set();
+  records.forEach((record) => {
+    Object.keys(record).forEach((key) => {
+      const value = record[key];
+      if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+        objectKeys.add(key);
+      }
+    });
+  });
+  return objectKeys;
+}
+
+function flattenRecord(record, objectKeys) {
+  const flat = {};
+  Object.keys(record).forEach((key) => {
+    const value = record[key];
+    if (objectKeys.has(key)) {
+      if (value !== null && typeof value === "object") {
+        Object.keys(value).forEach((childKey) => {
+          flat[`${key}.${childKey}`] = value[childKey];
+        });
+      }
+      return;
+    }
+    flat[key] = value;
+  });
+  return flat;
+}
+
+function recordsToCsv(records) {
+  const objectKeys = collectObjectKeys(records);
+  const flatRows = records.map((record) => flattenRecord(record, objectKeys));
+  return toCsv(flatRows);
+}
+
+function downloadCsv(filename, csvText) {
+  const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+async function importCsvRows(file, postUrl, buildFields) {
+  const text = await file.text();
+  const rows = fromCsv(text);
+  let imported = 0;
+  let failed = 0;
+  for (const row of rows) {
+    const fields = buildFields(row);
+    try {
+      const res = await fetch(postUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (res.ok) {
+        imported += 1;
+      } else {
+        failed += 1;
+      }
+    } catch (err) {
+      failed += 1;
+    }
+  }
+  return { imported, failed, total: rows.length };
+}
+
+function showImportResult(elementId, outcome) {
+  const el = document.getElementById(elementId);
+  const kind = outcome.failed > 0 ? "alert-warning" : "alert-success";
+  const failedNote = outcome.failed > 0 ? ` (${outcome.failed} failed)` : "";
+  el.innerHTML = `<div class="alert ${kind}">Imported ${outcome.imported} of ${outcome.total} rows${failedNote}.</div>`;
+}
+
+document.getElementById("md-export-csv").addEventListener("click", () => {
+  downloadCsv("master-data-clients.csv", recordsToCsv(masterDataRecords));
+});
+
+document.getElementById("ac-export-csv").addEventListener("click", () => {
+  downloadCsv("accounting-clients.csv", recordsToCsv(accountingRecords));
+});
+
+document.getElementById("md-import-btn").addEventListener("click", async () => {
+  const input = document.getElementById("md-import-file");
+  const file = input.files && input.files[0];
+  if (!file) {
+    document.getElementById("md-import-result").innerHTML =
+      '<div class="alert alert-warning">Choose a CSV file first.</div>';
+    return;
+  }
+  const outcome = await importCsvRows(file, MASTER_DATA_URL, (row) => {
+    const fields = {};
+    if ("Name" in row) fields.Name = row.Name;
+    if ("Number" in row) fields.Number = parseInt(row.Number, 10) || 0;
+    if ("Status" in row) fields.Status = row.Status;
+    if ("Type" in row) fields.Type = row.Type;
+    return fields;
+  });
+  input.value = "";
+  showImportResult("md-import-result", outcome);
+  loadMasterData();
+});
+
+document.getElementById("ac-import-btn").addEventListener("click", async () => {
+  const input = document.getElementById("ac-import-file");
+  const file = input.files && input.files[0];
+  if (!file) {
+    document.getElementById("ac-import-result").innerHTML =
+      '<div class="alert alert-warning">Choose a CSV file first.</div>';
+    return;
+  }
+  const outcome = await importCsvRows(file, ACCOUNTING_URL, (row) => {
+    const fields = {};
+    if ("Name" in row) fields.Name = row.Name;
+    if ("Number" in row) fields.Number = parseInt(row.Number, 10) || 0;
+    return fields;
+  });
+  input.value = "";
+  showImportResult("ac-import-result", outcome);
+  loadAccounting();
+});
+
+// --- custom overrides ---
+
+function overrideEscapeHtml(value) {
+  const div = document.createElement("div");
+  div.textContent = value;
+  return div.innerHTML;
+}
+
+function showOverrideUploadResult(html) {
+  document.getElementById("override-upload-result").innerHTML = html;
+}
+
+function overrideMatchedResultHtml(key) {
+  const path = OVERRIDE_ENDPOINT_PATHS[key];
+  let endpointHtml = "";
+  if (path) {
+    const url = buildUrl(path);
+    endpointHtml = `<div class="mt-1">Endpoint: <code>GET ${overrideEscapeHtml(url)}</code> &mdash; <a href="${overrideEscapeHtml(url)}" target="_blank" rel="noopener">open</a></div>`;
+  }
+  return `<div class="alert alert-success">Matched to endpoint: <code>${overrideEscapeHtml(key)}</code>. Override is now active.${endpointHtml}</div>`;
+}
+
+function renderOverrideRow(key, meta) {
+  const tr = document.createElement("tr");
+  const badgeClass = meta.content_type === "xml" ? "text-bg-info" : "text-bg-secondary";
+  tr.innerHTML = `
+    <td><code>${overrideEscapeHtml(key)}</code></td>
+    <td>${overrideEscapeHtml(meta.filename)}</td>
+    <td><span class="badge ${badgeClass}">${overrideEscapeHtml(meta.content_type)}</span></td>
+    <td class="small text-muted">${overrideEscapeHtml(meta.uploaded_at)}</td>
+    <td>
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" role="switch" data-action="toggle" ${meta.enabled ? "checked" : ""}>
+      </div>
+    </td>
+    <td>
+      <button class="btn btn-sm btn-outline-danger" data-action="delete">Delete</button>
+    </td>`;
+  tr.querySelector('[data-action="toggle"]').addEventListener("change", async (ev) => {
+    await fetch(`${OVERRIDES_URL}/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: ev.target.checked }),
+    });
+    loadOverrides();
+  });
+  tr.querySelector('[data-action="delete"]').addEventListener("click", async () => {
+    await fetch(`${OVERRIDES_URL}/${encodeURIComponent(key)}`, { method: "DELETE" });
+    loadOverrides();
+  });
+  return tr;
+}
+
+async function loadOverrides() {
+  const res = await fetch(OVERRIDES_URL);
+  const data = await res.json();
+  const tbody = document.querySelector("#overrides-table tbody");
+  const empty = document.getElementById("overrides-empty");
+  tbody.innerHTML = "";
+  const keys = Object.keys(data);
+  keys.forEach((key) => tbody.appendChild(renderOverrideRow(key, data[key])));
+  empty.classList.toggle("d-none", keys.length > 0);
+}
+
+// `onResolved` runs after a successful individual resolution, defaulting to
+// a plain `loadOverrides()` refresh (the single-upload flow). The folder
+// import flow below passes its own callback that also advances to the next
+// queued ambiguous file, reusing this exact same resolution UI rather than
+// building a second one.
+function renderAmbiguousChoiceForm(candidates, pendingId, filename, onResolved) {
+  const resolve = onResolved || loadOverrides;
+  const options = candidates
+    .map(
+      (candidate, idx) => `
+      <div class="form-check">
+        <input class="form-check-input" type="radio" name="override-candidate" id="override-candidate-${idx}" value="${overrideEscapeHtml(candidate)}" ${idx === 0 ? "checked" : ""}>
+        <label class="form-check-label" for="override-candidate-${idx}"><code>${overrideEscapeHtml(candidate)}</code></label>
+      </div>`
+    )
+    .join("");
+  const filenameNote = filename
+    ? `<p class="mb-1 small text-muted">File: <code>${overrideEscapeHtml(filename)}</code></p>`
+    : "";
+  showOverrideUploadResult(`
+    <div class="alert alert-warning">
+      ${filenameNote}
+      <p class="mb-2">This data matches multiple endpoints with an identical shape &mdash; pick which one you mean:</p>
+      <form id="override-resolve-form">
+        ${options}
+        <button type="button" id="override-resolve-btn" class="btn btn-sm btn-primary mt-2">Confirm</button>
+      </form>
+    </div>`);
+  document.getElementById("override-resolve-btn").addEventListener("click", async () => {
+    const selected = document.querySelector('input[name="override-candidate"]:checked');
+    if (!selected) return;
+    const res = await fetch(OVERRIDES_RESOLVE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pending_id: pendingId, endpoint: selected.value }),
+    });
+    if (!res.ok) {
+      showOverrideUploadResult(
+        '<div class="alert alert-danger">Failed to resolve override selection.</div>'
+      );
+      return;
+    }
+    showOverrideUploadResult(overrideMatchedResultHtml(selected.value));
+    resolve();
+  });
+}
+
+// Shared by both the single-file "Upload & Detect" button and the "Import
+// Folder" loop below, so both call exactly the same POST-and-handle logic.
+async function postOverrideFile(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(OVERRIDES_URL, { method: "POST", body: formData });
+  return res.json();
+}
+
+async function uploadOverrideFile() {
+  const input = document.getElementById("override-file");
+  const file = input.files && input.files[0];
+  if (!file) {
+    showOverrideUploadResult('<div class="alert alert-warning">Choose a file first.</div>');
+    return;
+  }
+  const body = await postOverrideFile(file);
+
+  if (body.status === "matched") {
+    showOverrideUploadResult(overrideMatchedResultHtml(body.endpoint));
+    input.value = "";
+    loadOverrides();
+    return;
+  }
+
+  if (body.status === "ambiguous") {
+    renderAmbiguousChoiceForm(body.candidates, body.pending_id);
+    input.value = "";
+    return;
+  }
+
+  showOverrideUploadResult(
+    '<div class="alert alert-danger">Could not detect a matching endpoint for this file &mdash; check it matches a response shape this mock recognizes.</div>'
+  );
+}
+
+document.getElementById("override-upload-btn").addEventListener("click", uploadOverrideFile);
+
+// --- bulk folder import ---
+
+function isXmlOrJsonFilename(name) {
+  const lower = name.toLowerCase();
+  return lower.endsWith(".xml") || lower.endsWith(".json");
+}
+
+// Pops the next queued ambiguous file (populated by importOverrideFolder)
+// and shows it in the same resolution UI a single ambiguous upload uses,
+// one at a time; resolving it advances to the following queued file, if any.
+function showNextAmbiguousFromQueue() {
+  if (!ambiguousQueue.length) return;
+  const next = ambiguousQueue.shift();
+  renderAmbiguousChoiceForm(next.candidates, next.pending_id, next.filename, () => {
+    loadOverrides();
+    showNextAmbiguousFromQueue();
+  });
+}
+
+async function importOverrideFolder() {
+  const input = document.getElementById("override-folder-input");
+  const allFiles = input.files ? Array.from(input.files) : [];
+  const resultEl = document.getElementById("override-folder-import-result");
+  const files = allFiles.filter((file) => isXmlOrJsonFilename(file.name));
+
+  if (!files.length) {
+    resultEl.innerHTML =
+      '<div class="alert alert-warning">Choose a folder containing .xml or .json files first.</div>';
+    return;
+  }
+
+  const matched = [];
+  const ambiguous = [];
+  const unrecognized = [];
+
+  // Sequential, not parallel: mirrors how CSV import already processes rows
+  // one at a time, and avoids overwhelming the backend for a large folder.
+  for (const file of files) {
+    let body;
+    try {
+      body = await postOverrideFile(file);
+    } catch (err) {
+      unrecognized.push(file.name);
+      continue;
+    }
+    if (body.status === "matched") {
+      matched.push({ filename: file.name, endpoint: body.endpoint });
+    } else if (body.status === "ambiguous") {
+      ambiguous.push({ filename: file.name, candidates: body.candidates, pending_id: body.pending_id });
+    } else {
+      unrecognized.push(file.name);
+    }
+  }
+
+  const parts = [];
+  if (matched.length) {
+    const matchedEndpoints = Array.from(new Set(matched.map((m) => m.endpoint)));
+    parts.push(`${matched.length} matched (${matchedEndpoints.map(overrideEscapeHtml).join(", ")})`);
+  } else {
+    parts.push("0 matched");
+  }
+  if (ambiguous.length) {
+    parts.push(`${ambiguous.length} needs manual resolution`);
+  }
+  if (unrecognized.length) {
+    parts.push(`${unrecognized.length} unrecognized (${unrecognized.map(overrideEscapeHtml).join(", ")})`);
+  }
+  const skipped = allFiles.length - files.length;
+  const skippedNote = skipped > 0 ? ` (${skipped} other file${skipped === 1 ? "" : "s"} skipped)` : "";
+  const kind = unrecognized.length || ambiguous.length ? "alert-warning" : "alert-success";
+  const plural = files.length === 1 ? "" : "s";
+  resultEl.innerHTML = `<div class="alert ${kind}">Imported ${files.length} file${plural}: ${parts.join(", ")}.${skippedNote}</div>`;
+
+  input.value = "";
+  loadOverrides();
+
+  ambiguousQueue = ambiguous.map((item) => ({
+    candidates: item.candidates,
+    pending_id: item.pending_id,
+    filename: item.filename,
+  }));
+  showNextAmbiguousFromQueue();
+}
+
+document.getElementById("override-folder-import-btn").addEventListener("click", importOverrideFolder);
+
+// --- API catalog ---
+
+function escapeHtml(value) {
+  const div = document.createElement("div");
+  div.textContent = value;
+  return div.innerHTML;
+}
+
+function buildUrl(path) {
+  return `https://127.0.0.1:${state.port}${path}`;
+}
+
+function buildCurl(path) {
+  return `curl -k ${buildUrl(path)}`;
+}
+
+async function copyCurl(path, button) {
+  const text = buildCurl(path);
+  const original = button.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "Copied!";
+  } catch (err) {
+    button.textContent = "Copy failed";
+  }
+  setTimeout(() => { button.textContent = original; }, 1500);
+}
+
+function renderJsonSample(data) {
+  const records = Array.isArray(data) ? data : [data];
+  if (records.length === 0) {
+    return '<div class="text-muted small">Empty response.</div>';
+  }
+  const keys = Object.keys(records[0]);
+  const shown = records.slice(0, 20);
+  let html = '<div class="table-responsive catalog-sample"><table class="table table-sm table-striped mb-0"><thead><tr>'
+    + keys.map((k) => `<th>${escapeHtml(k)}</th>`).join("")
+    + "</tr></thead><tbody>";
+  shown.forEach((record) => {
+    html += "<tr>" + keys.map((k) => `<td>${escapeHtml(String(record[k] ?? ""))}</td>`).join("") + "</tr>";
+  });
+  html += "</tbody></table></div>";
+  if (records.length > shown.length) {
+    html += `<div class="text-muted small mt-1">Showing ${shown.length} of ${records.length} records.</div>`;
+  }
+  return html;
+}
+
+// Strips any namespace prefix off an XML tag/attribute name (e.g.
+// "i:nil" -> "nil", "ns0:ClientResource" -> "ClientResource") -- conceptually
+// the same namespace-stripping app/overrides.py's Python-side detection
+// already does, kept here purely for building the Table tab's display data.
+function xmlStripNamespace(name) {
+  const idx = name.indexOf(":");
+  return idx === -1 ? name : name.slice(idx + 1);
+}
+
+// DATEV XML marks an absent field as `i:nil="true"` (the XMLSchema-instance
+// nil convention) -- checked here regardless of the exact namespace prefix
+// bound to that attribute, since it is always that same convention.
+function xmlElementIsNil(el) {
+  for (let i = 0; i < el.attributes.length; i += 1) {
+    const attr = el.attributes[i];
+    if (xmlStripNamespace(attr.name) === "nil" && attr.value === "true") {
+      return true;
+    }
+  }
+  return false;
+}
+
+function xmlElementToObject(el) {
+  const obj = {};
+  Array.from(el.children).forEach((child) => {
+    const key = xmlStripNamespace(child.tagName);
+    obj[key] = xmlElementIsNil(child) ? null : child.textContent;
+  });
+  return obj;
+}
+
+// Converts a parsed XML document into an array-of-objects, JSON-like shape
+// so the Table tab can reuse the exact same renderJsonSample() builder JSON
+// responses already use, instead of a separate XML table renderer.
+//   - Repeated root children sharing one tag (e.g. ArrayOfClientResource >
+//     ClientResource, ArrayOfClient > Client) each become one row.
+//   - Otherwise (e.g. the single-object Echo diagnostic) the root element
+//     itself becomes one row, same as renderJsonSample's own single-object
+//     fallback already does for a JSON object.
+function xmlToRecords(xmlDoc) {
+  const root = xmlDoc.documentElement;
+  const children = Array.from(root.children);
+  if (children.length > 1) {
+    const firstTag = xmlStripNamespace(children[0].tagName);
+    const allSameTag = children.every((child) => xmlStripNamespace(child.tagName) === firstTag);
+    if (allSameTag) {
+      return children.map(xmlElementToObject);
+    }
+  }
+  return [xmlElementToObject(root)];
+}
+
+// Returns array-of-objects records for the Table tab, or null when `text`
+// does not parse as XML at all (DOMParser never throws -- a failed parse
+// surfaces as a <parsererror> element instead).
+function parseXmlForTable(text) {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  const parserError = doc.getElementsByTagName("parsererror")[0];
+  if (parserError || !doc.documentElement) return null;
+  return xmlToRecords(doc);
+}
+
+async function fetchSample(path, containerId) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '<div class="text-muted small">Loading&hellip;</div>';
+  try {
+    const res = await fetch(apiUrl(path));
+    const contentType = res.headers.get("content-type") || "";
+    const isJson = contentType.includes("application/json");
+    const text = await res.text();
+
+    let tableHtml;
+    if (isJson) {
+      try {
+        tableHtml = renderJsonSample(JSON.parse(text));
+      } catch (err) {
+        tableHtml = '<div class="text-muted small">Could not parse JSON response &mdash; see the Raw tab.</div>';
+      }
+    } else {
+      const records = parseXmlForTable(text);
+      if (records) {
+        tableHtml = renderJsonSample(records);
+      } else {
+        tableHtml = '<div class="text-muted small">No tabular view for this content type &mdash; see the Raw tab.</div>';
+      }
+    }
+    const rawLang = isJson ? "json" : "xml";
+
+    // Same idx-based id scheme buildCatalogEntry uses for containerId
+    // (catalog-sample-<areaIdx>-<entryIdx>), extended with per-tab suffixes
+    // so multiple catalog entries never collide.
+    const tableTabId = `${containerId}-tab-table`;
+    const rawTabId = `${containerId}-tab-raw`;
+    const tablePaneId = `${containerId}-pane-table`;
+    const rawPaneId = `${containerId}-pane-raw`;
+    const codeId = `${containerId}-code`;
+    const tableActive = isJson;
+
+    container.innerHTML = `
+      <ul class="nav nav-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link ${tableActive ? "active" : ""}" id="${tableTabId}" data-bs-toggle="tab" data-bs-target="#${tablePaneId}" type="button" role="tab" aria-controls="${tablePaneId}" aria-selected="${tableActive}">Table</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link ${tableActive ? "" : "active"}" id="${rawTabId}" data-bs-toggle="tab" data-bs-target="#${rawPaneId}" type="button" role="tab" aria-controls="${rawPaneId}" aria-selected="${!tableActive}">Raw</button>
+        </li>
+      </ul>
+      <div class="tab-content border border-top-0 rounded-bottom p-2">
+        <div class="tab-pane fade ${tableActive ? "show active" : ""}" id="${tablePaneId}" role="tabpanel" aria-labelledby="${tableTabId}">${tableHtml}</div>
+        <div class="tab-pane fade ${tableActive ? "" : "show active"}" id="${rawPaneId}" role="tabpanel" aria-labelledby="${rawTabId}"><pre class="bg-light border-0 rounded p-2 small mb-0 catalog-sample"><code id="${codeId}" class="language-${rawLang}">${escapeHtml(text)}</code></pre></div>
+      </div>`;
+
+    const codeEl = document.getElementById(codeId);
+    if (codeEl && window.hljs) {
+      hljs.highlightElement(codeEl);
+    }
+  } catch (err) {
+    container.innerHTML = `<div class="text-danger small">Failed to fetch: ${escapeHtml(String(err))}</div>`;
+  }
+}
+
+function buildCatalogEntry(entry, idx) {
+  const sampleId = `catalog-sample-${idx}`;
+  const action = entry.example_only
+    ? '<span class="badge text-bg-secondary align-self-center">Example only</span>'
+    : `<button type="button" class="btn btn-sm btn-outline-primary" onclick="fetchSample('${entry.path}', '${sampleId}')">View sample data</button>`;
+  const note = entry.note ? `<div class="text-muted small mt-1">${escapeHtml(entry.note)}</div>` : "";
+  return `
+    <div class="border rounded p-3 mb-2">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <span class="badge text-bg-success me-2">GET</span>
+          <strong>${escapeHtml(entry.name)}</strong>
+          <div><code>${escapeHtml(entry.path)}</code></div>
+          ${note}
+        </div>
+        <div class="d-flex gap-2">
+          ${action}
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyCurl('${entry.path}', this)">Copy curl</button>
+        </div>
+      </div>
+      <div class="mt-2" id="${sampleId}"></div>
+    </div>`;
+}
+
+function renderCatalog() {
+  const areas = [];
+  const byArea = {};
+  CATALOG.forEach((entry) => {
+    if (!byArea[entry.area]) {
+      byArea[entry.area] = [];
+      areas.push(entry.area);
+    }
+    byArea[entry.area].push(entry);
+  });
+
+  const accordion = document.getElementById("catalog-accordion");
+  accordion.innerHTML = areas
+    .map((area, areaIdx) => {
+      const collapseId = `catalog-collapse-${areaIdx}`;
+      const headingId = `catalog-heading-${areaIdx}`;
+      const entriesHtml = byArea[area]
+        .map((entry) => buildCatalogEntry(entry, `${areaIdx}-${byArea[area].indexOf(entry)}`))
+        .join("");
+      const docNote = AREA_DOCS[area]
+        ? `<p class="small mb-2"><a href="${AREA_DOCS[area]}" target="_blank" rel="noopener">Official DATEV documentation for ${escapeHtml(area)} &#x2197;</a></p>`
+        : "";
+      return `
+        <div class="accordion-item">
+          <h2 class="accordion-header" id="${headingId}">
+            <button class="accordion-button ${areaIdx === 0 ? "" : "collapsed"}" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="${areaIdx === 0 ? "true" : "false"}" aria-controls="${collapseId}">
+              ${escapeHtml(area)} <span class="badge text-bg-light ms-2">${byArea[area].length}</span>
+            </button>
+          </h2>
+          <div id="${collapseId}" class="accordion-collapse collapse ${areaIdx === 0 ? "show" : ""}" aria-labelledby="${headingId}" data-bs-parent="#catalog-accordion">
+            <div class="accordion-body">${docNote}${entriesHtml}</div>
+          </div>
+        </div>`;
+    })
+    .join("");
+}
+
+// --- live request log ---
+
+const LOGS_STREAM_URL = `${API_BASE}/admin/api/logs/stream`;
+const REQUEST_LOG_MAX_ROWS = 1000;
+
+// Newest-first, kept in sync with what's actually rendered so the path/
+// unmatched-only filters can be re-applied client-side without another
+// network round trip.
+let requestLogEntries = [];
+
+function methodBadgeClass(method) {
+  switch (method) {
+    case "GET": return "text-bg-primary";
+    case "POST": return "text-bg-success";
+    case "PUT": return "text-bg-warning";
+    case "PATCH": return "text-bg-info";
+    case "DELETE": return "text-bg-danger";
+    default: return "text-bg-secondary";
+  }
+}
+
+function statusBadgeClass(status) {
+  if (status >= 500) return "text-bg-danger";
+  if (status >= 400) return "text-bg-warning";
+  if (status >= 300) return "text-bg-info";
+  if (status >= 200) return "text-bg-success";
+  return "text-bg-secondary";
+}
+
+function formatLogTime(iso) {
+  try {
+    return new Date(iso).toLocaleTimeString();
+  } catch (err) {
+    return iso;
+  }
+}
+
+// Picks a highlight.js language for a body preview from its Content-Type --
+// this mock's bodies are always JSON or XML (never both at once), same two
+// languages the API Catalog's "Raw" tab already loads.
+function hljsLangForContentType(contentType) {
+  return contentType && contentType.includes("xml") ? "language-xml" : "language-json";
+}
+
+function requestLogMatchesFilter(entry) {
+  const pathFilter = document.getElementById("request-log-filter").value.trim().toLowerCase();
+  const unmatchedOnly = document.getElementById("request-log-unmatched-only").checked;
+  if (unmatchedOnly && !entry.unmatched) return false;
+  if (pathFilter && !entry.path.toLowerCase().includes(pathFilter)) return false;
+  return true;
+}
+
+function buildLogDetailHtml(entry) {
+  const reqContentType = entry.request_headers && entry.request_headers["content-type"];
+  const reqBody = entry.request_body_preview || "(empty)";
+  const resBody = entry.response_body_preview || "(empty)";
+  return `
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="fw-semibold">Request</div>
+        <div>Matched route: <code>${escapeHtml(entry.route_path || "(none -- unmatched)")}</code></div>
+        <div>Query string: <code>${escapeHtml(entry.query_string || "(none)")}</code></div>
+        <div>Path params: <code>${escapeHtml(JSON.stringify(entry.path_params || {}))}</code></div>
+        <div>Headers: <code>${escapeHtml(JSON.stringify(entry.request_headers || {}))}</code></div>
+        <div class="mt-2 mb-1">Body preview:</div>
+        <pre class="bg-light border rounded p-2 mb-0 catalog-sample"><code class="${hljsLangForContentType(reqContentType)}">${escapeHtml(reqBody)}</code></pre>
+      </div>
+      <div class="col-md-6">
+        <div class="fw-semibold">Response</div>
+        <div>Status: <code>${entry.response_status}</code></div>
+        <div>Content-Type: <code>${escapeHtml(entry.response_content_type || "(none)")}</code></div>
+        <div>Duration: <code>${entry.duration_ms.toFixed(1)} ms</code></div>
+        <div class="mt-2 mb-1">Body preview:</div>
+        <pre class="bg-light border rounded p-2 mb-0 catalog-sample"><code class="${hljsLangForContentType(entry.response_content_type)}">${escapeHtml(resBody)}</code></pre>
+      </div>
+    </div>`;
+}
+
+// Returns [row, detailRow] -- a visible summary row and a collapsed detail
+// row toggled by clicking the summary, same "click to expand" idea the API
+// Catalog's Raw/Table tabs already use, just without Bootstrap's collapse
+// component (a plain class toggle is simpler for a two-row pair like this).
+function renderLogRow(entry) {
+  const tr = document.createElement("tr");
+  tr.style.cursor = "pointer";
+  if (entry.unmatched) {
+    tr.classList.add("table-danger");
+  }
+  const unmatchedBadge = entry.unmatched
+    ? ' <span class="badge text-bg-danger">UNMATCHED</span>'
+    : "";
+  tr.innerHTML = `
+    <td class="text-nowrap small">${escapeHtml(formatLogTime(entry.timestamp))}</td>
+    <td><span class="badge ${methodBadgeClass(entry.method)}">${escapeHtml(entry.method)}</span></td>
+    <td><code>${escapeHtml(entry.path)}</code>${unmatchedBadge}</td>
+    <td><span class="badge ${statusBadgeClass(entry.response_status)}">${entry.response_status}</span></td>
+    <td class="text-nowrap small">${entry.duration_ms.toFixed(1)} ms</td>`;
+
+  const detailRow = document.createElement("tr");
+  detailRow.className = "d-none";
+  const detailCell = document.createElement("td");
+  detailCell.colSpan = 5;
+  detailCell.className = "small";
+  detailCell.innerHTML = buildLogDetailHtml(entry);
+  detailRow.appendChild(detailCell);
+
+  tr.addEventListener("click", () => {
+    const wasHidden = detailRow.classList.contains("d-none");
+    detailRow.classList.toggle("d-none");
+    if (wasHidden && window.hljs) {
+      detailCell.querySelectorAll("code").forEach((el) => hljs.highlightElement(el));
+    }
+  });
+
+  return [tr, detailRow];
+}
+
+function renderRequestLogTable() {
+  const tbody = document.querySelector("#request-log-table tbody");
+  tbody.innerHTML = "";
+  const visible = requestLogEntries.filter(requestLogMatchesFilter);
+  visible.forEach((entry) => {
+    const [tr, detailRow] = renderLogRow(entry);
+    tbody.appendChild(tr);
+    tbody.appendChild(detailRow);
+  });
+  document.getElementById("request-log-empty").classList.toggle("d-none", visible.length > 0);
+}
+
+// Incremental path for live SSE pushes: prepend just the new row instead of
+// re-rendering the whole table, so a long test session doesn't cause
+// constant flicker/DOM churn. `renderRequestLogTable()` (full rebuild) is
+// used instead whenever the filter itself changes.
+function prependLogEntry(entry) {
+  requestLogEntries.unshift(entry);
+  if (requestLogEntries.length > REQUEST_LOG_MAX_ROWS) {
+    requestLogEntries.length = REQUEST_LOG_MAX_ROWS;
+  }
+  if (!requestLogMatchesFilter(entry)) return;
+  const tbody = document.querySelector("#request-log-table tbody");
+  const [tr, detailRow] = renderLogRow(entry);
+  const firstChild = tbody.firstChild;
+  tbody.insertBefore(detailRow, firstChild);
+  tbody.insertBefore(tr, detailRow);
+  while (tbody.children.length > REQUEST_LOG_MAX_ROWS * 2) {
+    tbody.removeChild(tbody.lastChild);
+  }
+  document.getElementById("request-log-empty").classList.add("d-none");
+}
+
+function setRequestLogStatus(text, badgeClass) {
+  const el = document.getElementById("request-log-status");
+  el.textContent = text;
+  el.className = `badge text-nowrap ${badgeClass}`;
+}
+
+// SSE (not polling): the backlog arrives as the stream's first batch of
+// messages, then live entries as they're broadcast -- one connection gives
+// this card everything it needs, so there is no separate initial fetch of
+// GET /admin/api/logs here (that endpoint exists for the fallback/
+// testability case the task calls for, not for this page).
+function connectRequestLogStream() {
+  const source = new EventSource(LOGS_STREAM_URL);
+  source.onopen = () => setRequestLogStatus("Live", "text-bg-success");
+  source.onerror = () => setRequestLogStatus("Disconnected — retrying…", "text-bg-danger");
+  source.onmessage = (event) => {
+    let entry;
+    try {
+      entry = JSON.parse(event.data);
+    } catch (err) {
+      return; // keep-alive comments never reach onmessage; be defensive anyway
+    }
+    if (requestLogEntries.some((existing) => existing.seq === entry.seq)) return;
+    prependLogEntry(entry);
+  };
+}
+
+document.getElementById("request-log-filter").addEventListener("input", renderRequestLogTable);
+document.getElementById("request-log-unmatched-only").addEventListener("change", renderRequestLogTable);
+document.getElementById("request-log-clear").addEventListener("click", () => {
+  requestLogEntries = [];
+  renderRequestLogTable();
+});
+
+// --- stored records (SQLite-backed writes, P2) ---
+//
+// Read-only: no edit/delete here, just visibility into what the new write
+// endpoints have persisted (the task calls for "simpler than the full CRUD
+// editor" the master-data/accounting cards above already have). A single
+// fetch of every resource type's rows, grouped client-side into a
+// dropdown/table pair -- proportional to a read-only admin card, no new
+// per-resource-type backend routes needed.
+
+let storedRecordsByType = {};
+
+function renderStoredRecordsTable() {
+  const type = document.getElementById("stored-records-type").value;
+  const rows = storedRecordsByType[type] || [];
+  const tbody = document.querySelector("#stored-records-table tbody");
+  tbody.innerHTML = "";
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><code>${escapeHtml(row.record_id)}</code></td>
+      <td class="text-nowrap small">${escapeHtml(row.created_at)}</td>
+      <td class="text-nowrap small">${escapeHtml(row.updated_at)}</td>
+      <td><pre class="bg-light border rounded p-2 mb-0 small" style="max-width: 32rem; white-space: pre-wrap;">${escapeHtml(JSON.stringify(row.data, null, 2))}</pre></td>`;
+    tbody.appendChild(tr);
+  });
+  document.getElementById("stored-records-empty").classList.toggle("d-none", rows.length > 0);
+}
+
+async function loadStoredRecords() {
+  const res = await fetch(STORED_RECORDS_URL);
+  const rows = await res.json();
+  storedRecordsByType = {};
+  rows.forEach((row) => {
+    if (!storedRecordsByType[row.resource_type]) storedRecordsByType[row.resource_type] = [];
+    storedRecordsByType[row.resource_type].push(row);
+  });
+
+  const select = document.getElementById("stored-records-type");
+  const previous = select.value;
+  const types = Object.keys(storedRecordsByType).sort();
+  select.innerHTML = types.length
+    ? types.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)} (${storedRecordsByType[t].length})</option>`).join("")
+    : '<option value="">(no stored records yet)</option>';
+  if (types.includes(previous)) select.value = previous;
+
+  renderStoredRecordsTable();
+}
+
+document.getElementById("stored-records-type").addEventListener("change", renderStoredRecordsTable);
+document.getElementById("stored-records-refresh").addEventListener("click", loadStoredRecords);
+
+loadSettings();
+loadMasterData();
+loadAccounting();
+loadOverrides();
+renderCatalog();
+connectRequestLogStream();
+loadStoredRecords();
+</script>
+</body>
+</html>
