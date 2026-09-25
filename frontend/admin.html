@@ -65,32 +65,109 @@
 </div>
 
 <div class="card mb-4">
-  <div class="card-header">Backend target</div>
+  <div class="card-header">Backend target &amp; DATEV connection settings</div>
   <div class="card-body">
-    <div class="row gy-2 gx-3 align-items-end">
-      <div class="col-auto" style="min-width: 22rem;">
-        <label for="api-base-input" class="form-label">API base URL</label>
-        <input id="api-base-input" type="text" class="form-control"
-               placeholder="Same origin as this page (default)">
+    <form id="connection-settings-form" class="row gy-2 gx-3 align-items-end">
+      <div class="col-auto">
+        <label for="conn-protocol" class="form-label">Protocol</label>
+        <select id="conn-protocol" class="form-select">
+          <option value="https">https</option>
+          <option value="http">http</option>
+        </select>
+      </div>
+      <div class="col-auto" style="min-width: 14rem;">
+        <label for="conn-hostname" class="form-label">Hostname / IP</label>
+        <input id="conn-hostname" type="text" class="form-control"
+               placeholder="Empty = this page's own origin (default)">
       </div>
       <div class="col-auto">
-        <button id="api-base-save" type="button" class="btn btn-primary">Save &amp; reload</button>
+        <label for="conn-port" class="form-label">Port</label>
+        <input id="conn-port" type="number" min="1" max="65535" class="form-control" style="width: 8rem;">
+      </div>
+      <div class="col-auto" style="min-width: 12rem;">
+        <label for="conn-prefix" class="form-label">
+          URL path prefix
+          <button type="button" id="conn-prefix-help" class="btn btn-sm btn-outline-secondary py-0 px-1"
+                  data-bs-toggle="popover" data-bs-trigger="focus" data-bs-html="true"
+                  data-bs-title="URL path prefix &mdash; worked example"
+                  data-bs-content="If your DATEV target serves the API behind a path prefix, e.g. &lt;code&gt;https://192.168.1.10:8443/my-prefix/datev/api/master-data/v1/clients&lt;/code&gt;, put &lt;code&gt;my-prefix&lt;/code&gt; here (no leading/trailing slashes). Leave empty when the API is served directly at &lt;code&gt;/datev/api/...&lt;/code&gt;, which is how this project's own two mock backends work."
+                  aria-label="Help: URL path prefix worked example">?</button>
+        </label>
+        <input id="conn-prefix" type="text" class="form-control" placeholder="optional, e.g. my-prefix">
+      </div>
+      <div class="col-auto">
+        <label for="conn-auth-type" class="form-label">Auth type</label>
+        <select id="conn-auth-type" class="form-select">
+          <option value="none">None</option>
+          <option value="basic">Basic</option>
+          <option value="ntlm">NTLM</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label for="conn-connect-timeout" class="form-label">Connect timeout (sec)</label>
+        <input id="conn-connect-timeout" type="number" min="1" class="form-control" style="width: 9rem;">
+      </div>
+      <div class="col-auto">
+        <label for="conn-read-timeout" class="form-label">Read timeout (sec)</label>
+        <input id="conn-read-timeout" type="number" min="1" class="form-control" style="width: 9rem;">
+      </div>
+    </form>
+
+    <div id="conn-auth-fields" class="row gy-2 gx-3 align-items-end mt-1 d-none">
+      <div class="col-auto">
+        <label for="conn-username" class="form-label">Username</label>
+        <input id="conn-username" type="text" class="form-control">
+      </div>
+      <div class="col-auto">
+        <label for="conn-password" class="form-label">Password</label>
+        <input id="conn-password" type="password" class="form-control">
       </div>
     </div>
+    <div id="conn-ntlm-warning" class="alert alert-warning mt-2 d-none" role="alert">
+      <strong>NTLM is UI-only.</strong> A real NTLM authentication handshake
+      cannot be completed from browser JavaScript with an arbitrary
+      username/password &mdash; there is no <code>fetch()</code>/
+      <code>XMLHttpRequest</code> API for it (browsers only do NTLM
+      transparently via Integrated Windows Authentication, using the OS's
+      own logged-in identity). This option exists for future/manual use
+      only; selecting it does <strong>not</strong> attempt any NTLM
+      handshake, and no NTLM header is added to requests.
+    </div>
+
+    <div class="row mt-2">
+      <div class="col-auto">
+        <button id="conn-settings-save" type="button" class="btn btn-primary">Save &amp; reload</button>
+      </div>
+    </div>
+
     <div class="small text-muted mt-2">
       This page's own JavaScript always makes every API call (settings,
       master-data/accounting, overrides, stored records, the live request
-      log, and everything in the catalog below) against this base URL
-      instead of assuming it's hosted next to its backend. Leave empty to
-      use this page's own origin (today's default behavior, e.g. this
-      FastAPI mock). Point it at another local instance
-      (e.g. <code>https://127.0.0.1:58452</code> for the FastAPI mock or
-      <code>https://127.0.0.1:58553</code> for the Spring Boot mock, or
-      whatever port that backend is running on), the real DATEV API, a
-      DATEV test endpoint, or any other DATEV-compatible mock &mdash; no
-      code changes needed, only that target's own auth/TLS/CORS posture
-      applies. Stored per-browser (not synced to the server); saving
-      reloads the page so every card re-fetches from the new target.
+      log, and everything in the catalog below) against the base URL
+      composed from Protocol + Hostname + Port + URL path prefix above,
+      instead of assuming it's hosted next to its backend. Leave
+      <strong>Hostname/IP</strong> empty to use this page's own origin
+      (today's default behavior, e.g. this FastAPI mock) &mdash; every other
+      field is then ignored for URL composition. Point it at another local
+      instance (e.g. hostname <code>127.0.0.1</code>, port <code>58452</code>
+      for the FastAPI mock, or port <code>58553</code> for the Spring Boot
+      mock), the real DATEV API, a DATEV test endpoint, or any other
+      DATEV-compatible mock &mdash; no code changes needed, only that
+      target's own auth/TLS/CORS posture applies (a real DATEV instance must
+      itself send CORS headers allowing this page's origin, or the browser
+      will block the response no matter how these settings are configured).
+      <strong>Basic auth</strong> is sent as a real
+      <code>Authorization: Basic ...</code> header on every request this
+      page makes, <em>except</em> the live request-log stream below:
+      browsers' <code>EventSource</code> API cannot set custom headers at
+      all (a browser-platform limitation, not a bug here), so that one
+      connection only works unauthenticated or same-origin regardless of
+      this setting. <strong>Connect/read timeouts</strong> are an honest
+      approximation, not a precise low-level TCP-connect timeout &mdash; see
+      the code comment above <code>fetchWithTimeouts()</code> for exactly
+      what they can and can't measure from browser JS. Stored per-browser
+      (not synced to the server); saving reloads the page so every card
+      re-fetches from the new target.
     </div>
   </div>
 </div>
@@ -329,19 +406,191 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/languages/xml.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.2/languages/json.min.js"></script>
 <script>
-// API base URL this page targets for every fetch/EventSource call below --
-// per-browser (localStorage), empty means "this page's own origin" (today's
-// default, zero-regression behavior). See the "Backend target" card.
-function loadApiBase() {
+// Structured DATEV connection settings this page targets for every
+// fetch/EventSource call below -- per-browser (localStorage). Leaving
+// Hostname/IP empty means "this page's own origin" (today's default,
+// zero-regression behavior). See the "Backend target" card. (F2 of
+// odd/tasks/datev-mock-standalone-frontend.md; replaces the single
+// free-text "API base URL" field from F1/SB9.)
+const CONNECTION_SETTINGS_KEY = "datevMockConnectionSettings";
+// Pre-F2 sessions stored a single free-text base URL under this legacy key
+// (e.g. "https://127.0.0.1:58553"). Migrated once, best-effort, below so
+// existing per-browser settings for the two people already using this page
+// against this project's own two backends aren't silently reset to
+// same-origin.
+const LEGACY_API_BASE_KEY = "datevMockApiBase";
+
+function defaultConnectionSettings() {
+  return {
+    protocol: "https",
+    hostname: "",
+    port: "",
+    prefix: "",
+    authType: "none",
+    username: "",
+    password: "",
+    connectTimeoutSec: 10,
+    readTimeoutSec: 30,
+  };
+}
+
+function loadConnectionSettings() {
+  const defaults = defaultConnectionSettings();
   try {
-    return localStorage.getItem("datevMockApiBase") || "";
+    const raw = localStorage.getItem(CONNECTION_SETTINGS_KEY);
+    if (raw) {
+      return Object.assign(defaults, JSON.parse(raw));
+    }
+    const legacy = localStorage.getItem(LEGACY_API_BASE_KEY);
+    if (legacy) {
+      try {
+        const url = new URL(legacy);
+        return Object.assign(defaults, {
+          protocol: url.protocol.replace(":", "") || defaults.protocol,
+          hostname: url.hostname,
+          port: url.port,
+          prefix: url.pathname.replace(/^\/+|\/+$/g, ""),
+        });
+      } catch (err) {
+        // legacy value wasn't a valid absolute URL (e.g. already empty) --
+        // fall through to defaults, same as today's empty-base behavior.
+      }
+    }
   } catch (err) {
-    return "";
+    // localStorage unavailable (private mode, blocked site data, ...)
+  }
+  return defaults;
+}
+
+function saveConnectionSettings(settings) {
+  try {
+    localStorage.setItem(CONNECTION_SETTINGS_KEY, JSON.stringify(settings));
+  } catch (err) {
+    // localStorage unavailable -- nothing to persist, caller still reloads.
   }
 }
-const API_BASE = loadApiBase().replace(/[/]$/, "");
+
+// Composes the same kind of base-URL string the old single free-text field
+// held (e.g. "https://127.0.0.1:58553"), so SETTINGS_URL/MASTER_DATA_URL/etc.
+// below keep working unchanged. Empty hostname reproduces today's exact
+// default behavior: same origin, empty base -- not a regression.
+function composeApiBase(settings) {
+  if (!settings.hostname) return "";
+  const proto = settings.protocol || "https";
+  const port = settings.port ? `:${settings.port}` : "";
+  const prefix = settings.prefix
+    ? `/${String(settings.prefix).replace(/^\/+|\/+$/g, "")}`
+    : "";
+  return `${proto}://${settings.hostname}${port}${prefix}`;
+}
+
+const CONNECTION_SETTINGS = loadConnectionSettings();
+const API_BASE = composeApiBase(CONNECTION_SETTINGS).replace(/[/]$/, "");
 function apiUrl(path) {
   return API_BASE + path;
+}
+
+// Encodes "user:pass" as base64 for a real `Authorization: Basic ...`
+// header, safely handling non-Latin1 usernames/passwords (btoa() alone only
+// accepts Latin1 code points).
+function basicAuthHeaderValue(username, password) {
+  const raw = `${username}:${password || ""}`;
+  try {
+    return `Basic ${btoa(unescape(encodeURIComponent(raw)))}`;
+  } catch (err) {
+    return `Basic ${btoa(raw)}`;
+  }
+}
+
+// NTLM is UI-only (see the "Backend target" card's own inline warning) --
+// no header is ever added for it and no handshake is attempted; only Basic
+// actually authenticates outbound requests.
+function buildAuthHeaders(settings) {
+  if (settings.authType === "basic" && settings.username) {
+    return { Authorization: basicAuthHeaderValue(settings.username, settings.password) };
+  }
+  return {};
+}
+
+// Browser fetch() has no native equivalent of a server-side HTTP client's
+// separate "connect timeout" vs "read timeout" -- this is an honest
+// approximation, not a real TCP-level connect timeout, and is documented as
+// such rather than presented as something it isn't:
+//   - One AbortController is armed with the connect-timeout value from the
+//     moment fetch() is called until the Response object resolves (i.e.
+//     until response headers arrive). DNS/TCP/TLS setup time and "waiting
+//     for the first response byte" both count against this single timer --
+//     fetch() gives browser JS no way to observe the TCP handshake alone.
+//   - Once headers arrive, that timer is cancelled and a second read-timeout
+//     timer is armed, then reset every time a chunk is actually read from
+//     the response body's ReadableStream; if any single gap between chunks
+//     exceeds the read-timeout, the request is aborted.
+// Every fetch() call in this page is routed through this helper (via the
+// appFetch() wrapper right below) instead of duplicating this logic per
+// call site.
+async function fetchWithTimeouts(url, options, connectTimeoutSec, readTimeoutSec) {
+  const authHeaders = buildAuthHeaders(CONNECTION_SETTINGS);
+  const controller = new AbortController();
+  const mergedOptions = Object.assign({}, options, {
+    headers: Object.assign({}, options && options.headers, authHeaders),
+    signal: controller.signal,
+  });
+
+  const connectMs = (Number(connectTimeoutSec) || 10) * 1000;
+  const readMs = (Number(readTimeoutSec) || 30) * 1000;
+
+  let timer = setTimeout(() => controller.abort(), connectMs);
+  let response;
+  try {
+    response = await fetch(url, mergedOptions);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!response.body || typeof response.body.getReader !== "function") {
+    return response;
+  }
+  const reader = response.body.getReader();
+  timer = setTimeout(() => controller.abort(), readMs);
+  const stream = new ReadableStream({
+    async pull(streamController) {
+      try {
+        const { done, value } = await reader.read();
+        clearTimeout(timer);
+        if (done) {
+          streamController.close();
+          return;
+        }
+        timer = setTimeout(() => controller.abort(), readMs);
+        streamController.enqueue(value);
+      } catch (err) {
+        clearTimeout(timer);
+        streamController.error(err);
+      }
+    },
+    cancel(reason) {
+      clearTimeout(timer);
+      return reader.cancel(reason);
+    },
+  });
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
+// Thin convenience wrapper so every call site below reads "appFetch(...)"
+// instead of repeating CONNECTION_SETTINGS.connectTimeoutSec/readTimeoutSec
+// at every call -- still goes through fetchWithTimeouts() every time, so
+// auth headers and both timeouts are applied uniformly everywhere.
+function appFetch(url, options) {
+  return fetchWithTimeouts(
+    url,
+    options,
+    CONNECTION_SETTINGS.connectTimeoutSec,
+    CONNECTION_SETTINGS.readTimeoutSec
+  );
 }
 
 const SETTINGS_URL = `${API_BASE}/admin/api/settings`;
@@ -386,7 +635,7 @@ function showNote(message, kind) {
 }
 
 async function loadSettings() {
-  const res = await fetch(SETTINGS_URL);
+  const res = await appFetch(SETTINGS_URL);
   const data = await res.json();
   document.getElementById("settings-port").value = data.port;
   document.getElementById("settings-format").value = data.default_accounting_format;
@@ -399,7 +648,7 @@ async function saveSettings() {
   const port = parseInt(document.getElementById("settings-port").value, 10);
   const default_accounting_format = document.getElementById("settings-format").value;
   const datev_api_version = document.getElementById("settings-api-version").value;
-  const res = await fetch(SETTINGS_URL, {
+  const res = await appFetch(SETTINGS_URL, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ port, default_accounting_format, datev_api_version }),
@@ -430,7 +679,7 @@ function renderMasterDataRow(record) {
   tr.querySelector('[data-action="edit"]').addEventListener("click", async () => {
     const name = prompt("New name?", record.Name);
     if (name === null) return;
-    await fetch(`${MASTER_DATA_URL}/${record.Id}`, {
+    await appFetch(`${MASTER_DATA_URL}/${record.Id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ Name: name }),
@@ -438,14 +687,14 @@ function renderMasterDataRow(record) {
     loadMasterData();
   });
   tr.querySelector('[data-action="delete"]').addEventListener("click", async () => {
-    await fetch(`${MASTER_DATA_URL}/${record.Id}`, { method: "DELETE" });
+    await appFetch(`${MASTER_DATA_URL}/${record.Id}`, { method: "DELETE" });
     loadMasterData();
   });
   return tr;
 }
 
 async function loadMasterData() {
-  const res = await fetch(MASTER_DATA_URL);
+  const res = await appFetch(MASTER_DATA_URL);
   const records = await res.json();
   masterDataRecords = records;
   const tbody = document.querySelector("#master-data-table tbody");
@@ -466,7 +715,7 @@ function renderAccountingRow(record) {
   tr.querySelector('[data-action="edit"]').addEventListener("click", async () => {
     const name = prompt("New name?", record.Name);
     if (name === null) return;
-    await fetch(`${ACCOUNTING_URL}/${record.Id}`, {
+    await appFetch(`${ACCOUNTING_URL}/${record.Id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ Name: name }),
@@ -474,14 +723,14 @@ function renderAccountingRow(record) {
     loadAccounting();
   });
   tr.querySelector('[data-action="delete"]').addEventListener("click", async () => {
-    await fetch(`${ACCOUNTING_URL}/${record.Id}`, { method: "DELETE" });
+    await appFetch(`${ACCOUNTING_URL}/${record.Id}`, { method: "DELETE" });
     loadAccounting();
   });
   return tr;
 }
 
 async function loadAccounting() {
-  const res = await fetch(ACCOUNTING_URL);
+  const res = await appFetch(ACCOUNTING_URL);
   const records = await res.json();
   accountingRecords = records;
   const tbody = document.querySelector("#accounting-table tbody");
@@ -491,19 +740,42 @@ async function loadAccounting() {
 
 document.getElementById("settings-save").addEventListener("click", saveSettings);
 
-document.getElementById("api-base-input").value = API_BASE;
-document.getElementById("api-base-save").addEventListener("click", () => {
-  const value = document.getElementById("api-base-input").value.trim().replace(/[/]$/, "");
-  try {
-    if (value) {
-      localStorage.setItem("datevMockApiBase", value);
-    } else {
-      localStorage.removeItem("datevMockApiBase");
-    }
-  } catch (err) {
-    // localStorage unavailable (private mode, blocked site data, ...) --
-    // nothing to persist, but don't block the reload below.
-  }
+document.getElementById("conn-protocol").value = CONNECTION_SETTINGS.protocol;
+document.getElementById("conn-hostname").value = CONNECTION_SETTINGS.hostname;
+document.getElementById("conn-port").value = CONNECTION_SETTINGS.port;
+document.getElementById("conn-prefix").value = CONNECTION_SETTINGS.prefix;
+document.getElementById("conn-auth-type").value = CONNECTION_SETTINGS.authType;
+document.getElementById("conn-username").value = CONNECTION_SETTINGS.username;
+document.getElementById("conn-password").value = CONNECTION_SETTINGS.password;
+document.getElementById("conn-connect-timeout").value = CONNECTION_SETTINGS.connectTimeoutSec;
+document.getElementById("conn-read-timeout").value = CONNECTION_SETTINGS.readTimeoutSec;
+
+// Bootstrap 5 popovers need explicit opt-in per element (no page-wide
+// auto-init) -- this is the page's only help affordance, used for the URL
+// path prefix field's worked example.
+new bootstrap.Popover(document.getElementById("conn-prefix-help"));
+
+function updateAuthFieldsVisibility() {
+  const authType = document.getElementById("conn-auth-type").value;
+  document.getElementById("conn-auth-fields").classList.toggle("d-none", authType === "none");
+  document.getElementById("conn-ntlm-warning").classList.toggle("d-none", authType !== "ntlm");
+}
+document.getElementById("conn-auth-type").addEventListener("change", updateAuthFieldsVisibility);
+updateAuthFieldsVisibility();
+
+document.getElementById("conn-settings-save").addEventListener("click", () => {
+  const settings = {
+    protocol: document.getElementById("conn-protocol").value,
+    hostname: document.getElementById("conn-hostname").value.trim(),
+    port: document.getElementById("conn-port").value.trim(),
+    prefix: document.getElementById("conn-prefix").value.trim(),
+    authType: document.getElementById("conn-auth-type").value,
+    username: document.getElementById("conn-username").value,
+    password: document.getElementById("conn-password").value,
+    connectTimeoutSec: parseInt(document.getElementById("conn-connect-timeout").value, 10) || 10,
+    readTimeoutSec: parseInt(document.getElementById("conn-read-timeout").value, 10) || 30,
+  };
+  saveConnectionSettings(settings);
   location.reload();
 });
 
@@ -512,7 +784,7 @@ document.getElementById("md-add").addEventListener("click", async () => {
   const Number = parseInt(document.getElementById("md-number").value, 10) || 0;
   const Status = document.getElementById("md-status").value;
   const Type = document.getElementById("md-type").value;
-  await fetch(MASTER_DATA_URL, {
+  await appFetch(MASTER_DATA_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ Name, Number, Status, Type }),
@@ -523,7 +795,7 @@ document.getElementById("md-add").addEventListener("click", async () => {
 document.getElementById("ac-add").addEventListener("click", async () => {
   const Name = document.getElementById("ac-name").value;
   const Number = parseInt(document.getElementById("ac-number").value, 10) || 0;
-  await fetch(ACCOUNTING_URL, {
+  await appFetch(ACCOUNTING_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ Name, Number }),
@@ -532,7 +804,7 @@ document.getElementById("ac-add").addEventListener("click", async () => {
 });
 
 document.getElementById("reset-btn").addEventListener("click", async () => {
-  await fetch(RESET_URL, { method: "POST" });
+  await appFetch(RESET_URL, { method: "POST" });
   loadMasterData();
   loadAccounting();
 });
@@ -695,7 +967,7 @@ async function importCsvRows(file, postUrl, buildFields) {
   for (const row of rows) {
     const fields = buildFields(row);
     try {
-      const res = await fetch(postUrl, {
+      const res = await appFetch(postUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(fields),
@@ -806,7 +1078,7 @@ function renderOverrideRow(key, meta) {
       <button class="btn btn-sm btn-outline-danger" data-action="delete">Delete</button>
     </td>`;
   tr.querySelector('[data-action="toggle"]').addEventListener("change", async (ev) => {
-    await fetch(`${OVERRIDES_URL}/${encodeURIComponent(key)}`, {
+    await appFetch(`${OVERRIDES_URL}/${encodeURIComponent(key)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled: ev.target.checked }),
@@ -814,14 +1086,14 @@ function renderOverrideRow(key, meta) {
     loadOverrides();
   });
   tr.querySelector('[data-action="delete"]').addEventListener("click", async () => {
-    await fetch(`${OVERRIDES_URL}/${encodeURIComponent(key)}`, { method: "DELETE" });
+    await appFetch(`${OVERRIDES_URL}/${encodeURIComponent(key)}`, { method: "DELETE" });
     loadOverrides();
   });
   return tr;
 }
 
 async function loadOverrides() {
-  const res = await fetch(OVERRIDES_URL);
+  const res = await appFetch(OVERRIDES_URL);
   const data = await res.json();
   const tbody = document.querySelector("#overrides-table tbody");
   const empty = document.getElementById("overrides-empty");
@@ -862,7 +1134,7 @@ function renderAmbiguousChoiceForm(candidates, pendingId, filename, onResolved) 
   document.getElementById("override-resolve-btn").addEventListener("click", async () => {
     const selected = document.querySelector('input[name="override-candidate"]:checked');
     if (!selected) return;
-    const res = await fetch(OVERRIDES_RESOLVE_URL, {
+    const res = await appFetch(OVERRIDES_RESOLVE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pending_id: pendingId, endpoint: selected.value }),
@@ -883,7 +1155,7 @@ function renderAmbiguousChoiceForm(candidates, pendingId, filename, onResolved) 
 async function postOverrideFile(file) {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(OVERRIDES_URL, { method: "POST", body: formData });
+  const res = await appFetch(OVERRIDES_URL, { method: "POST", body: formData });
   return res.json();
 }
 
@@ -1116,7 +1388,7 @@ async function fetchSample(path, containerId) {
   const container = document.getElementById(containerId);
   container.innerHTML = '<div class="text-muted small">Loading&hellip;</div>';
   try {
-    const res = await fetch(apiUrl(path));
+    const res = await appFetch(apiUrl(path));
     const contentType = res.headers.get("content-type") || "";
     const isJson = contentType.includes("application/json");
     const text = await res.text();
@@ -1393,6 +1665,11 @@ function setRequestLogStatus(text, badgeClass) {
 // this card everything it needs, so there is no separate initial fetch of
 // GET /admin/api/logs here (that endpoint exists for the fallback/
 // testability case the task calls for, not for this page).
+// NOTE (F2): unlike every other call in this page, this one is NOT routed
+// through appFetch()/fetchWithTimeouts() -- the browser EventSource API is
+// not fetch()-based and cannot set custom request headers at all, so a
+// configured Basic-auth header can never reach this connection. It only
+// works against an unauthenticated or same-origin target.
 function connectRequestLogStream() {
   const source = new EventSource(LOGS_STREAM_URL);
   source.onopen = () => setRequestLogStatus("Live", "text-bg-success");
@@ -1445,7 +1722,7 @@ function renderStoredRecordsTable() {
 }
 
 async function loadStoredRecords() {
-  const res = await fetch(STORED_RECORDS_URL);
+  const res = await appFetch(STORED_RECORDS_URL);
   const rows = await res.json();
   storedRecordsByType = {};
   rows.forEach((row) => {

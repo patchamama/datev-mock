@@ -87,7 +87,7 @@ was asked about in this session before implementation started.
   without FastAPI running at all (a plain static file, or a tiny static
   server/script), while FastAPI (and optionally Java) can keep serving the
   same source so nothing regresses for existing users.
-- [ ] **F2 — DATEV target connection settings UI**: Auth type (Basic/NTLM),
+- [x] **F2 — DATEV target connection settings UI**: Auth type (Basic/NTLM),
   protocol (http/https), hostname/IP, port, URL path prefix (with a help
   button showing a worked example), HTTP connect timeout (sec), HTTP read
   timeout (sec) — persisted per-browser alongside today's API-base setting,
@@ -223,6 +223,131 @@ epic, per the user's own established checkpoint-rhythm preference.
   `frontend/admin.html` (self-contained static page with baked-in
   `CATALOG`/`OVERRIDE_ENDPOINT_PATHS` and its own `NOTE` comment).
 - **Delivery boundary:** One work-unit commit for F1; not committed by the
+  implementer per explicit instruction — left for the user's own review and
+  commit.
+
+### F2 — DATEV target connection settings UI
+
+- **Scope:** Replaced the single free-text "API base URL" field in
+  `frontend/admin.html`'s "Backend target" card with structured connection
+  settings — Protocol (http/https), Hostname/IP, Port, URL path prefix (with
+  a help button), Auth type (None/Basic/NTLM), username/password, and
+  separate connect/read timeout fields (sec) — all persisted per-browser in
+  `localStorage` and actually applied to every outbound call, not just
+  stored. Only `frontend/admin.html` was touched, per instruction;
+  `app/routers/admin.py`'s `CATALOG`/`OVERRIDE_ENDPOINT_PATHS` were not
+  touched since this epic doesn't touch catalog data.
+- **URL composition, zero-regression default:** new `composeApiBase(settings)`
+  builds `${protocol}://${hostname}${:port}${/prefix}` and returns `""`
+  (empty base URL) whenever `hostname` is empty — the exact same
+  same-origin, empty-`API_BASE` behavior the page had before this epic. The
+  new `CONNECTION_SETTINGS`/`API_BASE` constants feed the same
+  `SETTINGS_URL`/`MASTER_DATA_URL`/etc. constants unchanged, so nothing
+  downstream needed touching.
+- **Backward-compat migration (found necessary, not just nice-to-have):** the
+  two existing users of this page may already have a custom base URL saved
+  under the old `datevMockApiBase` key (e.g. pointing at the Spring Boot mock
+  on `:58553`). Silently ignoring it on first load after this change would
+  have been a real regression (their calls would suddenly go to same-origin
+  instead of their configured backend). `loadConnectionSettings()` therefore
+  does a one-time, best-effort migration: if the new
+  `datevMockConnectionSettings` key is absent but the legacy key holds a
+  parseable absolute URL, its protocol/hostname/port/path are decomposed
+  into the new structured fields (verified round-trip: `composeApiBase()` of
+  the migrated fields reproduces the exact original URL — see test below).
+- **Auth — Basic is real, NTLM is UI-only (per the resolved architecture
+  decision):** `buildAuthHeaders()` adds a genuine
+  `Authorization: Basic <base64(user:pass)>` header (UTF-8-safe via the
+  `encodeURIComponent`/`unescape` trick, since plain `btoa()` only accepts
+  Latin1) only when `authType === "basic"` and a username is set. For
+  `authType === "ntlm"`, **no header is ever added and no handshake is
+  attempted** — selecting NTLM only shows the same username/password fields
+  for UI symmetry plus a persistent inline `alert-warning` (not a tooltip)
+  stating plainly that browser JS cannot complete a real NTLM
+  challenge/response handshake with an arbitrary credential (no
+  `fetch()`/`XMLHttpRequest` API for it; browsers only do NTLM transparently
+  via Integrated Windows Authentication using the OS's own logged-in
+  identity) and that this option exists for future/manual use only.
+- **SSE / `EventSource` cannot carry Basic auth (documented, not silently
+  broken):** every `fetch()` call in the page (19 call sites — settings,
+  master-data/accounting CRUD, reset, stored records, overrides + CSV
+  import, catalog samples) is routed through a new `appFetch()` →
+  `fetchWithTimeouts()` pair that injects the auth header and applies both
+  timeouts. `connectRequestLogStream()`'s `new EventSource(LOGS_STREAM_URL)`
+  is the one exception, called out explicitly in both a code comment above
+  it and the card's own help text: the browser `EventSource` API has no
+  mechanism to set custom request headers at all, so a configured Basic-auth
+  header can never reach the live request-log stream — it only works
+  unauthenticated or same-origin, a real browser-platform limitation, not
+  something fixable in this page's JS.
+- **Connect/read timeout approximation — honest, not exact (documented
+  in-code):** browser `fetch()` has no native distinction between "time to
+  establish the connection" and "time to read the response body". The
+  shared `fetchWithTimeouts(url, options, connectTimeoutSec, readTimeoutSec)`
+  helper approximates it with one `AbortController`: one timer, armed for
+  `connectTimeoutSec`, covers everything from calling `fetch()` until the
+  `Response` resolves (i.e. until headers arrive) — this necessarily also
+  covers "waiting for the first response byte", since fetch() cannot expose
+  the raw TCP handshake to JS in isolation. Once headers arrive, that timer
+  is cancelled and a second `readTimeoutSec` timer is armed via
+  `response.body.getReader()`, reset on every chunk actually read from the
+  stream, and aborts on any single inter-chunk gap exceeding the limit. A
+  multi-paragraph code comment directly above `fetchWithTimeouts()` states
+  this is an approximation, not a precise low-level TCP-connect timeout, and
+  explains exactly what it can/can't measure — per instruction, this was not
+  silently presented as more precise than it is. Every call site was routed
+  through it via a thin `appFetch(url, options)` wrapper (not per-call-site
+  duplicated timeout logic) that supplies `CONNECTION_SETTINGS.connectTimeoutSec`/
+  `readTimeoutSec` from the persisted settings.
+- **Help affordance for URL path prefix:** no pre-existing help/info UI
+  pattern was found in the page (`grep`'d for `popover`/`tooltip`/`bi-question`/
+  modal patterns — none), so a small Bootstrap 5 popover (`data-bs-toggle="popover"`,
+  explicit `new bootstrap.Popover(...)` init, since Bootstrap 5 requires
+  opt-in per element) was used, consistent with the Bootstrap 5 components
+  already used everywhere else on the page. Its content is a concrete worked
+  example in English (matching the rest of the page's UI copy, confirmed by
+  reading the existing "Backend target"/"Settings" card text before writing
+  new copy — not Spanish, despite the source instruction's Spanish example
+  text, to stay consistent with the surrounding page).
+- **Verification, given the confirmed no-browser-automation constraint for
+  this environment (Chrome extension tools cannot reach a locally-bound
+  port here, per F1/F3's own session notes):**
+  1. Careful direct source read-through of every changed section (HTML card
+     markup, the JS settings/compose/auth/timeout helpers, and all 19
+     rewritten call sites) for correctness.
+  2. Served `frontend/admin.html` with `python -m http.server` from
+     `frontend/` and fetched it with `curl` (`HTTP 200`, 79,153 bytes):
+     confirmed via script — starts with `<!DOCTYPE html>`, ends with
+     `</html>`, zero `__CATALOG_JSON__`/`__OVERRIDE_PATHS_JSON__` leftovers,
+     balanced `<script>`/`</script>` (5/5) and `<div>`/`</div>` (145/145)
+     tags, no `api-base-input` remnants, new `conn-prefix-help`/
+     `fetchWithTimeouts` markers present.
+  3. Extracted the page's own inline `<script>` block (58,234 chars) from
+     the served output and ran `node --check` on it — exit code 0, proving
+     the entire script is syntactically valid JavaScript, not just
+     brace/paren-balanced.
+  4. Wrote a standalone Node test
+     (outside any DOM, per the task's own suggestion) covering exactly the
+     pure-logic pieces: `composeApiBase()` (empty-default case, host+port,
+     path-prefix slash-stripping, http-without-port), the legacy
+     `datevMockApiBase` → structured-fields migration (round-trips to the
+     identical original URL), `basicAuthHeaderValue()` (a known
+     `admin:secret` → `YWRtaW46c2VjcmV0` base64 vector, empty-password case,
+     and a UTF-8 non-Latin1 credential round-trip that would throw with
+     plain `btoa()` alone), and `buildAuthHeaders()` (none/ntlm never add a
+     header, basic does, basic-with-empty-username doesn't). All 16
+     assertions passed.
+  5. `.venv\Scripts\python -m pytest tests/ -q` — **375 passed**, identical
+     to F1's own baseline; confirms no accidental Python-side regression
+     (this epic touched no `.py` file — `git status --porcelain` after the
+     change shows only `frontend/admin.html` modified).
+- **Files touched:** `frontend/admin.html` only (per instruction) — the
+  "Backend target" card markup, the connection-settings load/save/compose/
+  auth/timeout JS helpers, the wiring for the new form fields (incl. the
+  NTLM warning and auth-fields show/hide), one comment added above
+  `connectRequestLogStream()`, and all 19 `fetch()` call sites now routed
+  through `appFetch()`.
+- **Delivery boundary:** One work-unit commit for F2; not committed by the
   implementer per explicit instruction — left for the user's own review and
   commit.
 
