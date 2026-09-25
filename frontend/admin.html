@@ -201,6 +201,43 @@
   </div>
 </div>
 
+<!-- F7 (odd/tasks/datev-mock-standalone-frontend.md): shown only when this
+     load looks like the GH-Pages-hosted .../app/ copy (see
+     isGhPagesAppLoad()/initStaticDemoAccessPanel() in the script below) --
+     hidden by default so a real live-backend load stays uncluttered. -->
+<div class="card mb-4 d-none" id="static-demo-access-card">
+  <div class="card-header">External access parameters (static demo)</div>
+  <div class="card-body">
+    <p class="text-muted small mb-2">
+      This page looks like the GH-Pages-hosted copy of this standalone
+      frontend, which has no backend of its own to call (the connection
+      settings above will therefore 404 if left pointed at this page's own
+      origin). Its sibling static demo, published alongside it, serves a
+      fixed set of pre-generated DATEV-shaped resources as plain
+      <strong>read-only files</strong> &mdash; a lightweight data source
+      usable for testing external tools against, <strong>not a live/dynamic
+      API</strong>.
+    </p>
+    <dl class="row small mb-2">
+      <dt class="col-sm-3 col-lg-2">Base URL</dt>
+      <dd class="col-sm-9 col-lg-10"><code id="static-demo-base-url"></code></dd>
+      <dt class="col-sm-3 col-lg-2">Path convention</dt>
+      <dd class="col-sm-9 col-lg-10">
+        <code>data/&lt;mirrored-api-path&gt;.json</code> or
+        <code>data/&lt;mirrored-api-path&gt;.xml</code> &mdash; separate
+        static files, no <code>Accept</code>-header content negotiation
+        (same documented limitation as the static demo page itself).
+      </dd>
+    </dl>
+    <div id="static-demo-examples-loading" class="text-muted small">Loading example resources&hellip;</div>
+    <div id="static-demo-examples-error" class="alert alert-warning d-none small mb-0"></div>
+    <table class="table table-sm table-striped d-none" id="static-demo-examples-table">
+      <thead class="table-light"><tr><th>Resource</th><th>JSON</th><th>XML</th></tr></thead>
+      <tbody id="static-demo-examples-body"></tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card mb-4">
   <div class="card-header d-flex justify-content-between align-items-start gap-2">
     <div>
@@ -559,6 +596,21 @@ function composeApiBase(settings) {
   return `${proto}://${settings.hostname}${port}${prefix}`;
 }
 
+// F7 (odd/tasks/datev-mock-standalone-frontend.md): true when this page's
+// own path plausibly looks like the GH-Pages-hosted .../app/ copy
+// (frontend/admin.html is published as .../datev-mock/app/index.html, see
+// .github/workflows/gh-pages.yml's "Assemble combined _site" step) on an
+// http(s) origin. Checks the path *ending*, not an exact string, since GH
+// Pages nests it under the repo-name segment (e.g. /datev-mock/app/ or
+// /datev-mock/app, no trailing slash guaranteed) -- deliberately never true
+// for file: (a local open must never be mistaken for the hosted demo).
+// Shared by resolveConnectionSettingsForThisLoad() below (F6's self-detect,
+// extended in F7 to also fire here) and initStaticDemoAccessPanel() further
+// down (F7's own "External access parameters" panel visibility).
+function isGhPagesAppLoad() {
+  return window.location.protocol.startsWith("http") && /\/app\/?$/.test(window.location.pathname);
+}
+
 // F6 (odd/tasks/datev-mock-standalone-frontend.md): resolves which
 // connection settings this particular page load should use, in priority
 // order -- always falling through to loadConnectionSettings()'s own
@@ -578,8 +630,14 @@ function composeApiBase(settings) {
 //      (http(s) origin, path ending in /admin, never file://) -- pure
 //      client-side self-detection from window.location itself, so opening
 //      FastAPI's own /admin "just works" pre-filled with zero server-side
-//      change. Narrow on purpose: never fires for the GH-Pages-hosted /app/
-//      copy, a file:// open, or once any setting has ever been saved.
+//      change. **F7 extension:** the same self-detect now *also* fires for
+//      the GH-Pages-hosted /app/ copy (isGhPagesAppLoad() above), so opening
+//      it shows its own real hostname/protocol in the form for transparency
+//      about where the page itself actually is -- its dynamic admin-API
+//      calls will then naturally 404 against GH Pages (no backend there),
+//      which is expected, not a bug (the static demo's own banner already
+//      tells visitors this before they'd ever reach /app/). Still never
+//      fires on a file:// open or once any setting has ever been saved.
 //   3. Otherwise: today's unchanged behavior.
 function resolveConnectionSettingsForThisLoad() {
   const params = new URLSearchParams(window.location.search);
@@ -621,7 +679,7 @@ function resolveConnectionSettingsForThisLoad() {
 
   const isHttpOrigin = window.location.protocol.startsWith("http");
   const isAdminPath = /\/admin\/?$/.test(window.location.pathname);
-  if (!hasSavedSettings && isHttpOrigin && isAdminPath) {
+  if (!hasSavedSettings && isHttpOrigin && (isAdminPath || isGhPagesAppLoad())) {
     const resolved = Object.assign({}, defaultConnectionSettings(), {
       protocol: window.location.protocol.replace(":", ""),
       hostname: window.location.hostname,
@@ -1004,6 +1062,72 @@ function updateAuthFieldsVisibility() {
 }
 document.getElementById("conn-auth-type").addEventListener("change", updateAuthFieldsVisibility);
 updateAuthFieldsVisibility();
+
+// F7 (odd/tasks/datev-mock-standalone-frontend.md): computes the sibling
+// static-demo's real base URL from this page's own location by stripping
+// exactly the trailing "app"/"app/" path segment, e.g.
+// "https://patchamama.github.io/datev-mock/app/" becomes
+// "https://patchamama.github.io/datev-mock/" -- the static-demo root per
+// .github/workflows/gh-pages.yml's "cp -r static-demo/. _site/" +
+// "cp frontend/admin.html _site/app/index.html" layout. Origin + pathname
+// only (no query/hash); always ends with a trailing slash.
+function staticDemoBaseUrlForThisLoad() {
+  const strippedPath = window.location.pathname.replace(/\/app\/?$/, "/");
+  return window.location.origin + strippedPath;
+}
+
+// F7: shows a read-only "External access parameters" panel, but only when
+// this load plausibly is the GH-Pages-hosted /app/ copy (isGhPagesAppLoad(),
+// shared with F6's self-detect above) -- skipped entirely against a real
+// live backend, to avoid cluttering the common case. When shown, actually
+// fetches the sibling static-demo's own data/manifest.json (a real,
+// already-published, same-origin static file -- no auth/CORS problem) so
+// the example paths shown can never drift out of sync with the real
+// generated demo data. Fails gracefully (a short inline message, never an
+// uncaught error) if that fetch doesn't succeed, e.g. when this heuristic
+// fires somewhere the manifest doesn't actually exist.
+async function initStaticDemoAccessPanel() {
+  if (!isGhPagesAppLoad()) return;
+
+  const card = document.getElementById("static-demo-access-card");
+  const baseUrl = staticDemoBaseUrlForThisLoad();
+  document.getElementById("static-demo-base-url").textContent = baseUrl;
+  card.classList.remove("d-none");
+
+  const loading = document.getElementById("static-demo-examples-loading");
+  const errorBox = document.getElementById("static-demo-examples-error");
+  const table = document.getElementById("static-demo-examples-table");
+  const tbody = document.getElementById("static-demo-examples-body");
+
+  try {
+    const res = await fetch(`${baseUrl}data/manifest.json`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const manifest = await res.json();
+    if (!Array.isArray(manifest) || manifest.length === 0) {
+      throw new Error("manifest.json is empty or not a list");
+    }
+
+    tbody.innerHTML = manifest
+      .slice(0, 5)
+      .map((entry) => {
+        const label = escapeHtml(entry.resource_name || entry.endpoint || "(unnamed resource)");
+        const jsonLink = entry.json_path
+          ? `<a href="${escapeHtml(baseUrl + "data/" + entry.json_path)}" target="_blank" rel="noopener">JSON</a>`
+          : "&mdash;";
+        const xmlLink = entry.xml_path
+          ? `<a href="${escapeHtml(baseUrl + "data/" + entry.xml_path)}" target="_blank" rel="noopener">XML</a>`
+          : "&mdash;";
+        return `<tr><td>${label}</td><td>${jsonLink}</td><td>${xmlLink}</td></tr>`;
+      })
+      .join("");
+    loading.classList.add("d-none");
+    table.classList.remove("d-none");
+  } catch (err) {
+    loading.classList.add("d-none");
+    errorBox.textContent = `Couldn't load the static resource list (${err && err.message ? err.message : err}).`;
+    errorBox.classList.remove("d-none");
+  }
+}
 
 document.getElementById("conn-settings-save").addEventListener("click", () => {
   const settings = {
@@ -2114,6 +2238,7 @@ loadOverrides();
 renderCatalog();
 connectRequestLogStream();
 loadStoredRecords();
+initStaticDemoAccessPanel();
 </script>
 </body>
 </html>

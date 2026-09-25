@@ -172,6 +172,24 @@ was asked about in this session before implementation started.
     line, and auto-opens the browser a few seconds after launch, the same
     pattern `start.bat`/`start.sh` already use for the Python backend.
 
+- [x] **F7 — GH-Pages `/app/` self-detect + "External access parameters"
+  panel** (user request, 2026-09-25, `frontend/admin.html` only): extends
+  F6's `resolveConnectionSettingsForThisLoad()` self-detect to also fire for
+  the GH-Pages-hosted `/app/` copy (`.github/workflows/gh-pages.yml` publishes
+  `frontend/admin.html` at `.../datev-mock/app/index.html`, sibling to the
+  static-demo site root), so opening it shows its own real
+  `hostname=patchamama.github.io`/`protocol=https` in the connection-settings
+  form for transparency, even though its dynamic admin-API calls will then
+  404 there (expected — no backend on GH Pages). Adds a new, conditionally
+  shown "External access parameters" info card that, only when this same
+  `/app/`-path heuristic fires, actually fetches the sibling static demo's
+  real `data/manifest.json` and displays its base URL, path convention, and
+  a handful of real clickable JSON/XML example links pulled from the live
+  manifest — never hardcoded, so it can't drift from the actual generated
+  demo data — framed explicitly as a read-only static data source for
+  testing external tools, not a live API. Fails gracefully (a short inline
+  message, no uncaught error) if the manifest fetch doesn't succeed.
+
 ## Architecture decision (resolved)
 
 Asked and answered in conversation: **direct browser calls only** — no relay
@@ -1145,6 +1163,115 @@ epic, per the user's own established checkpoint-rhythm preference.
   instruction ("do NOT run any git command") — left for the user's own
   review and commit.
 
+### F7 — GH-Pages `/app/` self-detect + "External access parameters" panel
+
+- **Problem:** F6's self-detect only recognized FastAPI's own `/admin` path.
+  Opening the GH-Pages-hosted standalone copy (published at
+  `https://patchamama.github.io/datev-mock/app/`, per
+  `.github/workflows/gh-pages.yml`'s `cp frontend/admin.html
+  _site/app/index.html` step) on a genuine first visit fell through to
+  plain defaults instead of showing where the page itself actually is.
+  Separately, a visitor there had no visible pointer to the sibling
+  static-demo's own real data files — the only thing this page *can*
+  usefully reach without a backend.
+
+- **Piece 1 — self-detect extension:** added `isGhPagesAppLoad()`
+  (`frontend/admin.html`, immediately above `resolveConnectionSettingsForThisLoad()`)
+  — `window.location.protocol.startsWith("http") && /\/app\/?$/.test(window.location.pathname)`.
+  Checks the path *ending*, not an exact string, since GH Pages nests the
+  page under the repo-name segment (`/datev-mock/app/`). `resolveConnectionSettingsForThisLoad()`'s
+  self-detect condition changed from `isAdminPath` to
+  `(isAdminPath || isGhPagesAppLoad())`; every other condition (no saved
+  settings yet, http(s) origin, never `file:`) is untouched, so `/admin`
+  behavior is byte-identical to F6. `isGhPagesAppLoad()` is shared verbatim
+  with Piece 2 below, so both features agree on exactly one definition of
+  "this looks like the GH-Pages `/app/` copy."
+
+- **Piece 2 — "External access parameters" panel:** a new card,
+  `#static-demo-access-card`, placed directly after the existing "Backend
+  target & DATEV connection settings" card (same section of the page, since
+  it's about the same self-detected location/context), `d-none` by default.
+  `initStaticDemoAccessPanel()` (called from the page's existing bottom-of-script
+  init list, alongside `renderCatalog()`/`loadStoredRecords()`/etc.) returns
+  immediately (card stays hidden) unless `isGhPagesAppLoad()` is true — so a
+  real live-backend load (FastAPI `/admin`, Java `file://`, or any other
+  target) never shows this card. When shown:
+  - `staticDemoBaseUrlForThisLoad()` computes `window.location.origin +
+    window.location.pathname.replace(/\/app\/?$/, "/")` — the sibling
+    `static-demo/` root, e.g. `https://patchamama.github.io/datev-mock/`.
+  - Actually `fetch()`es `${baseUrl}data/manifest.json` (a real network
+    call against the real, already-published static file) and renders the
+    base URL, the `data/<mirrored-api-path>.json`/`.xml` path convention,
+    and clickable JSON/XML links for the first 5 manifest entries
+    (`resource_name`/`endpoint`, `json_path`, `xml_path` — the manifest's
+    real shape, not assumed).
+  - On any fetch/parse failure (non-2xx, network error, empty/malformed
+    manifest), catches it and shows a short `alert-warning` message instead
+    of the table — never an uncaught error.
+  - Explicit framing text states plainly this is a read-only static data
+    source for testing external tools, not a live/dynamic API — matching
+    the static-demo page's own existing banner language.
+
+- **Verification, given the same confirmed no-browser-automation constraint
+  noted by F1-F6:**
+  1. `node --check` on the extracted inline `<script>` block — exit 0.
+  2. Structural sanity: `<div>` open/close balanced (163/163), `<script>`
+     open/close balanced (5/5), file starts with `<!DOCTYPE html>` and ends
+     with `</html>`, exactly 2 occurrences of `static-demo-access-card` (the
+     `<div id=...>` and its `classList` reference — no duplicate-id bug).
+  3. Standalone Node pure-logic test (same technique as F1-F6): exact copies
+     of `isGhPagesAppLoad()` and `staticDemoBaseUrlForThisLoad()`,
+     parameterized on fake `location`-like objects instead of
+     `window.location`. **12/12 assertions passed**, covering: matches
+     `/datev-mock/app/`, `/datev-mock/app` (no trailing slash), and bare
+     `/app/`; does **not** match `/admin`, `/admin/`, `/datev-mock/` (site
+     root, no `/app` segment), a merely-`app`-containing segment
+     (`/datev-mock/application/`), or `file:` protocol even at an
+     `/app`-shaped path; base-URL stripping correct for
+     `/datev-mock/app/` → `/datev-mock/`, `/datev-mock/app` (no trailing
+     slash) → same, and a bare `/app/` at a domain root → `/`.
+  4. **Real manifest shape confirmed live:**
+     `curl https://patchamama.github.io/datev-mock/data/manifest.json` →
+     `HTTP 200`, 31019 bytes, a JSON array of 65 entries, each shaped exactly
+     as the panel code expects: `{endpoint, scope, resource_name, json_path,
+     xml_path}` (`json_path`/`xml_path` relative, no leading slash, e.g.
+     `datev/api/accounting/v1/clients.json`) — matches `static-demo/data/manifest.json`'s
+     documented structure exactly.
+  5. **Local end-to-end file-layout check** (since arranging the exact
+     `.../app/` sibling shape locally was not awkward, done in full rather
+     than falling back to curl-only): assembled a temp directory mirroring
+     GH Pages' real output exactly — `cp -r static-demo/. site/`,
+     `cp frontend/admin.html site/app/index.html` — served it with
+     `python -m http.server`, then verified via `curl` with the computed
+     values a real browser would use: `GET /app/` → `200` (serves the admin
+     page); `GET /data/manifest.json` (the exact URL
+     `staticDemoBaseUrlForThisLoad()` would compute + `data/manifest.json`
+     from a `/app/`-loaded page) → `200`, 31651 bytes; resolved a real
+     sample entry's `json_path`/`xml_path` from that manifest and confirmed
+     both individual files (`/data/datev/api/accounting/v1/clients.json`,
+     `.../clients.xml`) also return `200` — proving the exact URL
+     construction the panel's `fetch()` call performs resolves correctly
+     against the real, GH-Pages-shaped file layout end to end. Server
+     stopped and the temp directory removed afterward.
+  6. `.venv\Scripts\python -m pytest tests/ -q` — **386 passed**, unchanged
+     from F6's own baseline; this epic touched no `.py` file (`git status
+     --porcelain` shows only `frontend/admin.html` modified).
+  - **Honest limitation (same as every prior epic):** the DOM-rendering half
+    (the card actually becoming visible, the table rows/links rendering
+    correctly in a live browser) could not be visually confirmed — no
+    working Chrome browser automation is available in this environment.
+    What *is* proven end-to-end: the detection logic, the URL-construction
+    logic, and that every URL the rendering code would construct and fetch
+    against the real file layout genuinely resolves with real data.
+- **Files touched:** `frontend/admin.html` only (new `isGhPagesAppLoad()`,
+  the `resolveConnectionSettingsForThisLoad()` condition change, the new
+  `#static-demo-access-card` markup, `staticDemoBaseUrlForThisLoad()`, and
+  `initStaticDemoAccessPanel()` plus its call in the bottom-of-script init
+  list); `odd/tasks/datev-mock-standalone-frontend.md` (this write-up).
+- **Delivery boundary:** One work-unit commit for F7; not committed by the
+  implementer per explicit instruction ("do NOT run any git command") —
+  left for the user's own review and commit.
+
 ## Current evidence and blockers
 
 - All four epics (F1-F4) touch only their documented files; each epic's own
@@ -1162,19 +1289,20 @@ epic, per the user's own established checkpoint-rhythm preference.
   logic for F2; `isTemplateOnlyEntry()`/`testSingleEndpoint()` classification
   for F4).
 - `.venv\Scripts\python -m pytest tests/ -q` went **375 → 383 → 386 passed**
-  across F1, F2, F4, F5, and F6 (F3 added no Python code) — no epic in this
-  bundle introduced a Python-side regression (F5's own run also surfaced
-  one unrelated pre-existing flaky test, not a regression — see F5's own
-  write-up; F6 re-ran the full suite twice more, both clean at 386).
+  across F1, F2, F4, F5, and F6 (F3 added no Python code), and **stayed at
+  386** through F7 (touched no `.py` file) — no epic in this bundle
+  introduced a Python-side regression (F5's own run also surfaced one
+  unrelated pre-existing flaky test, not a regression — see F5's own
+  write-up; F6 and F7 each re-ran the full suite again, both clean at 386).
 - `spring-boot`'s `mvnw.cmd test` went **160 → 168 → 169 passed** with F5 and
-  F6 (F1-F4 touched no Java code) — no Java-side regression.
-- None of F1-F6's commits have been made by the implementing agent(s); each
+  F6 (F1-F4 and F7 touched no Java code) — no Java-side regression.
+- None of F1-F7's commits have been made by the implementing agent(s); each
   epic's changes are left uncommitted for the user's own review, per
   explicit instruction repeated in every epic.
 
 ## Next action
 
-**The full epic checklist for this feature bundle (F1-F6) is now complete,**
+**The full epic checklist for this feature bundle (F1-F7) is now complete,**
 with one explicitly pre-authorized honest gap (Java-side NTLM, F5). The
 admin frontend is extracted into a standalone static file (F1) with
 structured, per-browser DATEV connection settings actually wired into every
@@ -1182,18 +1310,16 @@ outbound call (F2), the Java mock has one-command launcher scripts with
 Java 21 auto-detection (F3), the frontend can E2E-test every catalog
 endpoint against whichever backend is currently configured with a live
 progress bar (F4), both backends expose a local relay endpoint for
-no-CORS/NTLM real-DATEV targets (F5), and — following up on the user's own
-request to close the loop on connection-setup friction — opening the
-standalone frontend from either backend's own launch flow now shows the
-connection-settings card already filled in with that backend's real
-details: FastAPI's own `/admin` route self-detects from
-`window.location` on a genuine first visit, and the Java launcher scripts
-open the frontend at a `file://` URL carrying `?protocol=&host=&port=`
-query params that take top priority over everything else, with both
-backends' CORS configs now also accepting the literal `null` origin that a
-`file://`-opened page's `fetch()` calls actually send (F6). The Java
-launchers' default port also moved from `58553` to `53000`, falling back to
-`53001` exactly once if the default is already bound.
+no-CORS/NTLM real-DATEV targets (F5), opening the standalone frontend from
+either backend's own launch flow shows the connection-settings card already
+filled in with that backend's real details (F6), and — following up on the
+user's own request to close the loop on the GH-Pages-hosted copy
+specifically — that same self-detect now also recognizes the GH-Pages
+`/app/` path (showing its own real `hostname`/`protocol` there too), and a
+new conditional "External access parameters" panel points visitors of that
+GH-Pages copy at the sibling static demo's own real, live-fetched
+`data/manifest.json`-derived example resources, framed explicitly as a
+read-only static data source, not a live API (F7).
 
 **There is no further planned epic in this bundle.** Any additional work —
 including a future Java-side NTLM implementation (Apache HttpClient 4.x +
