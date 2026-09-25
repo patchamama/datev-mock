@@ -292,6 +292,16 @@ exact two regressions the corrections above were written to catch.
 Errors: 0, Skipped: 0`**, `BUILD SUCCESS` (169 baseline + 9 feature tests +
 2 regression tests = 180, matching the Python side's fully-proven count).
 
+Full Python suite re-confirmed at commit time: `398 passed` (`pytest
+tests/ -q`, ~29s; 395 baseline-plus-feature + 3 regression tests).
+
+## Committed and pushed (2026-09-25)
+
+Commit `2049c15` on `fix/snapshot-export-readiness`, pushed to
+`origin/fix/snapshot-export-readiness`. Both backends' full suites green
+at commit time (Python 398/398, Java 180/180); no PR opened yet (left for
+the user to decide).
+
 `git diff --check` completed successfully; it only reported pre-existing
 working-copy LF→CRLF warnings for `.gitignore`, `frontend/admin.html`, and
 this document. No commit hash is recorded because no commit has been made.
