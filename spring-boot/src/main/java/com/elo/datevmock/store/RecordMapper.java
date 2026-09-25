@@ -3,6 +3,7 @@ package com.elo.datevmock.store;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +18,19 @@ import java.util.Set;
  * it (PUT-over-fake semantics); a stored record with a new id is appended.
  */
 public final class RecordMapper {
+
+    /**
+     * Ports-adjacent SB12 convention (no FastAPI equivalent needed): a stored
+     * row's reserved payload key marking it a tombstone for an id that should
+     * be excluded from a merge even though {@code fakeRecords} may still
+     * generate it. Needed because a generator-origin ("fake") record has no
+     * natural stored row for {@link StoredRecordStore#deleteRecord} to
+     * remove -- deleting one instead writes a small {@code {DELETED_MARKER_KEY:
+     * true, idField: id}} row, and {@link #mergeWithStored} treats any row
+     * carrying this marker as an exclusion rather than reconstructing a
+     * broken/defaulted record from it.
+     */
+    public static final String DELETED_MARKER_KEY = "_deleted";
 
     private RecordMapper() {
     }
@@ -149,18 +163,45 @@ public final class RecordMapper {
         List<Map<String, Object>> stored = store.listRecords(resourceType, clientId, fiscalYearId);
 
         Map<Object, T> storedInstances = new LinkedHashMap<>();
+        Set<Object> deletedIds = new HashSet<>();
         for (Map<String, Object> row : stored) {
+            if (Boolean.TRUE.equals(row.get(DELETED_MARKER_KEY))) {
+                Object deletedId = row.get(idField);
+                if (deletedId != null) {
+                    deletedIds.add(deletedId);
+                }
+                continue;
+            }
             T instance = fromStored(type, row, fieldMap, nilFields);
             storedInstances.put(componentValue(instance, idField), instance);
         }
 
         List<T> merged = new ArrayList<>();
         for (T fake : fakeRecords) {
-            if (!storedInstances.containsKey(componentValue(fake, idField))) {
+            Object id = componentValue(fake, idField);
+            if (!storedInstances.containsKey(id) && !deletedIds.contains(id)) {
                 merged.add(fake);
             }
         }
         merged.addAll(storedInstances.values());
         return merged;
+    }
+
+    /**
+     * SB12 helper: renders every record component under its snake_case key
+     * (e.g. {@code clientSince} -> {@code client_since}), so a full,
+     * always-complete row can be written back to {@link StoredRecordStore}
+     * from an object built by any caller's own field-naming convention
+     * (e.g. the admin panel's PascalCase edit bodies) while still round-
+     * tripping correctly through {@link #mergeWithStored}'s
+     * {@code fieldMap}/generic-snake-case-fallback lookup for every other
+     * caller (e.g. the public write endpoints' own snake_case bodies).
+     */
+    public static Map<String, Object> toSnakeCaseMap(Record record) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (RecordComponent component : record.getClass().getRecordComponents()) {
+            result.put(toSnakeCase(component.getName()), componentValue(record, component.getName()));
+        }
+        return result;
     }
 }

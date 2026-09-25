@@ -123,4 +123,37 @@ class RecordMapperTest {
         assertEquals(1, merged.size());
         assertTrue(merged.contains(fake1));
     }
+
+    // --- SB12: tombstones for a fake-origin id that has no stored row to delete ---
+
+    @Test
+    void mergeWithStoredExcludesAFakeRecordMarkedDeletedByATombstoneRow(@TempDir Path tempDir) {
+        StoredRecordStore store = new StoredRecordStore(tempDir.resolve("merge-tombstone.db"));
+        CostCenter fake1 = new CostCenter("cc-1", "Fake One", "F1", null, null, null, null, null, null, null, null, null, null);
+        CostCenter fake2 = new CostCenter("cc-2", "Fake Two", "F2", null, null, null, null, null, null, null, null, null, null);
+
+        Map<String, Object> tombstone = new LinkedHashMap<>();
+        tombstone.put(RecordMapper.DELETED_MARKER_KEY, true);
+        tombstone.put("id", "cc-1");
+        store.upsertRecord("accounting.cost_centers", "cc-1", tombstone);
+
+        List<CostCenter> merged = RecordMapper.mergeWithStored(
+                List.of(fake1, fake2), "accounting.cost_centers", CostCenter.class, "id",
+                Map.of(), Set.of(), store, null, null);
+
+        assertEquals(1, merged.size());
+        assertEquals("cc-2", merged.get(0).id());
+    }
+
+    @Test
+    void toSnakeCaseMapRendersEveryComponentUnderItsSnakeCaseKey() {
+        CostCenter cc = new CostCenter(
+                "cc-1", "Long Name", "Short", null, null, null, null, null, null, null, null, null, null);
+
+        Map<String, Object> snake = RecordMapper.toSnakeCaseMap(cc);
+
+        assertEquals("cc-1", snake.get("id"));
+        assertEquals("Long Name", snake.get("long_name"));
+        assertEquals("Short", snake.get("short_name"));
+    }
 }

@@ -2,6 +2,7 @@ package com.elo.datevmock.web;
 
 import com.elo.datevmock.json.DatevJsonMapper;
 import com.elo.datevmock.masterdata.MasterDataGenerator;
+import com.elo.datevmock.model.AccountingClient;
 import com.elo.datevmock.model.Addressee;
 import com.elo.datevmock.model.AccountingTransactionKey;
 import com.elo.datevmock.model.AssetStocktaking;
@@ -86,6 +87,10 @@ public class AccountingController {
             "naturalPerson", "legalPerson", "notSpecifiedPerson", "addresses", "banks", "communications",
             "accountingInformation");
 
+    // SB12: shares the same StoredRecordStore rows AdminDataStore now writes
+    // through for admin-panel accounting-client CRUD, instead of this GET
+    // reading only AccountingClientGenerator's fixed fake dataset.
+    private static final String CLIENTS_RESOURCE = "accounting.clients";
     private static final String CREDITORS_RESOURCE = "accounting.creditors";
     private static final String DEBITORS_RESOURCE = "accounting.debitors";
     private static final String TERMS_OF_PAYMENT_RESOURCE = "accounting.terms_of_payment";
@@ -119,8 +124,10 @@ public class AccountingController {
 
     @GetMapping("/clients")
     public ResponseEntity<String> getClients(@RequestHeader(value = "Accept", required = false) String accept) {
-        return respond("accounting.clients", accept,
-                () -> clientGenerator.clients(),
+        return respond(CLIENTS_RESOURCE, accept,
+                () -> RecordMapper.mergeWithStored(
+                        clientGenerator.clients(), CLIENTS_RESOURCE, AccountingClient.class,
+                        "id", Map.of(), Set.of(), store, null, null),
                 records -> writeJson(plainJsonMapper, AccountingClientJson.project(records)),
                 AccountingClientXmlSerializer::serialize);
     }
