@@ -63,6 +63,7 @@ Already have the repo cloned? See [Quick start](#quick-start) below.
 - [Endpoints mocked](#endpoints-mocked)
 - [Key decisions](#key-decisions)
 - [Custom overrides](#custom-overrides)
+- [FAQ](#faq)
 - [Project structure](#project-structure)
 - [Setup](#setup)
 - [Running the tests](#running-the-tests)
@@ -767,6 +768,63 @@ consumes the API — **no hosts file edit, no DNS changes, no admin rights**:
 
 - Real: `https://192.168.0.13:58452`
 - Mock: `https://127.0.0.1:58452`
+
+## FAQ
+
+**What is DATEV, and how does this mock help?**
+[DATEV](https://www.datev.de/) is accounting/tax/payroll software widely
+used by German businesses, tax advisors, and accountants. A DATEV
+workstation exposes a local REST API (the "Desktop API") that third-party
+integrations talk to — e.g. `https://<workstation-ip>:58452/datev/api/...`.
+Building or testing such an integration normally requires a real DATEV
+installation, a real company file, and being on the same network as that
+workstation. This project reproduces that same local API — same paths,
+status codes, request/response shapes, XML/JSON negotiation — with
+deterministic fake data, so integration work can happen anywhere, offline,
+without touching real client data.
+
+**I get an SSL/TLS error connecting to the mock — what do I do?**
+A browser or `curl -k` just needs the self-signed certificate's one-time
+warning accepted. A strict HTTP client (common in enterprise Java
+integrations) validates the certificate chain and needs the mock's
+certificate imported into *that specific* JVM's truststore — see [Trusting
+the mock's TLS certificate](#trusting-the-mocks-tls-certificate-java--enterprise-http-clients)
+above for the exact `keytool` steps. If TLS trust genuinely can't be
+arranged for a given client, `DATEV_MOCK_HTTP=1` (see [Quick
+start](#quick-start)) runs the FastAPI mock over plain HTTP instead — the
+Java backend already defaults to plain HTTP (`http://127.0.0.1:53000`), no
+certificate involved at all.
+
+**Can I use the GitHub Pages deploy to test my integration?**
+Two different things live there, and it matters which one you mean:
+the root (`https://patchamama.github.io/datev-mock/`) is a **static,
+read-only snapshot** for a fixed demo id set — good for eyeballing response
+shapes, not a running server (see [Static demo on GitHub
+Pages](#static-demo-on-github-pages)). The standalone app at
+[`.../app/`](https://patchamama.github.io/datev-mock/app/) is the *same
+live UI* this project's own `/admin` page uses, but GitHub Pages itself has
+no backend behind it — point its connection settings at a mock you're
+actually running (locally, or reachable over your network) to drive it for
+real. Opened on its own with no target configured, it can only browse the
+same static files the root page serves.
+
+**Can I use just the frontend, with no backend running at all?**
+Yes. `frontend/admin.html` is a genuinely self-contained static file (no
+build step, no server-side templating) that can point its connection
+settings at *any* reachable DATEV-compatible target — this project's own
+two backends, a real DATEV Desktop API, or someone else's compatible mock —
+it doesn't need to be served *by* the backend it talks to. Three ways to
+open it:
+- Directly via `file://` in a browser (simplest, but some browsers are
+  stricter about cross-origin requests from a `file://` page).
+- `start_only_frontend.bat` / `.sh` — a small Python-based local static
+  server (`python -m http.server`) for just `frontend/`, avoiding the
+  `file://` quirk above; opens your browser automatically.
+- Via the FastAPI or Java backend's own launcher, which already opens it
+  pointed at whichever backend just started.
+Without a target configured, it still shows its own UI, the endpoint
+catalog reference, and the connection-settings form — just no live data
+until pointed at something real.
 
 ## Project structure
 
