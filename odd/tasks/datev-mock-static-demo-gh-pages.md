@@ -110,6 +110,25 @@ attempt that, it deliberately covers only the fixed demo set.
 
 ## Phases
 
+- [x] **P5 — Also publish the standalone live frontend (`frontend/admin.html`,
+  from `odd/tasks/datev-mock-standalone-frontend.md`'s F1-F4) alongside the
+  static demo, at a sub-path so the existing live-demo URL keeps working
+  unchanged** (user request, 2026-09-25). Verified live before this request:
+  `https://patchamama.github.io/datev-mock/` and `.../data/manifest.json`
+  both return HTTP 200 right now — the "gave errors 2 days ago" the user
+  referred to matches this workflow's own documented handoff item (GitHub
+  Pages needed a one-time manual "Source: GitHub Actions" repo setting,
+  done 2026-09-24 per this file's own `on:` comment) plus `cdd0844`
+  (2026-09-24, "regenerate snapshot with recent fixes"); nothing in the
+  actual data-generation source (`app/scoped_data.py` et al.) has changed
+  since that regeneration (checked via `git log`/`git diff` on `app/`), so
+  the static snapshot itself is already current — no re-generation is
+  needed for that part, only the new frontend-publishing step below.
+  Approach: an assembly step in the workflow copies `static-demo/**` and
+  `frontend/admin.html` (as `app/index.html`) into one combined `_site/`
+  directory before `upload-pages-artifact`, so the demo keeps its root URL
+  and the live app becomes reachable at `.../app/`. Trigger `paths:` filter
+  extended to include `frontend/**`.
 - [x] P1 — `scripts/generate_static_demo.py` + run it to produce
       `static-demo/data/**` (JSON+XML per decision #3's endpoint list,
       for the 4 fixed demo scopes + global resources). Verify output
@@ -193,3 +212,26 @@ same pattern as the exe-release epic's `release.yml`/README phases).
   front), publishable to GitHub Pages via official-actions-only CI —
   pending the user's one-time repo setting to actually go live. Committed
   across 4 phases (P1-P4), all pushed to `main`.
+- 2026-09-25: P5 done (direct inline — workflow-only, small and mechanical).
+  `.github/workflows/gh-pages.yml`: trigger `paths:` extended with
+  `frontend/**`; new "Assemble combined `_site`" step runs before
+  `upload-pages-artifact` (`mkdir -p _site/app`, `cp -r static-demo/. _site/`,
+  `cp frontend/admin.html _site/app/index.html`); `upload-pages-artifact`'s
+  `path:` changed from `static-demo` to `_site`. Still only official,
+  first-party actions (`actions/checkout`, `actions/configure-pages`,
+  `actions/upload-pages-artifact`, `actions/deploy-pages`) — no third-party
+  action introduced. Also added one pointer line in `static-demo/index.html`'s
+  existing banner ("Already have a mock (or a real DATEV) running somewhere
+  reachable? The standalone live app lets you point at any base URL...")
+  linking to `./app/` — no other banner restructuring.
+  **Verification (this environment cannot trigger a real Actions run or Pages
+  deploy):** `python -c "import yaml; yaml.safe_load(...)"` parsed the
+  workflow cleanly (installed `pyyaml` first; not previously available).
+  Locally simulated the exact assembly commands in a scratch dir (not
+  committed, deleted after): confirmed `_site_test/index.html` exists and is
+  byte-identical (`cmp`) to `static-demo/index.html`, `_site_test/app/index.html`
+  exists and is byte-identical to `frontend/admin.html`,
+  `_site_test/data/manifest.json` exists, `diff -rq` found the copied `data/`
+  tree identical to `static-demo/data/`, and file count matched expectations
+  (127 static-demo files + 1 new `app/index.html` = 128). No git command was
+  run; the diff is left for the user to review and commit.
