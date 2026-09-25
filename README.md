@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Pytest](https://img.shields.io/badge/tests-375%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
+[![Pytest](https://img.shields.io/badge/tests-383%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Bootstrap](https://img.shields.io/badge/Bootstrap-5-7952B3?logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
 [![Java](https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white)](spring-boot/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-6DB33F?logo=springboot&logoColor=white)](spring-boot/)
@@ -10,10 +10,9 @@
 **[Live demo (GitHub Pages)](https://patchamama.github.io/datev-mock/)** ·
 **[Latest release (download)](https://github.com/patchamama/datev-mock/releases/latest)**
 
-A local FastAPI mock of DATEV's local Desktop API (the REST interface a DATEV
-workstation normally exposes on `https://<local-ip>:58452/datev/api/...`),
-built for developing and testing against DATEV integrations without a real
-DATEV installation.
+**Languages:** [English](README.md) · [Deutsch](README.de.md) · [Español](README.es.md)
+
+A local mock of DATEV's Desktop API (the REST interface a DATEV workstation normally exposes on `https://<local-ip>:58452/datev/api/...`), built for developing and testing DATEV integrations without a real installation. The FastAPI service is the reference implementation; an independent Java 21 / Spring Boot backend is available for JVM-oriented integration work.
 
 It reproduces the exact response shapes of the endpoints used during real
 capture, and additionally supports the response format documented on DATEV's
@@ -57,8 +56,10 @@ Already have the repo cloned? See [Quick start](#quick-start) below.
 ## Contents
 
 - [Install and run (one line)](#install-and-run-one-line)
+- [Choose a backend](#choose-a-backend)
 - [Epics](#epics)
 - [Quick start](#quick-start)
+- [Java backend](#java-backend-spring-boot)
 - [Endpoints mocked](#endpoints-mocked)
 - [Key decisions](#key-decisions)
 - [Custom overrides](#custom-overrides)
@@ -67,6 +68,18 @@ Already have the repo cloned? See [Quick start](#quick-start) below.
 - [Running the tests](#running-the-tests)
 - [Running the server](#running-the-server)
 - [Technology](#technology)
+
+## Choose a backend
+
+| Backend | Best for | Default endpoint | Important distinction |
+|---|---|---|---|
+| **FastAPI (Python)** | Full-fidelity local mocking and the built-in `/admin` page | HTTPS `https://127.0.0.1:58452` | Reference implementation with 75 documented routes. |
+| **Spring Boot (Java 21)** | JVM-focused integration work and a downloadable JAR | HTTP `http://127.0.0.1:58553` | Implements 63 of the 75 routes; it deliberately reuses the standalone admin frontend rather than serving `/admin` itself. |
+
+Both backends use deterministic mock data, DATEV-shaped JSON/XML responses where
+modeled, SQLite write overlays, settings, custom overrides, and the same
+standalone admin frontend. See [Spring Boot parity](spring-boot/PARITY.md) for
+the SB10 static route inventory and documented route gaps.
 
 ## Epics
 
@@ -158,6 +171,40 @@ standalone `datev-mock.exe` from the [Releases
 page](https://github.com/patchamama/datev-mock/releases) and run it — it
 carries its own Python runtime (built with PyInstaller) and creates
 `settings.json`/`datev_mock.db`/`certs/` next to itself on first run.
+
+## Java backend (Spring Boot)
+
+The Java backend is independent of the Python application and lives entirely
+under [`spring-boot/`](spring-boot/). Use its dedicated launchers; they detect
+Java 21+, use an existing JDK when possible, otherwise download a project-local
+Eclipse Temurin JDK, build the executable JAR when needed, and start it on
+port `58553` by default:
+
+```text
+start_java_datev_mock.bat       # Windows
+./start_java_datev_mock.sh      # Linux/macOS
+```
+
+Use `--port PORT` or `DATEV_MOCK_JAVA_PORT` to change the port. The Java
+backend serves plain HTTP, so its default address is
+`http://127.0.0.1:58553`. It does not host an HTML `/admin` route: open the
+standalone frontend at [the GitHub Pages app](https://patchamama.github.io/datev-mock/app/)
+or `frontend/admin.html`, then set **API base URL** to the Java address. The
+standalone frontend stores structured connection settings and includes an
+endpoint E2E runner with visible progress for the configured target.
+
+For direct Maven work, Java 21 is required:
+
+```text
+cd spring-boot
+.\mvnw.cmd clean package        # Windows PowerShell/cmd
+java -jar target/datev-mock-0.1.0-SNAPSHOT.jar --server.port=58553
+```
+
+The [Java runbook](spring-boot/RUNBOOK.md) documents launcher behavior,
+manual builds, offline constraints, configuration, and smoke tests. Tagged
+GitHub releases also include a `datev-mock-java-<version>.zip` archive with
+the JAR and both Java launchers.
 
 ## Endpoints mocked
 
@@ -743,6 +790,17 @@ DATEV-Mock/
 │   ├── data_store.py        # mutable in-memory store the routers read from
 │   ├── config.py            # Settings (port, default format), settings.json persistence
 │   └── overrides.py         # custom XML/JSON upload detection + in-memory override store
+├── spring-boot/               # independent Java 21 / Spring Boot backend
+│   ├── src/main/java/com/elo/datevmock/
+│   │   ├── web/                # REST controllers and error handling
+│   │   ├── store/              # SQLite records and reference validation
+│   │   ├── scoped/             # deterministic scoped fake data
+│   │   └── xml/                # DATEV-compatible XML rendering
+│   ├── src/test/               # 168 Spring Boot tests
+│   ├── PARITY.md               # verified FastAPI/Spring route inventory and gaps
+│   └── RUNBOOK.md              # Java build, launch, and smoke-test guide
+├── frontend/admin.html         # standalone configurable admin frontend
+├── static-demo/                # read-only GitHub Pages demo
 ├── certs/                   # self-signed cert generation (generate_cert.py; *.pem is git-ignored)
 ├── examples/                 # local-only, git-ignored — sensitive real captured samples + the internal-mock reference doc
 ├── odd/tasks/
@@ -753,7 +811,8 @@ DATEV-Mock/
 │   ├── datev-mock-custom-overrides.md      # upload/override system: same, for that epic
 │   ├── datev-mock-real-data-reconciliation.md  # reconciled every endpoint against real DATEV data: same, for that epic
 │   └── datev-mock-write-endpoints-and-observability.md  # 26 write endpoints + SQLite + live log: same, for that epic
-├── tests/                     # full test suite — 375/375 passing
+├── start_java_datev_mock.bat / start_java_datev_mock.sh  # Java 21 detection/bootstrap + JAR launch
+├── tests/                     # full test suite — 383/383 passing
 ├── start.bat / start.sh       # bootstrap Python (portable if needed) + deps + run, one step
 ├── settings.json              # git-ignored, created on first settings change
 ├── datev_mock.db              # git-ignored, created on first write to any of the 26 new write endpoints
@@ -762,6 +821,8 @@ DATEV-Mock/
 
 ## Setup
 
+### FastAPI backend
+
 Requires Python 3.12+.
 
 ```
@@ -769,13 +830,31 @@ python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 ```
 
+### Spring Boot backend
+
+Requires Java 21. Prefer the dedicated Java launchers described in
+[Java backend](#java-backend-spring-boot); they provision a project-local JDK
+only when no usable installation is found. For manual builds, use the Maven
+Wrapper from `spring-boot/` as shown above.
+
+
 ## Running the tests
 
 ```
 .venv\Scripts\python -m pytest tests/ -v
 ```
 
-All 375 tests pass.
+All 383 tests pass.
+
+For the Java backend:
+
+```text
+cd spring-boot
+.\mvnw.cmd test
+```
+
+The latest verified Java suite contains 168 tests. Its route-level scope and
+known differences from FastAPI are documented in [PARITY.md](spring-boot/PARITY.md).
 
 ## Running the server
 
@@ -791,18 +870,20 @@ Swagger UI: `https://127.0.0.1:58452/docs`. Admin/settings UI:
 `https://127.0.0.1:58452/admin`. Both verified live over real HTTPS,
 including the accounting endpoint's XML/JSON content negotiation.
 
+To run the Java backend instead, use `start_java_datev_mock.bat` (Windows) or `./start_java_datev_mock.sh` (Linux/macOS). It is intentionally a separate HTTP service on port `58553` by default; see [Java backend](#java-backend-spring-boot).
+
 ## Technology
 
 | | |
 |---|---|
-| **Language / runtime** | Python 3.12+ |
-| **Web framework** | [FastAPI](https://fastapi.tiangolo.com/) on [Uvicorn](https://www.uvicorn.org/) (ASGI) |
-| **Testing** | [pytest](https://pytest.org/) + FastAPI's `TestClient` (Starlette/httpx) |
+| **FastAPI backend** | Python 3.12+ on [FastAPI](https://fastapi.tiangolo.com/) / [Uvicorn](https://www.uvicorn.org/) (ASGI) |
+| **Java backend** | Java 21 + [Spring Boot 3.3.5](https://spring.io/projects/spring-boot), Spring Web, Actuator, SQLite JDBC; Maven Wrapper build |
+| **Web framework (Python)** | [FastAPI](https://fastapi.tiangolo.com/) on [Uvicorn](https://www.uvicorn.org/) (ASGI) |
+| **Testing** | [pytest](https://pytest.org/) + FastAPI's `TestClient` (383 tests) and `spring-boot-starter-test` / MockMvc (168 tests) |
 | **Frontend (admin UI)** | [Bootstrap 5](https://getbootstrap.com/) (CDN) + vanilla JS — no build step, no framework dependency |
 | **Syntax highlighting** | [highlight.js](https://highlightjs.org/) (CDN, cdnjs) — raw XML/JSON view in the API Catalog |
 | **TLS** | Self-signed cert generated with the [`cryptography`](https://cryptography.io/) package |
 | **File uploads** | [`python-multipart`](https://pypi.org/project/python-multipart/) (FastAPI's multipart/form-data parsing, used by the custom-overrides upload) |
 | **Serialization** | Hand-built XML (stdlib string templates, matching .NET `DataContractSerializer` conventions) + native JSON |
 | **Persistence** | In-memory data store for the 2 editable datasets and overrides (per-process, reset on restart) + stdlib `sqlite3` (no ORM) for the 26 write endpoints, in a git-ignored `datev_mock.db` that survives a restart + a small git-ignored `settings.json` for port/format preferences |
-| **Bootstrap scripts** | Batch (`start.bat`) / POSIX shell (`start.sh`) — provision a project-local Python (system if available, else a portable download) with no admin rights |
-
+| **Launchers and releases** | Python: Batch (`start.bat`) / POSIX shell (`start.sh`). Java: `start_java_datev_mock.bat` / `.sh`, Java 21 auto-detection or project-local Temurin download, plus a tagged-release ZIP containing the JAR and launchers |
