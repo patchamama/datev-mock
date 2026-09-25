@@ -322,6 +322,38 @@
       the values supplied.
     </p>
     <div class="accordion" id="catalog-accordion"></div>
+
+    <hr class="my-4">
+
+    <div id="test-runner-section">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <div>
+          <strong>Endpoint E2E test runner</strong>
+          <div class="small text-muted">
+            Fires a live <code>GET</code> request at every endpoint above
+            against the currently configured backend (see the
+            &ldquo;Backend target&rdquo; settings) and reports pass/fail per
+            endpoint. Template-only paths (e.g. an
+            <code>{addressee_id}</code>-style placeholder) are skipped, not
+            called.
+          </div>
+        </div>
+        <button id="test-runner-btn" type="button" class="btn btn-sm btn-primary text-nowrap" onclick="runEndpointTests()">Test all endpoints</button>
+      </div>
+      <div class="progress mb-2" style="height: 1.25rem;" role="progressbar" aria-label="Endpoint test progress" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" id="test-runner-progress">
+        <div class="progress-bar" id="test-runner-progress-bar" style="width: 0%;">0%</div>
+      </div>
+      <div id="test-runner-summary" class="small mb-2"></div>
+      <div class="table-responsive scroll-table">
+        <table class="table table-sm table-striped align-middle" id="test-runner-results-table">
+          <thead class="table-light">
+            <tr><th>Area</th><th>Name</th><th>Path</th><th>Result</th><th>Status</th><th>Time (ms)</th></tr>
+          </thead>
+          <tbody id="test-runner-results-body"></tbody>
+        </table>
+      </div>
+      <div id="test-runner-empty" class="text-muted small">Click &ldquo;Test all endpoints&rdquo; to run a live check against the configured backend.</div>
+    </div>
   </div>
 </div>
 
@@ -1502,6 +1534,126 @@ function renderCatalog() {
         </div>`;
     })
     .join("");
+}
+
+// --- endpoint E2E test runner (F4) ---
+
+// A path is "template only" (an illustrative placeholder, not a real
+// callable URL) when the catalog entry is explicitly flagged
+// `example_only: true` (the same flag buildCatalogEntry() checks above to
+// hide the "View sample data" button) OR its path literally contains a
+// `{...}` placeholder even when `example_only` wasn't set on it -- belt and
+// suspenders, so a future catalog entry that forgets the flag still doesn't
+// get fired at the backend as a literal, always-404 URL (e.g.
+// "/addressees/{addressee_id}" called verbatim).
+const TEST_RUNNER_TEMPLATE_PATTERN = /\{[^}]+\}/;
+function isTemplateOnlyEntry(entry) {
+  return Boolean(entry.example_only) || TEST_RUNNER_TEMPLATE_PATTERN.test(entry.path);
+}
+
+let testRunnerRunning = false;
+
+function renderTestRunnerProgress(done, total) {
+  const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+  const wrapper = document.getElementById("test-runner-progress");
+  const bar = document.getElementById("test-runner-progress-bar");
+  bar.style.width = `${pct}%`;
+  bar.textContent = `${pct}% (${done}/${total})`;
+  wrapper.setAttribute("aria-valuenow", String(pct));
+}
+
+function appendTestRunnerRow(entry, outcome) {
+  const tbody = document.getElementById("test-runner-results-body");
+  const row = document.createElement("tr");
+  const resultBadge =
+    outcome.result === "pass"
+      ? '<span class="badge text-bg-success">Pass</span>'
+      : outcome.result === "fail"
+      ? '<span class="badge text-bg-danger">Fail</span>'
+      : '<span class="badge text-bg-secondary">Skipped</span>';
+  row.innerHTML = `
+    <td>${escapeHtml(entry.area)}</td>
+    <td>${escapeHtml(entry.name)}</td>
+    <td><code>${escapeHtml(entry.path)}</code></td>
+    <td>${resultBadge}</td>
+    <td>${escapeHtml(outcome.statusText)}</td>
+    <td>${outcome.timeMs === null ? "&mdash;" : Math.round(outcome.timeMs)}</td>`;
+  tbody.appendChild(row);
+}
+
+// Classifies one CATALOG entry: skipped (template-only, never called),
+// pass (any 2xx), or fail -- fail covers a non-2xx HTTP status, a network
+// error/CORS block (fetch() rejects with a generic TypeError browsers give
+// no further detail for), and appFetch's own connect/read-timeout abort
+// (rejects with a DOMException named "AbortError").
+async function testSingleEndpoint(entry) {
+  if (isTemplateOnlyEntry(entry)) {
+    return { result: "skipped", statusText: "Skipped (template only)", timeMs: null };
+  }
+  const start = performance.now();
+  try {
+    const res = await appFetch(apiUrl(entry.path));
+    const timeMs = performance.now() - start;
+    return {
+      result: res.ok ? "pass" : "fail",
+      statusText: `HTTP ${res.status}`,
+      timeMs,
+    };
+  } catch (err) {
+    const timeMs = performance.now() - start;
+    if (err && err.name === "AbortError") {
+      return { result: "fail", statusText: "Timeout", timeMs };
+    }
+    const detail = err && err.message ? err.message : String(err);
+    return { result: "fail", statusText: `Network error / CORS blocked: ${detail}`, timeMs };
+  }
+}
+
+// Sequential by design, not Promise.all(): each awaited result updates the
+// progress bar and appends its results-table row immediately, so the bar
+// advances smoothly one endpoint at a time instead of jumping from 0% to
+// 100% at the end, and it avoids firing 20+ concurrent requests at whatever
+// backend is currently configured.
+async function runEndpointTests() {
+  if (testRunnerRunning) return;
+  testRunnerRunning = true;
+
+  const btn = document.getElementById("test-runner-btn");
+  const emptyEl = document.getElementById("test-runner-empty");
+  const summaryEl = document.getElementById("test-runner-summary");
+  const tbody = document.getElementById("test-runner-results-body");
+
+  btn.disabled = true;
+  btn.textContent = "Testing…";
+  emptyEl.classList.add("d-none");
+  summaryEl.textContent = "";
+  tbody.innerHTML = "";
+
+  const total = CATALOG.length;
+  renderTestRunnerProgress(0, total);
+
+  let passCount = 0;
+  let failCount = 0;
+  let skippedCount = 0;
+
+  try {
+    for (let i = 0; i < CATALOG.length; i++) {
+      const entry = CATALOG[i];
+      const outcome = await testSingleEndpoint(entry);
+      if (outcome.result === "pass") passCount++;
+      else if (outcome.result === "fail") failCount++;
+      else skippedCount++;
+
+      appendTestRunnerRow(entry, outcome);
+      renderTestRunnerProgress(i + 1, total);
+    }
+  } finally {
+    const tested = passCount + failCount;
+    summaryEl.innerHTML = `<strong>${tested} tested</strong> &mdash; ${passCount} passed, ${failCount} failed, ${skippedCount} skipped.`;
+    btn.disabled = false;
+    btn.textContent = "Test all endpoints";
+    testRunnerRunning = false;
+  }
 }
 
 // --- live request log ---

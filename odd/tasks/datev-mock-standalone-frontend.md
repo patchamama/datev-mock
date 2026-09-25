@@ -98,7 +98,7 @@ was asked about in this session before implementation started.
   locations, then `JAVA_HOME`/`PATH`) before falling back to downloading a
   portable, project-local JDK used only by this launcher — never silently
   reinstalling over a perfectly good existing Java.
-- [ ] **F4 — Endpoint E2E test runner**: a "Test all endpoints" action in the
+- [x] **F4 — Endpoint E2E test runner**: a "Test all endpoints" action in the
   frontend, driven by the existing `CATALOG`, with a progress bar, that
   fires each request against the currently configured backend/target and
   reports pass/fail (status code, or reachability) per endpoint.
@@ -477,3 +477,188 @@ epic, per the user's own established checkpoint-rhythm preference.
 - **Delivery boundary:** One work-unit commit for F3; not committed by the
   implementer per explicit instruction — left for the user's own review and
   commit.
+
+### F4 — Endpoint E2E test runner
+
+- **Scope:** A "Test all endpoints" button in `frontend/admin.html`'s
+  existing "API Catalog" card, driving every `CATALOG` entry against the
+  currently configured backend (`API_BASE`/`CONNECTION_SETTINGS`, from F2)
+  via the existing `appFetch()`/`apiUrl()` helpers, with a live-updating
+  Bootstrap progress bar, a results table, and a pass/fail/skipped summary
+  line. Only `frontend/admin.html` was touched, per instruction.
+- **Placement:** Added directly inside the existing "API Catalog" card,
+  right after the `catalog-accordion` div (`frontend/admin.html:324-350`),
+  behind an `<hr>` — deliberately reusing the same card rather than adding a
+  new one, since the runner conceptually tests exactly what that card
+  already lists, and matching the page's existing Bootstrap 5 look (small
+  buttons, `table-sm table-striped`, `text-muted small` help copy) instead
+  of inventing new visual patterns.
+- **Template-only skip logic (belt-and-suspenders, verified against the real
+  data):** `isTemplateOnlyEntry(entry)` (`frontend/admin.html:1550-1552`)
+  skips an entry when `entry.example_only` is `true` **or** its `path`
+  literally contains a `{...}` placeholder, whichever fires first — the
+  second check exists in case a future catalog entry gets a template path
+  without the flag being set, which would otherwise be fired at the backend
+  as a literal, always-404/-400 URL. Extracted and ran the real, baked-in
+  `CATALOG` array with Node (`const CATALOG = [...]` at
+  `frontend/admin.html:641`, 23 entries) to check both conditions against
+  the actual data, not an assumption: **exactly 1 of 23 entries is
+  template-only** — `/datev/api/master-data/v1/addressees/{addressee_id}`
+  ("Addressee by id") — and it already carries `example_only: true`, so
+  both checks agree on every entry today (no silent divergence). The other
+  22 entries are real, directly callable GET endpoints and are all tested
+  for real.
+- **Pass/fail/timeout classification (`testSingleEndpoint()`,
+  `frontend/admin.html:1589-1608`):** timed with `performance.now()` around
+  `appFetch(apiUrl(entry.path))`.
+  - Any HTTP response with `res.ok` (2xx) → **pass**, status text
+    `HTTP <code>`.
+  - Any HTTP response that resolved but isn't 2xx (4xx/5xx) → **fail**,
+    status text `HTTP <code>` (the actual code, not a generic message).
+  - `appFetch()`/`fetchWithTimeouts()`'s own `AbortController` firing (its
+    connect- or read-timeout elapsing, per F2) rejects with a
+    `DOMException` named `AbortError` → **fail**, status text exactly
+    `Timeout`.
+  - Any other rejection (a real network failure or a CORS block — both
+    surface to browser JS as an opaque `TypeError: Failed to fetch`/`Load
+    failed` with no further detail, a real browser-platform limitation, not
+    a gap in this code) → **fail**, status text
+    `Network error / CORS blocked: <err.message>`.
+  - A skipped (template-only) entry is never called and is counted
+    separately from pass/fail, per instruction ("don't count them as pass
+    or fail").
+- **Progress bar and live results (`runEndpointTests()`,
+  `frontend/admin.html:1617-1652`):** a plain sequential `for` loop —
+  `await`s one `testSingleEndpoint()` call at a time, chosen deliberately
+  over `Promise.all()`/concurrency so the Bootstrap `.progress-bar`
+  (`#test-runner-progress-bar`) advances one visible step per completed
+  request (`renderTestRunnerProgress(i + 1, total)`, updating both the width
+  style and an `(done/total)` label) instead of jumping from 0% to 100% at
+  the end, and so the results table (`#test-runner-results-body`) gets one
+  new row appended immediately after each request resolves rather than all
+  at once at the end — both requirements from the task were satisfied by
+  the same simple loop, no extra buffering/batching needed. A secondary
+  reason for staying sequential: firing all 22 requests concurrently would
+  hammer whatever backend is currently configured (including a
+  hypothetically slow/rate-limited real target) with a burst of 22
+  simultaneous requests, which sequential execution avoids.
+- **Button disable/re-run:** `runEndpointTests()` guards on a module-level
+  `testRunnerRunning` boolean and returns immediately (no-op) if a run is
+  already in progress; the button is also `disabled` for the run's duration
+  and its label swaps to "Testing…", both restored in a `finally` block so
+  the button re-enables even if an unexpected exception escaped
+  `testSingleEndpoint()`'s own try/catch. Nothing prevents re-running: the
+  user can click "Test all endpoints" again at any time, e.g. right after
+  changing F2's connection settings to point at a different backend — each
+  run re-reads `CATALOG`/`appFetch`'s live `CONNECTION_SETTINGS` fresh, so a
+  new run always tests whatever is currently configured.
+- **Summary line:** on completion, `#test-runner-summary` renders
+  `"<N> tested — <P> passed, <F> failed, <S> skipped."`, where `tested`
+  is deliberately `passCount + failCount` (excludes skipped, per
+  instruction's own example wording).
+- **Pure client-side, no backend dependency added:** the entire feature is
+  client-side orchestration of the already-existing `appFetch()`/`apiUrl()`
+  helpers against `CATALOG`, which was already baked into the static file
+  since F1 — no new server endpoint, no new network dependency beyond what
+  F1/F2 already required. The page remains a genuinely standalone static
+  file.
+- **Verification, given the same confirmed no-browser-automation constraint
+  noted by F1/F2/F3 (Chrome extension tools cannot reach a locally-bound
+  port in this environment):**
+  1. Extracted the page's single inline `<script>` block from the live file
+     and ran `node --check` on it — exit code 0, confirms the whole script
+     (including the new F4 code) is syntactically valid JavaScript.
+  2. Extracted the real, baked-in `CATALOG` array with Node and counted
+     `example_only`/`{...}`-placeholder entries directly against the actual
+     data (see above) — **1 template-only entry out of 23**, not assumed or
+     estimated.
+  3. Wrote a standalone Node unit test (outside any DOM, the same technique
+     F2's own agent used for its pure-logic verification) that re-declares
+     `isTemplateOnlyEntry()`/`testSingleEndpoint()` verbatim against a fake
+     `appFetch` and a small fake `CATALOG`, and asserts: an
+     `example_only: true` entry is skipped and never calls `appFetch`; an
+     entry with a literal `{...}` path but no `example_only` flag is still
+     skipped (proves the belt-and-suspenders rule); a 2xx response is a
+     pass; 404 and 500 responses are both fails carrying their real status
+     code; an `AbortError` classifies as `"Timeout"`; a generic `TypeError`
+     classifies as `"Network error / CORS blocked: <message>"`; and a
+     full 5-entry mixed-outcome run produces the correct
+     pass/fail/skipped tallies (2/2/1) with `tested = passCount + failCount`
+     and a progress sequence that advances monotonically to 100% without
+     jumping straight there (`20%, 40%, 60%, 80%, 100%`). **All 16
+     assertions passed.**
+  4. Attempted the stronger live-server route the task suggested (start the
+     real FastAPI mock, drive the extracted `CATALOG`-iteration logic
+     against it headlessly from Node) and found it genuinely impractical in
+     this environment rather than skipping it by default: this repo has no
+     `package.json`/`node_modules` (it is a Python + static-HTML project,
+     nothing installs a JS `fetch` polyfill), and the available Node is
+     `v16.13.1`, which has no global `fetch()` at all (added in Node 18) —
+     so there is no way to run the real `appFetch()` call chain against a
+     live server from Node here without installing a new dependency purely
+     for this verification step, which was not otherwise warranted. Fell
+     back to the explicitly-permitted alternative (step 3 above) instead.
+  5. Careful full source read-through of the new DOM/rendering code: button
+     disable/enable and label swap (with the `finally`-block restoration),
+     progress-bar width/label/`aria-valuenow` updates, live per-row table
+     appends via `appendTestRunnerRow()`, and the summary line — confirmed
+     against the actual requirements line by line.
+  6. Structural sanity checks on the whole file after the edit: `<div>`
+     open/close counts balanced (154/154), `<script>` open/close balanced
+     (5/5), exactly one each of the new `test-runner-btn`/
+     `test-runner-progress-bar`/`test-runner-results-body` ids (no
+     duplicate-id bugs), file still starts with `<!DOCTYPE html>` and ends
+     with `</html>`.
+  7. `.venv\Scripts\python -m pytest tests/ -q` — **375 passed**, identical
+     to F1/F2's own baseline; confirms no Python-side regression (this
+     epic touched no `.py` file — only `frontend/admin.html` changed).
+- **Files touched:** `frontend/admin.html` only (per instruction) — the new
+  "Test all endpoints" button/progress bar/results table/summary markup
+  inside the existing "API Catalog" card, and the new
+  `isTemplateOnlyEntry()`/`renderTestRunnerProgress()`/
+  `appendTestRunnerRow()`/`testSingleEndpoint()`/`runEndpointTests()`
+  functions placed directly after `renderCatalog()`.
+- **Delivery boundary:** One work-unit commit for F4; not committed by the
+  implementer per explicit instruction — left for the user's own review and
+  commit.
+
+## Current evidence and blockers
+
+- All four epics (F1-F4) touch only their documented files; each epic's own
+  write-up above lists the exact files changed and how it was verified.
+  `frontend/admin.html` is the one file every epic after F1 modifies (F2's
+  connection settings, F4's test runner); F1 created it, F3 is independent
+  (new top-level launcher scripts + `spring-boot/RUNBOOK.md`/`.gitignore`
+  only).
+- Every epic was verified without live browser automation (confirmed
+  structurally unavailable in this environment across F1-F4's own session
+  notes: the Chrome extension tools cannot reach a locally-bound port here)
+  — each epic instead used direct source read-throughs, the real FastAPI
+  server + `curl`/Python-side checks where applicable, and standalone Node
+  scripts for pure-JS-logic verification (`composeApiBase()`/auth-header
+  logic for F2; `isTemplateOnlyEntry()`/`testSingleEndpoint()` classification
+  for F4).
+- `.venv\Scripts\python -m pytest tests/ -q` has stayed at **375 passed**
+  across F1, F2, and F4 (F3 added no Python code) — no epic in this bundle
+  introduced a Python-side regression.
+- None of F1-F4's commits have been made by the implementing agent(s); each
+  epic's changes are left uncommitted for the user's own review, per
+  explicit instruction repeated in every epic.
+
+## Next action
+
+**The full epic checklist for this feature bundle (F1-F4) is now complete.**
+The admin frontend is extracted into a standalone static file (F1) with
+structured, per-browser DATEV connection settings actually wired into every
+outbound call (F2), the Java mock has one-command launcher scripts with
+Java 21 auto-detection (F3), and the frontend can now E2E-test every
+catalog endpoint against whichever backend is currently configured, with a
+live progress bar and a pass/fail/skipped summary (F4).
+
+**There is no further planned epic in this bundle.** The one architecture
+item explicitly deferred rather than abandoned — a local relay to make
+NTLM/no-CORS real-DATEV targets actually work end-to-end (see "Architecture
+decision (resolved)" above) — remains a candidate future epic (e.g. F5) only
+if the user later decides they need it; it was a resolved, documented
+trade-off for this bundle, not an oversight. Any other additional work
+starts as its own new epic/decision, not a continuation of this checklist.
