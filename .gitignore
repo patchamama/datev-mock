@@ -11,6 +11,10 @@ datev_mock.db-journal
 datev_mock.db-wal
 datev_mock.db-shm
 
+# Runtime local state (resource snapshot export -- see
+# odd/tasks/datev-mock-resource-snapshot-export.md)
+snapshots/
+
 # Contains sensitive real DATEV data captured from a live environment — never publish
 examples/
 test-datev.html

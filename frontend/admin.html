@@ -409,6 +409,28 @@
       are illustrative only: this mock returns the same data regardless of
       the values supplied.
     </p>
+
+    <div class="border rounded p-3 mb-3">
+      <label for="snapshot-prefix" class="form-label fw-semibold" data-i18n="snapshots.header">Save observed responses</label>
+      <p class="text-muted small mb-2" data-i18n="snapshots.intro">
+        Re-issues every distinct GET request already observed for a resource
+        path (or prefix) and writes each fresh, complete response to a
+        <code>snapshots/</code> folder on the backend, ready to re-upload via
+        the Custom Examples (Overrides) section above.
+      </p>
+      <div class="row g-2 align-items-end">
+        <div class="col">
+          <input id="snapshot-prefix" type="text" class="form-control form-control-sm"
+                 data-i18n-placeholder="snapshots.prefixPlaceholder"
+                 placeholder="e.g. /datev/api/master-data/v1/clients">
+        </div>
+        <div class="col-auto">
+          <button id="snapshot-save-btn" type="button" class="btn btn-sm btn-primary" onclick="saveSnapshots()" data-i18n="snapshots.saveBtn">Save snapshots</button>
+        </div>
+      </div>
+      <div id="snapshot-result" class="small mt-2"></div>
+    </div>
+
     <div class="accordion" id="catalog-accordion"></div>
 
     <hr class="my-4">
@@ -760,6 +782,7 @@ const I18N = {
     "catalog.copyCurl": "Copy curl",
     "catalog.copied": "Copied!",
     "catalog.copyFailed": "Copy failed",
+    "catalog.saveSnapshot": "Save snapshot",
     "catalog.docLink": "Official DATEV documentation for {area} &#x2197;",
     "catalog.emptyResponse": "Empty response.",
     "catalog.showingRecords": "Showing {shown} of {total} records.",
@@ -769,6 +792,20 @@ const I18N = {
     "catalog.noTabularView": "No tabular view for this content type &mdash; see the Raw tab.",
     "catalog.fetchFailed": "Failed to fetch: {err}",
     "catalog.loading": "Loading&hellip;",
+
+    "snapshots.header": "Save observed responses",
+    "snapshots.intro": `Re-issues every distinct GET request already observed for a resource
+      path (or prefix) and writes each fresh, complete response to a
+      <code>snapshots/</code> folder on the backend, ready to re-upload via
+      the Custom Examples (Overrides) section above.`,
+    "snapshots.prefixPlaceholder": "e.g. /datev/api/master-data/v1/clients",
+    "snapshots.saveBtn": "Save snapshots",
+    "snapshots.savingBtn": "Saving&hellip;",
+    "snapshots.emptyPrefix": "Enter a resource path or prefix first.",
+    "snapshots.resultSummaryOne": "Saved {n} file to snapshots/.",
+    "snapshots.resultSummaryOther": "Saved {n} files to snapshots/.",
+    "snapshots.resultNone": "No observed requests matched that path yet &mdash; call the resource at least once, then try again.",
+    "snapshots.saveFailed": "Failed to save snapshots: {detail}",
 
     "testRunner.title": "Endpoint E2E test runner",
     "testRunner.description": `Fires a live <code>GET</code> request at every endpoint above
@@ -1053,6 +1090,7 @@ const I18N = {
     "catalog.copyCurl": "curl kopieren",
     "catalog.copied": "Kopiert!",
     "catalog.copyFailed": "Kopieren fehlgeschlagen",
+    "catalog.saveSnapshot": "Snapshot speichern",
     "catalog.docLink": "Offizielle DATEV-Dokumentation für {area} &#x2197;",
     "catalog.emptyResponse": "Leere Antwort.",
     "catalog.showingRecords": "Zeige {shown} von {total} Datensätzen.",
@@ -1062,6 +1100,21 @@ const I18N = {
     "catalog.noTabularView": "Keine Tabellenansicht für diesen Inhaltstyp &mdash; siehe den Tab &ldquo;Roh&rdquo;.",
     "catalog.fetchFailed": "Abruf fehlgeschlagen: {err}",
     "catalog.loading": "Wird geladen&hellip;",
+
+    "snapshots.header": "Beobachtete Antworten speichern",
+    "snapshots.intro": `Sendet jede bisher beobachtete, eindeutige GET-Anfrage für einen
+      Ressourcenpfad (oder ein Präfix) erneut und schreibt jede frische,
+      vollständige Antwort in einen <code>snapshots/</code>-Ordner auf dem
+      Backend &mdash; bereit zum erneuten Hochladen über den Bereich
+      &ldquo;Custom Examples (Overrides)&rdquo; oben.`,
+    "snapshots.prefixPlaceholder": "z. B. /datev/api/master-data/v1/clients",
+    "snapshots.saveBtn": "Snapshots speichern",
+    "snapshots.savingBtn": "Wird gespeichert&hellip;",
+    "snapshots.emptyPrefix": "Bitte zuerst einen Ressourcenpfad oder ein Präfix eingeben.",
+    "snapshots.resultSummaryOne": "{n} Datei in snapshots/ gespeichert.",
+    "snapshots.resultSummaryOther": "{n} Dateien in snapshots/ gespeichert.",
+    "snapshots.resultNone": "Noch keine beobachteten Anfragen für diesen Pfad &mdash; rufe die Ressource mindestens einmal auf und versuche es erneut.",
+    "snapshots.saveFailed": "Speichern der Snapshots fehlgeschlagen: {detail}",
 
     "testRunner.title": "Endpunkt-E2E-Testlauf",
     "testRunner.description": `Sendet eine echte <code>GET</code>-Anfrage an jeden Endpunkt oben gegen
@@ -1352,6 +1405,7 @@ const I18N = {
     "catalog.copyCurl": "Copiar curl",
     "catalog.copied": "¡Copiado!",
     "catalog.copyFailed": "Error al copiar",
+    "catalog.saveSnapshot": "Guardar snapshot",
     "catalog.docLink": "Documentación oficial de DATEV para {area} &#x2197;",
     "catalog.emptyResponse": "Respuesta vacía.",
     "catalog.showingRecords": "Mostrando {shown} de {total} registros.",
@@ -1361,6 +1415,21 @@ const I18N = {
     "catalog.noTabularView": "No hay vista de tabla para este tipo de contenido &mdash; consulta la pestaña &ldquo;Bruto&rdquo;.",
     "catalog.fetchFailed": "Error al obtener: {err}",
     "catalog.loading": "Cargando&hellip;",
+
+    "snapshots.header": "Guardar respuestas observadas",
+    "snapshots.intro": `Vuelve a emitir cada solicitud GET distinta ya observada para una ruta
+      de recurso (o prefijo) y escribe cada respuesta fresca y completa en
+      una carpeta <code>snapshots/</code> en el backend, lista para volver a
+      cargarse mediante la sección &ldquo;Custom Examples (Overrides)&rdquo;
+      de arriba.`,
+    "snapshots.prefixPlaceholder": "p. ej. /datev/api/master-data/v1/clients",
+    "snapshots.saveBtn": "Guardar snapshots",
+    "snapshots.savingBtn": "Guardando&hellip;",
+    "snapshots.emptyPrefix": "Introduce primero una ruta de recurso o un prefijo.",
+    "snapshots.resultSummaryOne": "Se guardó {n} archivo en snapshots/.",
+    "snapshots.resultSummaryOther": "Se guardaron {n} archivos en snapshots/.",
+    "snapshots.resultNone": "Aún no hay solicitudes observadas que coincidan con esa ruta &mdash; llama al recurso al menos una vez y vuelve a intentarlo.",
+    "snapshots.saveFailed": "Error al guardar los snapshots: {detail}",
 
     "testRunner.title": "Ejecutor de pruebas E2E de endpoints",
     "testRunner.description": `Envía una solicitud <code>GET</code> real a cada endpoint de arriba
@@ -3016,6 +3085,7 @@ function buildCatalogEntry(entry, idx) {
         <div class="d-flex gap-2">
           ${action}
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyCurl('${entry.path}', this)">${t("catalog.copyCurl")}</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="prefillSnapshotPrefix('${entry.path}')">${t("catalog.saveSnapshot")}</button>
         </div>
       </div>
       <div class="mt-2" id="${sampleId}"></div>
@@ -3057,6 +3127,73 @@ function renderCatalog() {
         </div>`;
     })
     .join("");
+}
+
+// --- resource snapshot export (save observed responses to disk) ---
+
+// Pure: builds the POST body for a save-snapshots request from raw user
+// input, or null when there's nothing usable to send (the caller shows the
+// "empty prefix" note instead of firing a request). Trimmed so a
+// whitespace-only input is treated the same as empty.
+function buildSnapshotRequestBody(rawPrefix) {
+  const trimmed = (rawPrefix || "").trim();
+  if (!trimmed) return null;
+  return { path_prefix: trimmed };
+}
+
+function prefillSnapshotPrefix(path) {
+  const input = document.getElementById("snapshot-prefix");
+  input.value = path;
+  input.scrollIntoView({ behavior: "smooth", block: "center" });
+  input.focus();
+}
+
+function renderSnapshotResult(result) {
+  const el = document.getElementById("snapshot-result");
+  if (!result || !result.saved) {
+    el.textContent = t("snapshots.resultNone");
+    return;
+  }
+  const summary = t(result.saved === 1 ? "snapshots.resultSummaryOne" : "snapshots.resultSummaryOther", {
+    n: result.saved,
+  });
+  const filesHtml = (result.files || [])
+    .map((f) => `<li><code>${escapeHtml(f)}</code></li>`)
+    .join("");
+  el.innerHTML = `<div>${escapeHtml(summary)}</div><ul class="mb-0">${filesHtml}</ul>`;
+}
+
+async function saveSnapshots() {
+  const input = document.getElementById("snapshot-prefix");
+  const body = buildSnapshotRequestBody(input.value);
+  const resultEl = document.getElementById("snapshot-result");
+  if (!body) {
+    resultEl.textContent = t("snapshots.emptyPrefix");
+    return;
+  }
+
+  const btn = document.getElementById("snapshot-save-btn");
+  btn.disabled = true;
+  btn.textContent = t("snapshots.savingBtn");
+  try {
+    const res = await appFetch(apiUrl("/admin/api/snapshots"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      resultEl.textContent = t("snapshots.saveFailed", { detail: `HTTP ${res.status}` });
+      return;
+    }
+    const data = await res.json();
+    renderSnapshotResult(data);
+  } catch (err) {
+    const detail = err && err.message ? err.message : String(err);
+    resultEl.textContent = t("snapshots.saveFailed", { detail });
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t("snapshots.saveBtn");
+  }
 }
 
 // --- endpoint E2E test runner (F4) ---

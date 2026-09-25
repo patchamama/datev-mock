@@ -32,3 +32,7 @@ datev_mock.db-shm
 
 # Runtime local state (SB9: admin-editable settings persistence)
 settings.json
+
+# Runtime local state (resource snapshot export -- see
+# odd/tasks/datev-mock-resource-snapshot-export.md)
+snapshots/
