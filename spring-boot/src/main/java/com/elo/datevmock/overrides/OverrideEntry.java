@@ -35,15 +35,15 @@ public final class OverrideEntry {
         return contentType;
     }
 
-    String filename() {
+    public String filename() {
         return filename;
     }
 
-    String uploadedAt() {
+    public String uploadedAt() {
         return uploadedAt;
     }
 
-    boolean enabled() {
+    public boolean enabled() {
         return enabled;
     }
 

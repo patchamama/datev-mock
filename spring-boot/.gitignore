@@ -24,3 +24,6 @@ datev_mock.db
 datev_mock.db-journal
 datev_mock.db-wal
 datev_mock.db-shm
+
+# Runtime local state (SB9: admin-editable settings persistence)
+settings.json

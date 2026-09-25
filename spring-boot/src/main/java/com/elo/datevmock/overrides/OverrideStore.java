@@ -38,7 +38,7 @@ public class OverrideStore {
         return entry != null && entry.enabled() ? entry : null;
     }
 
-    Map<String, OverrideEntry> listOverrides() {
+    public Map<String, OverrideEntry> listOverrides() {
         return Map.copyOf(overrides);
     }
 
